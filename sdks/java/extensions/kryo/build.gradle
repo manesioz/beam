@@ -22,8 +22,7 @@ ext {
     kryoVersion = '4.0.2'
 }
 
-applyJavaNature(
-    automaticModuleName: 'org.apache.beam.sdk.extensions.kryo',
+applyJavaNature(automaticModuleName: 'org.apache.beam.sdk.extensions.kryo',
     exportJavadoc: false,
     shadowClosure: {
     dependencies {
@@ -43,7 +42,7 @@ dependencies {
     compile "com.esotericsoftware:kryo:${kryoVersion}"
     shadow project(path: ':sdks:java:core', configuration: 'shadow')
     testCompile project(path: ':sdks:java:core', configuration: 'shadowTest')
-    testRuntimeOnly project(':runners:direct-java')
+    testRuntimeOnly project(path: ':runners:direct-java', configuration: 'shadow')
 }
 
 test {

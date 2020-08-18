@@ -45,6 +45,8 @@ type CustomCoder struct {
 	// Dec is the decoding function: []byte -> T. It may optionally take a
 	// reflect.Type parameter and return an error as well.
 	Dec *funcx.Fn
+
+	ID string // (optional) This coder's ID if translated from a pipeline proto.
 }
 
 // TODO(herohde) 5/16/2017: do we want/need to allow user coders that follow the
@@ -76,7 +78,10 @@ func (c *CustomCoder) Equals(o *CustomCoder) bool {
 }
 
 func (c *CustomCoder) String() string {
-	return fmt.Sprintf("%v[%v]", c.Type, c.Name)
+	if c.ID == "" {
+		return fmt.Sprintf("%v[%v]", c.Type, c.Name)
+	}
+	return fmt.Sprintf("%v[%v;%v]", c.Type, c.Name, c.ID)
 }
 
 // Type signatures of encode/decode for verification.
@@ -159,7 +164,10 @@ type Kind string
 const (
 	Custom        Kind = "Custom" // Implicitly length-prefixed
 	Bytes         Kind = "bytes"  // Implicitly length-prefixed as part of the encoding
+	String        Kind = "string" // Implicitly length-prefixed as part of the encoding.
+	Bool          Kind = "bool"
 	VarInt        Kind = "varint"
+	Double        Kind = "double"
 	WindowedValue Kind = "W"
 	KV            Kind = "KV"
 
@@ -185,6 +193,8 @@ type Coder struct {
 	Components []*Coder     // WindowedValue, KV, CoGBK
 	Custom     *CustomCoder // Custom
 	Window     *WindowCoder // WindowedValue
+
+	ID string // (optional) This coder's ID if translated from a pipeline proto.
 }
 
 // Equals returns true iff the two coders are equal. It assumes that
@@ -222,10 +232,16 @@ func (c *Coder) String() string {
 		return "$"
 	}
 	if c.Custom != nil {
-		return c.Custom.String()
+		if c.ID == "" {
+			return c.Custom.String()
+		}
+		return fmt.Sprintf("%v;%v", c.Custom, c.ID)
 	}
 
 	ret := fmt.Sprintf("%v", c.Kind)
+	if c.ID != "" {
+		ret = fmt.Sprintf("%v;%v", c.Kind, c.ID)
+	}
 	if len(c.Components) > 0 {
 		var args []string
 		for _, elm := range c.Components {
@@ -233,8 +249,12 @@ func (c *Coder) String() string {
 		}
 		ret += fmt.Sprintf("<%v>", strings.Join(args, ","))
 	}
-	if c.Window != nil {
+	switch c.Kind {
+	case WindowedValue:
 		ret += fmt.Sprintf("!%v", c.Window)
+	case KV, CoGBK, Bytes, Bool, VarInt, Double: // No additional info.
+	default:
+		ret += fmt.Sprintf("[%v]", c.T)
 	}
 	return ret
 }
@@ -245,9 +265,24 @@ func NewBytes() *Coder {
 	return &Coder{Kind: Bytes, T: typex.New(reflectx.ByteSlice)}
 }
 
+// NewBool returns a new bool coder using the built-in scheme.
+func NewBool() *Coder {
+	return &Coder{Kind: Bool, T: typex.New(reflectx.Bool)}
+}
+
 // NewVarInt returns a new int64 coder using the built-in scheme.
 func NewVarInt() *Coder {
 	return &Coder{Kind: VarInt, T: typex.New(reflectx.Int64)}
+}
+
+// NewDouble returns a new double coder using the built-in scheme.
+func NewDouble() *Coder {
+	return &Coder{Kind: Double, T: typex.New(reflectx.Float64)}
+}
+
+// NewString returns a new string coder using the built-in scheme.
+func NewString() *Coder {
+	return &Coder{Kind: String, T: typex.New(reflectx.String)}
 }
 
 // IsW returns true iff the coder is for a WindowedValue.
@@ -310,6 +345,11 @@ func SkipW(c *Coder) *Coder {
 		return c.Components[0]
 	}
 	return c
+}
+
+// CoderFrom is a helper that creates a Coder from a CustomCoder.
+func CoderFrom(c *CustomCoder) *Coder {
+	return &Coder{Kind: Custom, T: typex.New(c.Type), Custom: c}
 }
 
 // Types returns a slice of types used by the supplied coders.

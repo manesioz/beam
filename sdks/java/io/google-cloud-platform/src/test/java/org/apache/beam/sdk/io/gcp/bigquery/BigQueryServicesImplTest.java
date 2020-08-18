@@ -27,6 +27,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -35,6 +36,7 @@ import com.google.api.client.googleapis.json.GoogleJsonError;
 import com.google.api.client.googleapis.json.GoogleJsonError.ErrorInfo;
 import com.google.api.client.googleapis.json.GoogleJsonErrorContainer;
 import com.google.api.client.googleapis.json.GoogleJsonResponseException;
+import com.google.api.client.http.HttpResponseException;
 import com.google.api.client.http.LowLevelHttpResponse;
 import com.google.api.client.json.GenericJson;
 import com.google.api.client.json.Json;
@@ -110,7 +112,6 @@ public class BigQueryServicesImplTest {
             return response;
           }
         };
-
     // A mock transport that lets us mock the API responses.
     MockHttpTransport transport =
         new MockHttpTransport.Builder().setLowLevelHttpRequest(request).build();
@@ -512,10 +513,12 @@ public class BigQueryServicesImplTest {
         rows,
         null,
         BackOffAdapter.toGcpBackOff(TEST_BACKOFF.backoff()),
+        TEST_BACKOFF,
         new MockSleeper(),
         InsertRetryPolicy.alwaysRetry(),
         null,
         null,
+        false,
         false,
         false);
     verify(response, times(2)).getStatusCode();
@@ -546,16 +549,63 @@ public class BigQueryServicesImplTest {
         rows,
         null,
         BackOffAdapter.toGcpBackOff(TEST_BACKOFF.backoff()),
+        TEST_BACKOFF,
         new MockSleeper(),
         InsertRetryPolicy.alwaysRetry(),
         null,
         null,
+        false,
         false,
         false);
     verify(response, times(2)).getStatusCode();
     verify(response, times(2)).getContent();
     verify(response, times(2)).getContentType();
     expectedLogs.verifyInfo("BigQuery insertAll error, retrying:");
+  }
+
+  /** Tests that {@link DatasetServiceImpl#insertAll} can stop quotaExceeded retry attempts. */
+  @Test
+  public void testInsertStoppedRetry() throws Exception {
+    TableReference ref =
+        new TableReference().setProjectId("project").setDatasetId("dataset").setTableId("table");
+    List<ValueInSingleWindow<TableRow>> rows = new ArrayList<>();
+    rows.add(wrapValue(new TableRow()));
+
+    // Respond 403 four times, then valid payload.
+    when(response.getContentType()).thenReturn(Json.MEDIA_TYPE);
+    when(response.getStatusCode())
+        .thenReturn(403)
+        .thenReturn(403)
+        .thenReturn(403)
+        .thenReturn(403)
+        .thenReturn(200);
+    when(response.getContent())
+        .thenReturn(toStream(errorWithReasonAndStatus("quotaExceeded", 403)))
+        .thenReturn(toStream(errorWithReasonAndStatus("quotaExceeded", 403)))
+        .thenReturn(toStream(errorWithReasonAndStatus("quotaExceeded", 403)))
+        .thenReturn(toStream(errorWithReasonAndStatus("quotaExceeded", 403)))
+        .thenReturn(toStream(new TableDataInsertAllResponse()));
+    thrown.expect(RuntimeException.class);
+    thrown.expectMessage("quotaExceeded");
+
+    DatasetServiceImpl dataService =
+        new DatasetServiceImpl(bigquery, PipelineOptionsFactory.create());
+    dataService.insertAll(
+        ref,
+        rows,
+        null,
+        BackOffAdapter.toGcpBackOff(TEST_BACKOFF.backoff()),
+        TEST_BACKOFF,
+        new MockSleeper(),
+        InsertRetryPolicy.alwaysRetry(),
+        null,
+        null,
+        false,
+        false,
+        false);
+    verify(response, times(5)).getStatusCode();
+    verify(response, times(5)).getContent();
+    verify(response, times(5)).getContentType();
   }
 
   // A BackOff that makes a total of 4 attempts
@@ -596,10 +646,12 @@ public class BigQueryServicesImplTest {
         rows,
         insertIds,
         BackOffAdapter.toGcpBackOff(TEST_BACKOFF.backoff()),
+        TEST_BACKOFF,
         new MockSleeper(),
         InsertRetryPolicy.alwaysRetry(),
         null,
         null,
+        false,
         false,
         false);
     verify(response, times(2)).getStatusCode();
@@ -641,10 +693,12 @@ public class BigQueryServicesImplTest {
           rows,
           null,
           BackOffAdapter.toGcpBackOff(TEST_BACKOFF.backoff()),
+          TEST_BACKOFF,
           new MockSleeper(),
           InsertRetryPolicy.alwaysRetry(),
           null,
           null,
+          false,
           false,
           false);
       fail();
@@ -662,11 +716,11 @@ public class BigQueryServicesImplTest {
   }
 
   /**
-   * Tests that {@link DatasetServiceImpl#insertAll} retries other non-rate-limited,
+   * Tests that {@link DatasetServiceImpl#insertAll} will not retry other non-rate-limited,
    * non-quota-exceeded attempts.
    */
   @Test
-  public void testInsertOtherRetry() throws Throwable {
+  public void testFailInsertOtherRetry() throws Exception {
     TableReference ref =
         new TableReference().setProjectId("project").setDatasetId("dataset").setTableId("table");
     List<ValueInSingleWindow<TableRow>> rows = new ArrayList<>();
@@ -680,24 +734,29 @@ public class BigQueryServicesImplTest {
     when(response.getContent())
         .thenReturn(toStream(errorWithReasonAndStatus("actually forbidden", 403)))
         .thenReturn(toStream(new TableDataInsertAllResponse()));
-
     DatasetServiceImpl dataService =
         new DatasetServiceImpl(bigquery, PipelineOptionsFactory.create());
-    dataService.insertAll(
-        ref,
-        rows,
-        null,
-        BackOffAdapter.toGcpBackOff(TEST_BACKOFF.backoff()),
-        new MockSleeper(),
-        InsertRetryPolicy.alwaysRetry(),
-        null,
-        null,
-        false,
-        false);
-    verify(response, times(2)).getStatusCode();
-    verify(response, times(2)).getContent();
-    verify(response, times(2)).getContentType();
-    expectedLogs.verifyInfo("BigQuery insertAll error, retrying:");
+    thrown.expect(RuntimeException.class);
+    thrown.expectMessage("actually forbidden");
+    try {
+      dataService.insertAll(
+          ref,
+          rows,
+          null,
+          BackOffAdapter.toGcpBackOff(TEST_BACKOFF.backoff()),
+          TEST_BACKOFF,
+          new MockSleeper(),
+          InsertRetryPolicy.alwaysRetry(),
+          null,
+          null,
+          false,
+          false,
+          false);
+    } finally {
+      verify(response, times(1)).getStatusCode();
+      verify(response, times(1)).getContent();
+      verify(response, times(1)).getContentType();
+    }
   }
 
   /**
@@ -756,10 +815,12 @@ public class BigQueryServicesImplTest {
         rows,
         null,
         BackOffAdapter.toGcpBackOff(TEST_BACKOFF.backoff()),
+        TEST_BACKOFF,
         new MockSleeper(),
         InsertRetryPolicy.retryTransientErrors(),
         failedInserts,
         ErrorContainer.TABLE_ROW_ERROR_CONTAINER,
+        false,
         false,
         false);
     assertEquals(1, failedInserts.size());
@@ -767,11 +828,11 @@ public class BigQueryServicesImplTest {
   }
 
   /**
-   * Tests that {@link DatasetServiceImpl#insertAll} respects the skipInvalidRows and
-   * ignoreUnknownValues parameters.
+   * Tests that {@link DatasetServiceImpl#insertAll} respects the skipInvalidRows,
+   * ignoreUnknownValues and ignoreInsertIds parameters.
    */
   @Test
-  public void testSkipInvalidRowsIgnoreUnknownValuesStreaming()
+  public void testSkipInvalidRowsIgnoreUnknownIgnoreInsertIdsValuesStreaming()
       throws InterruptedException, IOException {
     TableReference ref =
         new TableReference().setProjectId("project").setDatasetId("dataset").setTableId("table");
@@ -790,16 +851,18 @@ public class BigQueryServicesImplTest {
     DatasetServiceImpl dataService =
         new DatasetServiceImpl(bigquery, PipelineOptionsFactory.create());
 
-    // First, test with both flags disabled
+    // First, test with all flags disabled
     dataService.insertAll(
         ref,
         rows,
         null,
         BackOffAdapter.toGcpBackOff(TEST_BACKOFF.backoff()),
+        TEST_BACKOFF,
         new MockSleeper(),
         InsertRetryPolicy.neverRetry(),
         Lists.newArrayList(),
         ErrorContainer.TABLE_ROW_ERROR_CONTAINER,
+        false,
         false,
         false);
 
@@ -809,16 +872,18 @@ public class BigQueryServicesImplTest {
     assertFalse(parsedRequest.getSkipInvalidRows());
     assertFalse(parsedRequest.getIgnoreUnknownValues());
 
-    // Then with both enabled
+    // Then with all enabled
     dataService.insertAll(
         ref,
         rows,
         null,
         BackOffAdapter.toGcpBackOff(TEST_BACKOFF.backoff()),
+        TEST_BACKOFF,
         new MockSleeper(),
         InsertRetryPolicy.neverRetry(),
         Lists.newArrayList(),
         ErrorContainer.TABLE_ROW_ERROR_CONTAINER,
+        true,
         true,
         true);
 
@@ -826,6 +891,8 @@ public class BigQueryServicesImplTest {
 
     assertTrue(parsedRequest.getSkipInvalidRows());
     assertTrue(parsedRequest.getIgnoreUnknownValues());
+    assertNull(parsedRequest.getRows().get(0).getInsertId());
+    assertNull(parsedRequest.getRows().get(1).getInsertId());
   }
 
   /** A helper to convert a string response back to a {@link GenericJson} subclass. */
@@ -853,6 +920,23 @@ public class BigQueryServicesImplTest {
     GoogleJsonErrorContainer container = new GoogleJsonErrorContainer();
     container.setError(error);
     return container;
+  }
+
+  @Test
+  public void testGetErrorInfo() throws IOException {
+    DatasetServiceImpl dataService =
+        new DatasetServiceImpl(bigquery, PipelineOptionsFactory.create());
+    ErrorInfo info = new ErrorInfo();
+    List<ErrorInfo> infoList = new ArrayList<>();
+    infoList.add(info);
+    info.setReason("QuotaExceeded");
+    GoogleJsonError error = new GoogleJsonError();
+    error.setErrors(infoList);
+    HttpResponseException.Builder builder = mock(HttpResponseException.Builder.class);
+    IOException validException = new GoogleJsonResponseException(builder, error);
+    IOException invalidException = new IOException();
+    assertEquals(info.getReason(), dataService.getErrorInfo(validException).getReason());
+    assertNull(dataService.getErrorInfo(invalidException));
   }
 
   @Test
@@ -997,10 +1081,12 @@ public class BigQueryServicesImplTest {
         rows,
         null,
         BackOffAdapter.toGcpBackOff(TEST_BACKOFF.backoff()),
+        TEST_BACKOFF,
         new MockSleeper(),
         InsertRetryPolicy.neverRetry(),
         failedInserts,
         ErrorContainer.TABLE_ROW_ERROR_CONTAINER,
+        false,
         false,
         false);
 
@@ -1051,10 +1137,12 @@ public class BigQueryServicesImplTest {
         rows,
         null,
         BackOffAdapter.toGcpBackOff(TEST_BACKOFF.backoff()),
+        TEST_BACKOFF,
         new MockSleeper(),
         InsertRetryPolicy.neverRetry(),
         failedInserts,
         ErrorContainer.BIG_QUERY_INSERT_ERROR_ERROR_CONTAINER,
+        false,
         false,
         false);
 

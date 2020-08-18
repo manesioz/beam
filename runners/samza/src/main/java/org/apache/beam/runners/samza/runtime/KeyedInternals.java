@@ -21,7 +21,6 @@ import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Prec
 
 import java.util.ArrayList;
 import java.util.List;
-import javax.annotation.Nullable;
 import javax.annotation.concurrent.ThreadSafe;
 import org.apache.beam.runners.core.StateInternals;
 import org.apache.beam.runners.core.StateInternalsFactory;
@@ -32,6 +31,7 @@ import org.apache.beam.runners.core.TimerInternalsFactory;
 import org.apache.beam.sdk.state.State;
 import org.apache.beam.sdk.state.StateContext;
 import org.apache.beam.sdk.state.TimeDomain;
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Instant;
 
 /** Provides access to the keyed StateInternals and TimerInternals. */
@@ -118,8 +118,14 @@ class KeyedInternals<K> {
 
     @Override
     public void setTimer(
-        StateNamespace namespace, String timerId, Instant target, TimeDomain timeDomain) {
-      getInternals().setTimer(namespace, timerId, target, timeDomain);
+        StateNamespace namespace,
+        String timerId,
+        String timerFamilyId,
+        Instant target,
+        Instant outputTimestamp,
+        TimeDomain timeDomain) {
+      getInternals()
+          .setTimer(namespace, timerId, timerFamilyId, target, outputTimestamp, timeDomain);
     }
 
     @Override
@@ -133,8 +139,8 @@ class KeyedInternals<K> {
     }
 
     @Override
-    public void deleteTimer(StateNamespace namespace, String timerId) {
-      getInternals().deleteTimer(namespace, timerId);
+    public void deleteTimer(StateNamespace namespace, String timerId, String timerFamilyId) {
+      getInternals().deleteTimer(namespace, timerId, timerFamilyId);
     }
 
     @Override

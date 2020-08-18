@@ -20,7 +20,6 @@ package org.apache.beam.sdk.io.gcp.bigquery;
 import static org.apache.beam.sdk.transforms.display.DisplayDataMatchers.hasDisplayItem;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
-import static org.hamcrest.Matchers.hasItem;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -45,13 +44,13 @@ import com.google.cloud.bigquery.storage.v1beta1.Storage.CreateReadSessionReques
 import com.google.cloud.bigquery.storage.v1beta1.Storage.ReadRowsRequest;
 import com.google.cloud.bigquery.storage.v1beta1.Storage.ReadRowsResponse;
 import com.google.cloud.bigquery.storage.v1beta1.Storage.ReadSession;
+import com.google.cloud.bigquery.storage.v1beta1.Storage.ShardingStrategy;
 import com.google.cloud.bigquery.storage.v1beta1.Storage.SplitReadStreamRequest;
 import com.google.cloud.bigquery.storage.v1beta1.Storage.SplitReadStreamResponse;
 import com.google.cloud.bigquery.storage.v1beta1.Storage.Stream;
 import com.google.cloud.bigquery.storage.v1beta1.Storage.StreamPosition;
 import com.google.cloud.bigquery.storage.v1beta1.Storage.StreamStatus;
 import com.google.protobuf.ByteString;
-import com.google.protobuf.UnknownFieldSet;
 import io.grpc.Status;
 import io.grpc.Status.Code;
 import io.grpc.StatusRuntimeException;
@@ -60,7 +59,6 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
-import java.util.Set;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData.Record;
 import org.apache.avro.generic.GenericDatumWriter;
@@ -87,7 +85,6 @@ import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.transforms.SerializableFunction;
 import org.apache.beam.sdk.transforms.display.DisplayData;
-import org.apache.beam.sdk.transforms.display.DisplayDataEvaluator;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
@@ -213,7 +210,7 @@ public class BigQueryIOStorageReadTest {
   }
 
   private void checkTypedReadTableObject(
-      TypedRead typedRead, String project, String dataset, String table) {
+      TypedRead<?> typedRead, String project, String dataset, String table) {
     assertEquals(project, typedRead.getTable().getProjectId());
     assertEquals(dataset, typedRead.getTable().getDatasetId());
     assertEquals(table, typedRead.getTable().getTableId());
@@ -291,18 +288,6 @@ public class BigQueryIOStorageReadTest {
             .from(tableSpec);
     DisplayData displayData = DisplayData.from(typedRead);
     assertThat(displayData, hasDisplayItem("table", tableSpec));
-  }
-
-  @Test
-  public void testEvaluatedDisplayData() {
-    DisplayDataEvaluator evaluator = DisplayDataEvaluator.create();
-    BigQueryIO.TypedRead<TableRow> typedRead =
-        BigQueryIO.read(new TableRowParser())
-            .withCoder(TableRowJsonCoder.of())
-            .withMethod(Method.DIRECT_READ)
-            .from("foo.com:project:dataset.table");
-    Set<DisplayData> displayData = evaluator.displayDataForPrimitiveSourceTransforms(typedRead);
-    assertThat(displayData, hasItem(hasDisplayItem("table")));
   }
 
   @Test
@@ -400,15 +385,43 @@ public class BigQueryIOStorageReadTest {
     doTableSourceInitialSplitTest(10L, 10_000);
   }
 
+  private static final String AVRO_SCHEMA_STRING =
+      "{\"namespace\": \"example.avro\",\n"
+          + " \"type\": \"record\",\n"
+          + " \"name\": \"RowRecord\",\n"
+          + " \"fields\": [\n"
+          + "     {\"name\": \"name\", \"type\": \"string\"},\n"
+          + "     {\"name\": \"number\", \"type\": \"long\"}\n"
+          + " ]\n"
+          + "}";
+
+  private static final Schema AVRO_SCHEMA = new Schema.Parser().parse(AVRO_SCHEMA_STRING);
+
+  private static final String TRIMMED_AVRO_SCHEMA_STRING =
+      "{\"namespace\": \"example.avro\",\n"
+          + "\"type\": \"record\",\n"
+          + "\"name\": \"RowRecord\",\n"
+          + "\"fields\": [\n"
+          + "    {\"name\": \"name\", \"type\": \"string\"}\n"
+          + " ]\n"
+          + "}";
+
+  private static final Schema TRIMMED_AVRO_SCHEMA =
+      new Schema.Parser().parse(TRIMMED_AVRO_SCHEMA_STRING);
+
+  private static final TableSchema TABLE_SCHEMA =
+      new TableSchema()
+          .setFields(
+              ImmutableList.of(
+                  new TableFieldSchema().setName("name").setType("STRING").setMode("REQUIRED"),
+                  new TableFieldSchema().setName("number").setType("INTEGER").setMode("REQUIRED")));
+
   private void doTableSourceInitialSplitTest(long bundleSize, int streamCount) throws Exception {
     fakeDatasetService.createDataset("foo.com:project", "dataset", "", "", null);
     TableReference tableRef = BigQueryHelpers.parseTableSpec("foo.com:project:dataset.table");
 
     Table table =
-        new Table()
-            .setTableReference(tableRef)
-            .setNumBytes(1024L * 1024L)
-            .setSchema(new TableSchema());
+        new Table().setTableReference(tableRef).setNumBytes(1024L * 1024L).setSchema(TABLE_SCHEMA);
 
     fakeDatasetService.createTable(table);
 
@@ -417,15 +430,12 @@ public class BigQueryIOStorageReadTest {
             .setParent("projects/project-id")
             .setTableReference(BigQueryHelpers.toTableRefProto(tableRef))
             .setRequestedStreams(streamCount)
-            // TODO(aryann): Once we rebuild the generated client code, we should change this to
-            // use setShardingStrategy().
-            .setUnknownFields(
-                UnknownFieldSet.newBuilder()
-                    .addField(7, UnknownFieldSet.Field.newBuilder().addVarint(2).build())
-                    .build())
+            .setShardingStrategy(ShardingStrategy.BALANCED)
             .build();
 
-    ReadSession.Builder builder = ReadSession.newBuilder();
+    ReadSession.Builder builder =
+        ReadSession.newBuilder()
+            .setAvroSchema(AvroSchema.newBuilder().setSchema(AVRO_SCHEMA_STRING));
     for (int i = 0; i < streamCount; i++) {
       builder.addStreams(Stream.newBuilder().setName("stream-" + i));
     }
@@ -454,23 +464,13 @@ public class BigQueryIOStorageReadTest {
     fakeDatasetService.createDataset("foo.com:project", "dataset", "", "", null);
     TableReference tableRef = BigQueryHelpers.parseTableSpec("foo.com:project:dataset.table");
 
-    Table table =
-        new Table()
-            .setTableReference(tableRef)
-            .setNumBytes(100L)
-            .setSchema(
-                new TableSchema()
-                    .setFields(
-                        ImmutableList.of(
-                            new TableFieldSchema().setName("name").setType("STRING"),
-                            new TableFieldSchema().setName("number").setType("INTEGER"))));
+    Table table = new Table().setTableReference(tableRef).setNumBytes(100L).setSchema(TABLE_SCHEMA);
 
     fakeDatasetService.createTable(table);
 
     TableReadOptions readOptions =
         TableReadOptions.newBuilder()
             .addSelectedFields("name")
-            .addSelectedFields("number")
             .setRowRestriction("number > 5")
             .build();
 
@@ -480,15 +480,12 @@ public class BigQueryIOStorageReadTest {
             .setTableReference(BigQueryHelpers.toTableRefProto(tableRef))
             .setRequestedStreams(10)
             .setReadOptions(readOptions)
-            // TODO(aryann): Once we rebuild the generated client code, we should change this to
-            // use setShardingStrategy().
-            .setUnknownFields(
-                UnknownFieldSet.newBuilder()
-                    .addField(7, UnknownFieldSet.Field.newBuilder().addVarint(2).build())
-                    .build())
+            .setShardingStrategy(ShardingStrategy.BALANCED)
             .build();
 
-    ReadSession.Builder builder = ReadSession.newBuilder();
+    ReadSession.Builder builder =
+        ReadSession.newBuilder()
+            .setAvroSchema(AvroSchema.newBuilder().setSchema(TRIMMED_AVRO_SCHEMA_STRING));
     for (int i = 0; i < 10; i++) {
       builder.addStreams(Stream.newBuilder().setName("stream-" + i));
     }
@@ -517,23 +514,13 @@ public class BigQueryIOStorageReadTest {
     fakeDatasetService.createDataset("foo.com:project", "dataset", "", "", null);
     TableReference tableRef = BigQueryHelpers.parseTableSpec("foo.com:project:dataset.table");
 
-    Table table =
-        new Table()
-            .setTableReference(tableRef)
-            .setNumBytes(100L)
-            .setSchema(
-                new TableSchema()
-                    .setFields(
-                        ImmutableList.of(
-                            new TableFieldSchema().setName("name").setType("STRING"),
-                            new TableFieldSchema().setName("number").setType("INTEGER"))));
+    Table table = new Table().setTableReference(tableRef).setNumBytes(100L).setSchema(TABLE_SCHEMA);
 
     fakeDatasetService.createTable(table);
 
     TableReadOptions readOptions =
         TableReadOptions.newBuilder()
             .addSelectedFields("name")
-            .addSelectedFields("number")
             .setRowRestriction("number > 5")
             .build();
 
@@ -543,15 +530,12 @@ public class BigQueryIOStorageReadTest {
             .setTableReference(BigQueryHelpers.toTableRefProto(tableRef))
             .setRequestedStreams(10)
             .setReadOptions(readOptions)
-            // TODO(aryann): Once we rebuild the generated client code, we should change this to
-            // use setShardingStrategy().
-            .setUnknownFields(
-                UnknownFieldSet.newBuilder()
-                    .addField(7, UnknownFieldSet.Field.newBuilder().addVarint(2).build())
-                    .build())
+            .setShardingStrategy(ShardingStrategy.BALANCED)
             .build();
 
-    ReadSession.Builder builder = ReadSession.newBuilder();
+    ReadSession.Builder builder =
+        ReadSession.newBuilder()
+            .setAvroSchema(AvroSchema.newBuilder().setSchema(TRIMMED_AVRO_SCHEMA_STRING));
     for (int i = 0; i < 10; i++) {
       builder.addStreams(Stream.newBuilder().setName("stream-" + i));
     }
@@ -563,7 +547,7 @@ public class BigQueryIOStorageReadTest {
         BigQueryStorageTableSource.create(
             ValueProvider.StaticValueProvider.of(tableRef),
             null,
-            StaticValueProvider.of(Lists.newArrayList("name", "number")),
+            StaticValueProvider.of(Lists.newArrayList("name")),
             StaticValueProvider.of("number > 5"),
             new TableRowParser(),
             TableRowJsonCoder.of(),
@@ -581,10 +565,7 @@ public class BigQueryIOStorageReadTest {
     TableReference tableRef = BigQueryHelpers.parseTableSpec("project-id:dataset.table");
 
     Table table =
-        new Table()
-            .setTableReference(tableRef)
-            .setNumBytes(1024L * 1024L)
-            .setSchema(new TableSchema());
+        new Table().setTableReference(tableRef).setNumBytes(1024L * 1024L).setSchema(TABLE_SCHEMA);
 
     fakeDatasetService.createTable(table);
 
@@ -593,15 +574,12 @@ public class BigQueryIOStorageReadTest {
             .setParent("projects/project-id")
             .setTableReference(BigQueryHelpers.toTableRefProto(tableRef))
             .setRequestedStreams(1024)
-            // TODO(aryann): Once we rebuild the generated client code, we should change this to
-            // use setShardingStrategy().
-            .setUnknownFields(
-                UnknownFieldSet.newBuilder()
-                    .addField(7, UnknownFieldSet.Field.newBuilder().addVarint(2).build())
-                    .build())
+            .setShardingStrategy(ShardingStrategy.BALANCED)
             .build();
 
-    ReadSession.Builder builder = ReadSession.newBuilder();
+    ReadSession.Builder builder =
+        ReadSession.newBuilder()
+            .setAvroSchema(AvroSchema.newBuilder().setSchema(AVRO_SCHEMA_STRING));
     for (int i = 0; i < 50; i++) {
       builder.addStreams(Stream.newBuilder().setName("stream-" + i));
     }
@@ -643,12 +621,7 @@ public class BigQueryIOStorageReadTest {
             .setParent("projects/project-id")
             .setTableReference(BigQueryHelpers.toTableRefProto(tableRef))
             .setRequestedStreams(1024)
-            // TODO(aryann): Once we rebuild the generated client code, we should change this to
-            // use setShardingStrategy().
-            .setUnknownFields(
-                UnknownFieldSet.newBuilder()
-                    .addField(7, UnknownFieldSet.Field.newBuilder().addVarint(2).build())
-                    .build())
+            .setShardingStrategy(ShardingStrategy.BALANCED)
             .build();
 
     ReadSession emptyReadSession = ReadSession.newBuilder().build();
@@ -689,24 +662,11 @@ public class BigQueryIOStorageReadTest {
     tableSource.createReader(options);
   }
 
-  private static final String AVRO_SCHEMA_STRING =
-      "{\"namespace\": \"example.avro\",\n"
-          + " \"type\": \"record\",\n"
-          + " \"name\": \"RowRecord\",\n"
-          + " \"fields\": [\n"
-          + "     {\"name\": \"name\", \"type\": \"string\"},\n"
-          + "     {\"name\": \"number\", \"type\": \"long\"}\n"
-          + " ]\n"
-          + "}";
-
-  private static final Schema AVRO_SCHEMA = new Schema.Parser().parse(AVRO_SCHEMA_STRING);
-
-  private static final TableSchema TABLE_SCHEMA =
-      new TableSchema()
-          .setFields(
-              ImmutableList.of(
-                  new TableFieldSchema().setName("name").setType("STRING").setMode("REQUIRED"),
-                  new TableFieldSchema().setName("number").setType("INTEGER").setMode("REQUIRED")));
+  private static GenericRecord createRecord(String name, Schema schema) {
+    GenericRecord genericRecord = new Record(schema);
+    genericRecord.put("name", name);
+    return genericRecord;
+  }
 
   private static GenericRecord createRecord(String name, long number, Schema schema) {
     GenericRecord genericRecord = new Record(schema);
@@ -734,19 +694,7 @@ public class BigQueryIOStorageReadTest {
             AvroRows.newBuilder()
                 .setSerializedBinaryRows(ByteString.copyFrom(outputStream.toByteArray()))
                 .setRowCount(genericRecords.size()))
-        .setStatus(
-            StreamStatus.newBuilder()
-                // TODO(aryann): Once we rebuild the generated client code, we should change this to
-                // use setFractionConsumed().
-                .setUnknownFields(
-                    UnknownFieldSet.newBuilder()
-                        .addField(
-                            2,
-                            UnknownFieldSet.Field.newBuilder()
-                                .addFixed32(
-                                    java.lang.Float.floatToIntBits((float) fractionConsumed))
-                                .build())
-                        .build()))
+        .setStatus(StreamStatus.newBuilder().setFractionConsumed((float) fractionConsumed))
         .build();
   }
 
@@ -861,6 +809,9 @@ public class BigQueryIOStorageReadTest {
             // N.B.: All floating point numbers used in this test can be represented without
             // a loss of precision.
             createResponse(AVRO_SCHEMA, records.subList(0, 2), 0.250),
+            // Some responses may contain zero results, so we must ensure that we can are resilient
+            // to such responses.
+            createResponse(AVRO_SCHEMA, Lists.newArrayList(), 0.250),
             createResponse(AVRO_SCHEMA, records.subList(2, 4), 0.500),
             createResponse(AVRO_SCHEMA, records.subList(4, 7), 0.875));
 
@@ -946,16 +897,7 @@ public class BigQueryIOStorageReadTest {
     when(fakeStorageClient.splitReadStream(
             SplitReadStreamRequest.newBuilder()
                 .setOriginalStream(parentStream)
-                // TODO(aryann): Once we rebuild the generated client code, we should change this to
-                // use setFraction().
-                .setUnknownFields(
-                    UnknownFieldSet.newBuilder()
-                        .addField(
-                            2,
-                            UnknownFieldSet.Field.newBuilder()
-                                .addFixed32(java.lang.Float.floatToIntBits(0.5f))
-                                .build())
-                        .build())
+                .setFraction(0.5f)
                 .build()))
         .thenReturn(
             SplitReadStreamResponse.newBuilder()
@@ -1049,16 +991,7 @@ public class BigQueryIOStorageReadTest {
     when(fakeStorageClient.splitReadStream(
             SplitReadStreamRequest.newBuilder()
                 .setOriginalStream(parentStream)
-                // TODO(aryann): Once we rebuild the generated client code, we should change this to
-                // use setFraction().
-                .setUnknownFields(
-                    UnknownFieldSet.newBuilder()
-                        .addField(
-                            2,
-                            UnknownFieldSet.Field.newBuilder()
-                                .addFixed32(java.lang.Float.floatToIntBits(0.5f))
-                                .build())
-                        .build())
+                .setFraction(0.5f)
                 .build()))
         .thenReturn(
             SplitReadStreamResponse.newBuilder()
@@ -1163,16 +1096,7 @@ public class BigQueryIOStorageReadTest {
     when(fakeStorageClient.splitReadStream(
             SplitReadStreamRequest.newBuilder()
                 .setOriginalStream(streams.get(0))
-                // TODO(aryann): Once we rebuild the generated client code, we should change this to
-                // use setFraction().
-                .setUnknownFields(
-                    UnknownFieldSet.newBuilder()
-                        .addField(
-                            2,
-                            UnknownFieldSet.Field.newBuilder()
-                                .addFixed32(java.lang.Float.floatToIntBits(0.83f))
-                                .build())
-                        .build())
+                .setFraction(0.83f)
                 .build()))
         .thenReturn(
             SplitReadStreamResponse.newBuilder()
@@ -1203,16 +1127,7 @@ public class BigQueryIOStorageReadTest {
     when(fakeStorageClient.splitReadStream(
             SplitReadStreamRequest.newBuilder()
                 .setOriginalStream(streams.get(1))
-                // TODO(aryann): Once we rebuild the generated client code, we should change this to
-                // use setFraction().
-                .setUnknownFields(
-                    UnknownFieldSet.newBuilder()
-                        .addField(
-                            2,
-                            UnknownFieldSet.Field.newBuilder()
-                                .addFixed32(java.lang.Float.floatToIntBits(0.75f))
-                                .build())
-                        .build())
+                .setFraction(0.75f)
                 .build()))
         .thenReturn(
             SplitReadStreamResponse.newBuilder()
@@ -1299,16 +1214,7 @@ public class BigQueryIOStorageReadTest {
     when(fakeStorageClient.splitReadStream(
             SplitReadStreamRequest.newBuilder()
                 .setOriginalStream(parentStream)
-                // TODO(aryann): Once we rebuild the generated client code, we should change this to
-                // use setFraction().
-                .setUnknownFields(
-                    UnknownFieldSet.newBuilder()
-                        .addField(
-                            2,
-                            UnknownFieldSet.Field.newBuilder()
-                                .addFixed32(java.lang.Float.floatToIntBits(0.5f))
-                                .build())
-                        .build())
+                .setFraction(0.5f)
                 .build()))
         .thenReturn(SplitReadStreamResponse.getDefaultInstance());
 
@@ -1376,16 +1282,7 @@ public class BigQueryIOStorageReadTest {
     when(fakeStorageClient.splitReadStream(
             SplitReadStreamRequest.newBuilder()
                 .setOriginalStream(parentStream)
-                // TODO(aryann): Once we rebuild the generated client code, we should change this to
-                // use setFraction().
-                .setUnknownFields(
-                    UnknownFieldSet.newBuilder()
-                        .addField(
-                            2,
-                            UnknownFieldSet.Field.newBuilder()
-                                .addFixed32(java.lang.Float.floatToIntBits(0.5f))
-                                .build())
-                        .build())
+                .setFraction(0.5f)
                 .build()))
         .thenReturn(
             SplitReadStreamResponse.newBuilder()
@@ -1456,10 +1353,7 @@ public class BigQueryIOStorageReadTest {
   public void testReadFromBigQueryIO() throws Exception {
     fakeDatasetService.createDataset("foo.com:project", "dataset", "", "", null);
     TableReference tableRef = BigQueryHelpers.parseTableSpec("foo.com:project:dataset.table");
-
-    Table table =
-        new Table().setTableReference(tableRef).setNumBytes(10L).setSchema(new TableSchema());
-
+    Table table = new Table().setTableReference(tableRef).setNumBytes(10L).setSchema(TABLE_SCHEMA);
     fakeDatasetService.createTable(table);
 
     CreateReadSessionRequest expectedCreateReadSessionRequest =
@@ -1467,14 +1361,7 @@ public class BigQueryIOStorageReadTest {
             .setParent("projects/project-id")
             .setTableReference(BigQueryHelpers.toTableRefProto(tableRef))
             .setRequestedStreams(10)
-            .setReadOptions(
-                TableReadOptions.newBuilder().addSelectedFields("name").addSelectedFields("number"))
-            // TODO(aryann): Once we rebuild the generated client code, we should change this to
-            // use setShardingStrategy().
-            .setUnknownFields(
-                UnknownFieldSet.newBuilder()
-                    .addField(7, UnknownFieldSet.Field.newBuilder().addVarint(2).build())
-                    .build())
+            .setShardingStrategy(ShardingStrategy.BALANCED)
             .build();
 
     ReadSession readSession =
@@ -1513,7 +1400,6 @@ public class BigQueryIOStorageReadTest {
             BigQueryIO.read(new ParseKeyValue())
                 .from("foo.com:project:dataset.table")
                 .withMethod(Method.DIRECT_READ)
-                .withSelectedFields(p.newProvider(Lists.newArrayList("name", "number")))
                 .withTestServices(
                     new FakeBigQueryServices()
                         .withDatasetService(fakeDatasetService)
@@ -1522,6 +1408,75 @@ public class BigQueryIOStorageReadTest {
     PAssert.that(output)
         .containsInAnyOrder(
             ImmutableList.of(KV.of("A", 1L), KV.of("B", 2L), KV.of("C", 3L), KV.of("D", 4L)));
+
+    p.run();
+  }
+
+  @Test
+  public void testReadFromBigQueryIOWithTrimmedSchema() throws Exception {
+    fakeDatasetService.createDataset("foo.com:project", "dataset", "", "", null);
+    TableReference tableRef = BigQueryHelpers.parseTableSpec("foo.com:project:dataset.table");
+    Table table = new Table().setTableReference(tableRef).setNumBytes(10L).setSchema(TABLE_SCHEMA);
+    fakeDatasetService.createTable(table);
+
+    CreateReadSessionRequest expectedCreateReadSessionRequest =
+        CreateReadSessionRequest.newBuilder()
+            .setParent("projects/project-id")
+            .setTableReference(BigQueryHelpers.toTableRefProto(tableRef))
+            .setRequestedStreams(10)
+            .setReadOptions(TableReadOptions.newBuilder().addSelectedFields("name"))
+            .setShardingStrategy(ShardingStrategy.BALANCED)
+            .build();
+
+    ReadSession readSession =
+        ReadSession.newBuilder()
+            .setName("readSessionName")
+            .setAvroSchema(AvroSchema.newBuilder().setSchema(TRIMMED_AVRO_SCHEMA_STRING))
+            .addStreams(Stream.newBuilder().setName("streamName"))
+            .build();
+
+    ReadRowsRequest expectedReadRowsRequest =
+        ReadRowsRequest.newBuilder()
+            .setReadPosition(
+                StreamPosition.newBuilder().setStream(Stream.newBuilder().setName("streamName")))
+            .build();
+
+    List<GenericRecord> records =
+        Lists.newArrayList(
+            createRecord("A", TRIMMED_AVRO_SCHEMA),
+            createRecord("B", TRIMMED_AVRO_SCHEMA),
+            createRecord("C", TRIMMED_AVRO_SCHEMA),
+            createRecord("D", TRIMMED_AVRO_SCHEMA));
+
+    List<ReadRowsResponse> readRowsResponses =
+        Lists.newArrayList(
+            createResponse(TRIMMED_AVRO_SCHEMA, records.subList(0, 2), 0.50),
+            createResponse(TRIMMED_AVRO_SCHEMA, records.subList(2, 4), 0.75));
+
+    StorageClient fakeStorageClient = mock(StorageClient.class, withSettings().serializable());
+    when(fakeStorageClient.createReadSession(expectedCreateReadSessionRequest))
+        .thenReturn(readSession);
+    when(fakeStorageClient.readRows(expectedReadRowsRequest))
+        .thenReturn(new FakeBigQueryServerStream<>(readRowsResponses));
+
+    PCollection<TableRow> output =
+        p.apply(
+            BigQueryIO.readTableRows()
+                .from("foo.com:project:dataset.table")
+                .withMethod(Method.DIRECT_READ)
+                .withSelectedFields(Lists.newArrayList("name"))
+                .withTestServices(
+                    new FakeBigQueryServices()
+                        .withDatasetService(fakeDatasetService)
+                        .withStorageClient(fakeStorageClient)));
+
+    PAssert.that(output)
+        .containsInAnyOrder(
+            ImmutableList.of(
+                new TableRow().set("name", "A"),
+                new TableRow().set("name", "B"),
+                new TableRow().set("name", "C"),
+                new TableRow().set("name", "D")));
 
     p.run();
   }

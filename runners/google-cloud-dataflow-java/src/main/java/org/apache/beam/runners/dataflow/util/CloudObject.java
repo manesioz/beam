@@ -22,7 +22,8 @@ import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Prec
 import com.google.api.client.json.GenericJson;
 import com.google.api.client.util.Key;
 import java.util.Map;
-import javax.annotation.Nullable;
+import java.util.Objects;
+import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * A representation of an arbitrary Java object to be instantiated by Dataflow workers.
@@ -181,5 +182,19 @@ public final class CloudObject extends GenericJson implements Cloneable {
   @Override
   public CloudObject clone() {
     return (CloudObject) super.clone();
+  }
+
+  @Override
+  public boolean equals(@Nullable Object otherObject) {
+    if (!(otherObject instanceof CloudObject)) {
+      return false;
+    }
+    CloudObject other = (CloudObject) otherObject;
+    return Objects.equals(className, other.className) && super.equals(otherObject);
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hash(className, super.hashCode());
   }
 }

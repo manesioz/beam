@@ -184,7 +184,8 @@ public class AssignWindowsRunnerTest implements Serializable {
             null /* pipelineOptions */,
             null /* beamFnDataClient */,
             null /* beamFnStateClient */,
-            null /* pTransformId */,
+            null /* beamFnTimerClient */,
+            "ptransform",
             PTransform.newBuilder()
                 .putInputs("in", "input")
                 .putOutputs("out", "output")
@@ -205,7 +206,10 @@ public class AssignWindowsRunnerTest implements Serializable {
             pCollectionConsumerRegistry,
             null /* startFunctionRegistry */,
             null, /* finishFunctionRegistry */
-            null /* splitListener */);
+            null, /* tearDownRegistry */
+            null /* addProgressRequestCallback */,
+            null /* splitListener */,
+            null /* bundleFinalizer */);
 
     WindowedValue<Integer> value =
         WindowedValue.of(

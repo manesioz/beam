@@ -16,7 +16,7 @@
 # limitations under the License.
 ###############################################################################
 
-FROM debian:stretch
+FROM debian:buster
 MAINTAINER "Apache Beam <dev@beam.apache.org>"
 
 RUN apt-get update && \
@@ -26,5 +26,8 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 ADD target/linux_amd64/boot /opt/apache/beam/
+
+COPY target/LICENSE /opt/apache/beam/
+COPY target/NOTICE /opt/apache/beam/
 
 ENTRYPOINT ["/opt/apache/beam/boot"]

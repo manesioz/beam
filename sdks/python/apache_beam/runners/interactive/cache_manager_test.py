@@ -15,6 +15,8 @@
 # limitations under the License.
 #
 
+# pytype: skip-file
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -28,6 +30,7 @@ import unittest
 from apache_beam import coders
 from apache_beam.io import filesystems
 from apache_beam.runners.interactive import cache_manager as cache
+from apache_beam.runners.interactive.options.capture_limiters import CountLimiter
 
 
 class FileBasedCacheManagerTest(object):
@@ -41,7 +44,7 @@ class FileBasedCacheManagerTest(object):
   tested with InteractiveRunner as a part of integration tests instead.
   """
 
-  cache_format = None
+  cache_format = None  # type: str
 
   def setUp(self):
     self.test_dir = tempfile.mkdtemp()
@@ -69,12 +72,11 @@ class FileBasedCacheManagerTest(object):
 
     # Usually, the pcoder will be inferred from `pcoll.element_type`
     pcoder = coders.registry.get_coder(object)
+    # Save a pcoder for reading.
     self.cache_manager.save_pcoder(pcoder, *labels)
-    sink = self.cache_manager.sink(*labels)
-
-    with open(self.cache_manager._path(prefix, cache_file), 'wb') as f:
-      for line in pcoll_list:
-        sink.write_record(f, line)
+    # Save a pcoder for the fake write to the file.
+    self.cache_manager.save_pcoder(pcoder, prefix, cache_file)
+    self.cache_manager.write(pcoll_list, prefix, cache_file)
 
   def test_exists(self):
     """Test that CacheManager can correctly tell if the cache exists or not."""
@@ -90,6 +92,18 @@ class FileBasedCacheManagerTest(object):
     self.mock_write_cache(cache_version_one, prefix, cache_label)
     self.assertTrue(self.cache_manager.exists(prefix, cache_label))
 
+  def test_clear(self):
+    """Test that CacheManager can correctly tell if the cache exists or not."""
+    prefix = 'full'
+    cache_label = 'some-cache-label'
+    cache_version_one = ['cache', 'version', 'one']
+
+    self.assertFalse(self.cache_manager.exists(prefix, cache_label))
+    self.mock_write_cache(cache_version_one, prefix, cache_label)
+    self.assertTrue(self.cache_manager.exists(prefix, cache_label))
+    self.assertTrue(self.cache_manager.clear(prefix, cache_label))
+    self.assertFalse(self.cache_manager.exists(prefix, cache_label))
+
   def test_read_basic(self):
     """Test the condition where the cache is read once after written once."""
     prefix = 'full'
@@ -97,7 +111,8 @@ class FileBasedCacheManagerTest(object):
     cache_version_one = ['cache', 'version', 'one']
 
     self.mock_write_cache(cache_version_one, prefix, cache_label)
-    pcoll_list, version = self.cache_manager.read(prefix, cache_label)
+    reader, version = self.cache_manager.read(prefix, cache_label)
+    pcoll_list = list(reader)
     self.assertListEqual(pcoll_list, cache_version_one)
     self.assertEqual(version, 0)
     self.assertTrue(
@@ -111,13 +126,15 @@ class FileBasedCacheManagerTest(object):
     cache_version_two = ['cache', 'version', 'two']
 
     self.mock_write_cache(cache_version_one, prefix, cache_label)
-    pcoll_list, version = self.cache_manager.read(prefix, cache_label)
+    reader, version = self.cache_manager.read(prefix, cache_label)
+    pcoll_list = list(reader)
 
     self.mock_write_cache(cache_version_two, prefix, cache_label)
     self.assertFalse(
         self.cache_manager.is_latest_version(version, prefix, cache_label))
 
-    pcoll_list, version = self.cache_manager.read(prefix, cache_label)
+    reader, version = self.cache_manager.read(prefix, cache_label)
+    pcoll_list = list(reader)
     self.assertListEqual(pcoll_list, cache_version_two)
     self.assertEqual(version, 1)
     self.assertTrue(
@@ -130,7 +147,8 @@ class FileBasedCacheManagerTest(object):
 
     self.assertFalse(self.cache_manager.exists(prefix, cache_label))
 
-    pcoll_list, version = self.cache_manager.read(prefix, cache_label)
+    reader, version = self.cache_manager.read(prefix, cache_label)
+    pcoll_list = list(reader)
     self.assertListEqual(pcoll_list, [])
     self.assertEqual(version, -1)
     self.assertTrue(
@@ -145,7 +163,8 @@ class FileBasedCacheManagerTest(object):
 
     # The initial write and read.
     self.mock_write_cache(cache_version_one, prefix, cache_label)
-    pcoll_list, version = self.cache_manager.read(prefix, cache_label)
+    reader, version = self.cache_manager.read(prefix, cache_label)
+    pcoll_list = list(reader)
 
     # Cache cleanup.
     self.cache_manager.cleanup()
@@ -153,7 +172,8 @@ class FileBasedCacheManagerTest(object):
     self.assertTrue(
         self.cache_manager.is_latest_version(version, prefix, cache_label))
 
-    pcoll_list, version = self.cache_manager.read(prefix, cache_label)
+    reader, version = self.cache_manager.read(prefix, cache_label)
+    pcoll_list = list(reader)
     self.assertListEqual(pcoll_list, [])
     self.assertEqual(version, -1)
     self.assertFalse(
@@ -164,11 +184,27 @@ class FileBasedCacheManagerTest(object):
     self.assertFalse(
         self.cache_manager.is_latest_version(version, prefix, cache_label))
 
-    pcoll_list, version = self.cache_manager.read(prefix, cache_label)
+    reader, version = self.cache_manager.read(prefix, cache_label)
+    pcoll_list = list(reader)
     self.assertListEqual(pcoll_list, cache_version_two)
     # Check that version continues from the previous value instead of starting
     # from 0 again.
     self.assertEqual(version, 1)
+    self.assertTrue(
+        self.cache_manager.is_latest_version(version, prefix, cache_label))
+
+  def test_read_with_count_limiter(self):
+    """Test the condition where the cache is read once after written once."""
+    prefix = 'full'
+    cache_label = 'some-cache-label'
+    cache_version_one = ['cache', 'version', 'one']
+
+    self.mock_write_cache(cache_version_one, prefix, cache_label)
+    reader, version = self.cache_manager.read(
+        prefix, cache_label, limiters=[CountLimiter(2)])
+    pcoll_list = list(reader)
+    self.assertListEqual(pcoll_list, ['cache', 'version'])
+    self.assertEqual(version, 0)
     self.assertTrue(
         self.cache_manager.is_latest_version(version, prefix, cache_label))
 

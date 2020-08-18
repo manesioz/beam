@@ -19,21 +19,25 @@ package org.apache.beam.runners.samza.runtime;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Matchers.anyString;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.apache.beam.runners.core.StateNamespace;
 import org.apache.beam.runners.core.StateNamespaces;
 import org.apache.beam.runners.core.TimerInternals;
 import org.apache.beam.runners.samza.SamzaPipelineOptions;
+import org.apache.beam.runners.samza.runtime.SamzaStoreStateInternals.ByteArray;
+import org.apache.beam.runners.samza.runtime.SamzaStoreStateInternals.ByteArraySerdeFactory;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.state.TimeDomain;
@@ -44,11 +48,17 @@ import org.apache.samza.config.MapConfig;
 import org.apache.samza.context.TaskContext;
 import org.apache.samza.metrics.MetricsRegistryMap;
 import org.apache.samza.operators.Scheduler;
+import org.apache.samza.serializers.ByteSerde;
+import org.apache.samza.serializers.Serde;
 import org.apache.samza.storage.kv.KeyValueStore;
 import org.apache.samza.storage.kv.KeyValueStoreMetrics;
 import org.apache.samza.storage.kv.RocksDbKeyValueStore;
+import org.apache.samza.storage.kv.SerializedKeyValueStore;
+import org.apache.samza.storage.kv.SerializedKeyValueStoreMetrics;
 import org.joda.time.Instant;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 import org.rocksdb.FlushOptions;
 import org.rocksdb.Options;
 import org.rocksdb.WriteOptions;
@@ -58,23 +68,32 @@ import org.rocksdb.WriteOptions;
  * timers.
  */
 public class SamzaTimerInternalsFactoryTest {
-  private static RocksDbKeyValueStore createStore(String name) {
+  @Rule public transient TemporaryFolder temporaryFolder = new TemporaryFolder();
+
+  private KeyValueStore<ByteArray, byte[]> createStore() {
     final Options options = new Options();
     options.setCreateIfMissing(true);
 
-    return new RocksDbKeyValueStore(
-        new File(System.getProperty("java.io.tmpdir") + "/" + name),
-        options,
-        new MapConfig(),
-        false,
-        "beamStore",
-        new WriteOptions(),
-        new FlushOptions(),
-        new KeyValueStoreMetrics("beamStore", new MetricsRegistryMap()));
+    RocksDbKeyValueStore rocksStore =
+        new RocksDbKeyValueStore(
+            temporaryFolder.getRoot(),
+            options,
+            new MapConfig(),
+            false,
+            "beamStore",
+            new WriteOptions(),
+            new FlushOptions(),
+            new KeyValueStoreMetrics("beamStore", new MetricsRegistryMap()));
+
+    return new SerializedKeyValueStore<>(
+        rocksStore,
+        new ByteArraySerdeFactory.ByteArraySerde(),
+        new ByteSerde(),
+        new SerializedKeyValueStoreMetrics("beamStore", new MetricsRegistryMap()));
   }
 
   private static SamzaStoreStateInternals.Factory<?> createNonKeyedStateInternalsFactory(
-      SamzaPipelineOptions pipelineOptions, RocksDbKeyValueStore store) {
+      SamzaPipelineOptions pipelineOptions, KeyValueStore<ByteArray, byte[]> store) {
     final TaskContext context = mock(TaskContext.class);
     when(context.getStore(anyString())).thenReturn((KeyValueStore) store);
     final TupleTag<?> mainOutputTag = new TupleTag<>("output");
@@ -87,7 +106,7 @@ public class SamzaTimerInternalsFactoryTest {
       Scheduler<KeyedTimerData<String>> timerRegistry,
       String timerStateId,
       SamzaPipelineOptions pipelineOptions,
-      RocksDbKeyValueStore store) {
+      KeyValueStore<ByteArray, byte[]> store) {
 
     final SamzaStoreStateInternals.Factory<?> nonKeyedStateInternalsFactory =
         createNonKeyedStateInternalsFactory(pipelineOptions, store);
@@ -121,18 +140,20 @@ public class SamzaTimerInternalsFactoryTest {
     final SamzaPipelineOptions pipelineOptions =
         PipelineOptionsFactory.create().as(SamzaPipelineOptions.class);
 
-    final RocksDbKeyValueStore store = createStore("store1");
+    final KeyValueStore<ByteArray, byte[]> store = createStore();
     final SamzaTimerInternalsFactory<String> timerInternalsFactory =
         createTimerInternalsFactory(null, "timer", pipelineOptions, store);
 
     final StateNamespace nameSpace = StateNamespaces.global();
     final TimerInternals timerInternals = timerInternalsFactory.timerInternalsForKey("testKey");
     final TimerInternals.TimerData timer1 =
-        TimerInternals.TimerData.of("timer1", nameSpace, new Instant(10), TimeDomain.EVENT_TIME);
+        TimerInternals.TimerData.of(
+            "timer1", nameSpace, new Instant(10), new Instant(10), TimeDomain.EVENT_TIME);
     timerInternals.setTimer(timer1);
 
     final TimerInternals.TimerData timer2 =
-        TimerInternals.TimerData.of("timer2", nameSpace, new Instant(100), TimeDomain.EVENT_TIME);
+        TimerInternals.TimerData.of(
+            "timer2", nameSpace, new Instant(100), new Instant(100), TimeDomain.EVENT_TIME);
     timerInternals.setTimer(timer2);
 
     timerInternalsFactory.setInputWatermark(new Instant(5));
@@ -157,7 +178,7 @@ public class SamzaTimerInternalsFactoryTest {
     final SamzaPipelineOptions pipelineOptions =
         PipelineOptionsFactory.create().as(SamzaPipelineOptions.class);
 
-    RocksDbKeyValueStore store = createStore("store2");
+    KeyValueStore<ByteArray, byte[]> store = createStore();
     final SamzaTimerInternalsFactory<String> timerInternalsFactory =
         createTimerInternalsFactory(null, "timer", pipelineOptions, store);
 
@@ -165,17 +186,19 @@ public class SamzaTimerInternalsFactoryTest {
     final StateNamespace nameSpace = StateNamespaces.global();
     final TimerInternals timerInternals = timerInternalsFactory.timerInternalsForKey(key);
     final TimerInternals.TimerData timer1 =
-        TimerInternals.TimerData.of("timer1", nameSpace, new Instant(10), TimeDomain.EVENT_TIME);
+        TimerInternals.TimerData.of(
+            "timer1", nameSpace, new Instant(10), new Instant(10), TimeDomain.EVENT_TIME);
     timerInternals.setTimer(timer1);
 
     final TimerInternals.TimerData timer2 =
-        TimerInternals.TimerData.of("timer2", nameSpace, new Instant(100), TimeDomain.EVENT_TIME);
+        TimerInternals.TimerData.of(
+            "timer2", nameSpace, new Instant(100), new Instant(100), TimeDomain.EVENT_TIME);
     timerInternals.setTimer(timer2);
 
     store.close();
 
     // restore by creating a new instance
-    store = createStore("store2");
+    store = createStore();
     final SamzaTimerInternalsFactory<String> restoredFactory =
         createTimerInternalsFactory(null, "timer", pipelineOptions, store);
 
@@ -200,7 +223,7 @@ public class SamzaTimerInternalsFactoryTest {
     final SamzaPipelineOptions pipelineOptions =
         PipelineOptionsFactory.create().as(SamzaPipelineOptions.class);
 
-    RocksDbKeyValueStore store = createStore("store3");
+    KeyValueStore<ByteArray, byte[]> store = createStore();
     TestTimerRegistry timerRegistry = new TestTimerRegistry();
 
     final SamzaTimerInternalsFactory<String> timerInternalsFactory =
@@ -210,12 +233,12 @@ public class SamzaTimerInternalsFactoryTest {
     final TimerInternals timerInternals = timerInternalsFactory.timerInternalsForKey("testKey");
     final TimerInternals.TimerData timer1 =
         TimerInternals.TimerData.of(
-            "timer1", nameSpace, new Instant(10), TimeDomain.PROCESSING_TIME);
+            "timer1", nameSpace, new Instant(10), new Instant(10), TimeDomain.PROCESSING_TIME);
     timerInternals.setTimer(timer1);
 
     final TimerInternals.TimerData timer2 =
         TimerInternals.TimerData.of(
-            "timer2", nameSpace, new Instant(100), TimeDomain.PROCESSING_TIME);
+            "timer2", nameSpace, new Instant(100), new Instant(100), TimeDomain.PROCESSING_TIME);
     timerInternals.setTimer(timer2);
 
     assertEquals(2, timerRegistry.timers.size());
@@ -223,7 +246,7 @@ public class SamzaTimerInternalsFactoryTest {
     store.close();
 
     // restore by creating a new instance
-    store = createStore("store3");
+    store = createStore();
     TestTimerRegistry restoredRegistry = new TestTimerRegistry();
     final SamzaTimerInternalsFactory<String> restoredFactory =
         createTimerInternalsFactory(restoredRegistry, "timer", pipelineOptions, store);
@@ -244,23 +267,26 @@ public class SamzaTimerInternalsFactoryTest {
     final SamzaPipelineOptions pipelineOptions =
         PipelineOptionsFactory.create().as(SamzaPipelineOptions.class);
 
-    RocksDbKeyValueStore store = createStore("store4");
+    KeyValueStore<ByteArray, byte[]> store = createStore();
     final SamzaTimerInternalsFactory<String> timerInternalsFactory =
         createTimerInternalsFactory(null, "timer", pipelineOptions, store);
 
     final StateNamespace nameSpace = StateNamespaces.global();
     final TimerInternals timerInternals = timerInternalsFactory.timerInternalsForKey("testKey");
     final TimerInternals.TimerData timer1 =
-        TimerInternals.TimerData.of("timerId", nameSpace, new Instant(10), TimeDomain.EVENT_TIME);
+        TimerInternals.TimerData.of(
+            "timerId", nameSpace, new Instant(10), new Instant(10), TimeDomain.EVENT_TIME);
     timerInternals.setTimer(timer1);
 
     // this timer should override the first timer
     final TimerInternals.TimerData timer2 =
-        TimerInternals.TimerData.of("timerId", nameSpace, new Instant(100), TimeDomain.EVENT_TIME);
+        TimerInternals.TimerData.of(
+            "timerId", nameSpace, new Instant(100), new Instant(100), TimeDomain.EVENT_TIME);
     timerInternals.setTimer(timer2);
 
     final TimerInternals.TimerData timer3 =
-        TimerInternals.TimerData.of("timerId2", nameSpace, new Instant(200), TimeDomain.EVENT_TIME);
+        TimerInternals.TimerData.of(
+            "timerId2", nameSpace, new Instant(200), new Instant(200), TimeDomain.EVENT_TIME);
     timerInternals.setTimer(timer3);
 
     // this timer shouldn't override since it has a different id
@@ -277,5 +303,22 @@ public class SamzaTimerInternalsFactoryTest {
     assertEquals(1, readyTimers.size());
 
     store.close();
+  }
+
+  @Test
+  public void testByteArray() {
+    ByteArray key1 = ByteArray.of("hello world".getBytes(StandardCharsets.UTF_8));
+    Serde<ByteArray> serde = new ByteArraySerdeFactory().getSerde("", null);
+    byte[] keyBytes = serde.toBytes(key1);
+    ByteArray key2 = serde.fromBytes(keyBytes);
+    assertEquals(key1, key2);
+
+    Map<ByteArray, String> map = new HashMap<>();
+    map.put(key1, "found it");
+    assertEquals("found it", map.get(key2));
+
+    map.remove(key1);
+    assertTrue(!map.containsKey(key2));
+    assertTrue(map.isEmpty());
   }
 }

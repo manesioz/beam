@@ -16,11 +16,14 @@
 # limitations under the License.
 #
 
+# pytype: skip-file
+
 from __future__ import absolute_import
 from __future__ import print_function
 
 
 def partition_function(test=None):
+  # pylint: disable=line-too-long, expression-not-assigned
   # [START partition_function]
   import apache_beam as beam
 
@@ -41,24 +44,20 @@ def partition_function(test=None):
         ])
         | 'Partition' >> beam.Partition(by_duration, len(durations))
     )
-    _ = (
-        annuals
-        | 'Annuals' >> beam.Map(lambda x: print('annual: ' + str(x)))
-    )
-    _ = (
-        biennials
-        | 'Biennials' >> beam.Map(lambda x: print('biennial: ' + str(x)))
-    )
-    _ = (
-        perennials
-        | 'Perennials' >> beam.Map(lambda x: print('perennial: ' + str(x)))
-    )
+
+    annuals | 'Annuals' >> beam.Map(lambda x: print('annual: {}'.format(x)))
+    biennials | 'Biennials' >> beam.Map(
+        lambda x: print('biennial: {}'.format(x)))
+    perennials | 'Perennials' >> beam.Map(
+        lambda x: print('perennial: {}'.format(x)))
     # [END partition_function]
+    # pylint: enable=line-too-long, expression-not-assigned
     if test:
       test(annuals, biennials, perennials)
 
 
 def partition_lambda(test=None):
+  # pylint: disable=line-too-long, expression-not-assigned
   # [START partition_lambda]
   import apache_beam as beam
 
@@ -79,24 +78,20 @@ def partition_lambda(test=None):
             len(durations),
         )
     )
-    _ = (
-        annuals
-        | 'Annuals' >> beam.Map(lambda x: print('annual: ' + str(x)))
-    )
-    _ = (
-        biennials
-        | 'Biennials' >> beam.Map(lambda x: print('biennial: ' + str(x)))
-    )
-    _ = (
-        perennials
-        | 'Perennials' >> beam.Map(lambda x: print('perennial: ' + str(x)))
-    )
+
+    annuals | 'Annuals' >> beam.Map(lambda x: print('annual: {}'.format(x)))
+    biennials | 'Biennials' >> beam.Map(
+        lambda x: print('biennial: {}'.format(x)))
+    perennials | 'Perennials' >> beam.Map(
+        lambda x: print('perennial: {}'.format(x)))
     # [END partition_lambda]
+    # pylint: enable=line-too-long, expression-not-assigned
     if test:
       test(annuals, biennials, perennials)
 
 
 def partition_multiple_arguments(test=None):
+  # pylint: disable=expression-not-assigned
   # [START partition_multiple_arguments]
   import apache_beam as beam
   import json
@@ -123,14 +118,10 @@ def partition_multiple_arguments(test=None):
         ])
         | 'Partition' >> beam.Partition(split_dataset, 2, ratio=[8, 2])
     )
-    _ = (
-        train_dataset
-        | 'Train' >> beam.Map(lambda x: print('train: ' + str(x)))
-    )
-    _ = (
-        test_dataset
-        | 'Test'  >> beam.Map(lambda x: print('test: ' + str(x)))
-    )
+
+    train_dataset | 'Train' >> beam.Map(lambda x: print('train: {}'.format(x)))
+    test_dataset | 'Test' >> beam.Map(lambda x: print('test: {}'.format(x)))
     # [END partition_multiple_arguments]
+    # pylint: enable=expression-not-assigned
     if test:
       test(train_dataset, test_dataset)

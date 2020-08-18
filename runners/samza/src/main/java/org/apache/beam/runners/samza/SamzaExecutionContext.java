@@ -105,7 +105,8 @@ public class SamzaExecutionContext implements ApplicationContainerContext {
 
         fnDataServer =
             GrpcFnServer.allocatePortAndCreateFor(
-                GrpcDataService.create(dataExecutor, OutboundObserverFactory.serverDirect()),
+                GrpcDataService.create(
+                    options, dataExecutor, OutboundObserverFactory.serverDirect()),
                 ServerFactory.createDefault());
         LOG.info("Started data server on port {}", fnDataServer.getServer().getPort());
 
@@ -121,7 +122,8 @@ public class SamzaExecutionContext implements ApplicationContainerContext {
         final InstructionRequestHandler instructionHandler =
             controlClientPool.getSource().take(SAMZA_WORKER_ID, Duration.ofMillis(waitTimeoutMs));
         final EnvironmentFactory environmentFactory =
-            environment -> RemoteEnvironment.forHandler(environment, instructionHandler);
+            (environment, workerId) ->
+                RemoteEnvironment.forHandler(environment, instructionHandler);
         // TODO: use JobBundleFactoryBase.WrappedSdkHarnessClient.wrapping
         jobBundleFactory =
             SingleEnvironmentInstanceJobBundleFactory.create(

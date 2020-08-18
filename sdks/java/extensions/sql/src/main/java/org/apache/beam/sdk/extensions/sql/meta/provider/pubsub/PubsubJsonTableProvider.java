@@ -17,83 +17,33 @@
  */
 package org.apache.beam.sdk.extensions.sql.meta.provider.pubsub;
 
-import static org.apache.beam.sdk.extensions.sql.impl.utils.CalciteUtils.TIMESTAMP;
-import static org.apache.beam.sdk.extensions.sql.impl.utils.CalciteUtils.VARCHAR;
-import static org.apache.beam.sdk.extensions.sql.meta.provider.pubsub.PubsubMessageToRow.ATTRIBUTES_FIELD;
-import static org.apache.beam.sdk.extensions.sql.meta.provider.pubsub.PubsubMessageToRow.PAYLOAD_FIELD;
-import static org.apache.beam.sdk.extensions.sql.meta.provider.pubsub.PubsubMessageToRow.TIMESTAMP_FIELD;
-import static org.apache.beam.sdk.schemas.Schema.TypeName.ROW;
-
-import com.alibaba.fastjson.JSONObject;
 import com.google.auto.service.AutoService;
 import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.annotations.Internal;
-import org.apache.beam.sdk.extensions.sql.meta.BeamSqlTable;
-import org.apache.beam.sdk.extensions.sql.meta.Table;
-import org.apache.beam.sdk.extensions.sql.meta.provider.InMemoryMetaTableProvider;
+import org.apache.beam.sdk.extensions.sql.meta.provider.SchemaIOTableProviderWrapper;
 import org.apache.beam.sdk.extensions.sql.meta.provider.TableProvider;
 import org.apache.beam.sdk.io.gcp.pubsub.PubsubIO;
-import org.apache.beam.sdk.schemas.Schema;
+import org.apache.beam.sdk.io.gcp.pubsub.PubsubSchemaIOProvider;
+import org.apache.beam.sdk.schemas.io.SchemaIOProvider;
 
 /**
- * {@link TableProvider} for {@link PubsubIOJsonTable} which wraps {@link PubsubIO} for consumption
- * by Beam SQL.
+ * {@link TableProvider} for {@link PubsubIO} for consumption by Beam SQL.
+ *
+ * <p>Passes the {@link PubsubSchemaIOProvider} to the generalized table provider wrapper, {@link
+ * SchemaIOTableProviderWrapper}, for Pubsub specific behavior.
  */
 @Internal
 @Experimental
 @AutoService(TableProvider.class)
-public class PubsubJsonTableProvider extends InMemoryMetaTableProvider {
+public class PubsubJsonTableProvider extends SchemaIOTableProviderWrapper {
+  @Override
+  public SchemaIOProvider getSchemaIOProvider() {
+    return new PubsubSchemaIOProvider();
+  }
 
+  // TODO[BEAM-10516]: remove this override after TableProvider problem is fixed
   @Override
   public String getTableType() {
     return "pubsub";
-  }
-
-  @Override
-  public BeamSqlTable buildBeamSqlTable(Table tableDefintion) {
-    validatePubsubMessageSchema(tableDefintion);
-
-    JSONObject tableProperties = tableDefintion.getProperties();
-    String timestampAttributeKey = tableProperties.getString("timestampAttributeKey");
-    String deadLetterQueue = tableProperties.getString("deadLetterQueue");
-    validateDlq(deadLetterQueue);
-
-    return PubsubIOJsonTable.builder()
-        .setSchema(tableDefintion.getSchema())
-        .setTimestampAttribute(timestampAttributeKey)
-        .setDeadLetterQueue(deadLetterQueue)
-        .setTopic(tableDefintion.getLocation())
-        .build();
-  }
-
-  private void validatePubsubMessageSchema(Table tableDefinition) {
-    Schema schema = tableDefinition.getSchema();
-
-    if (schema.getFieldCount() != 3
-        || !fieldPresent(schema, TIMESTAMP_FIELD, TIMESTAMP)
-        || !fieldPresent(
-            schema, ATTRIBUTES_FIELD, Schema.FieldType.map(VARCHAR.withNullable(false), VARCHAR))
-        || !(schema.hasField(PAYLOAD_FIELD)
-            && ROW.equals(schema.getField(PAYLOAD_FIELD).getType().getTypeName()))) {
-
-      throw new IllegalArgumentException(
-          "Unsupported schema specified for Pubsub source in CREATE TABLE. "
-              + "CREATE TABLE for Pubsub topic should define exactly the following fields: "
-              + "'event_timestamp' field of type 'TIMESTAMP', 'attributes' field of type "
-              + "MAP<VARCHAR, VARCHAR>, and 'payload' field of type 'ROW<...>' which matches the "
-              + "payload JSON format.");
-    }
-  }
-
-  private boolean fieldPresent(Schema schema, String field, Schema.FieldType expectedType) {
-    return schema.hasField(field)
-        && expectedType.equivalent(
-            schema.getField(field).getType(), Schema.EquivalenceNullablePolicy.IGNORE);
-  }
-
-  private void validateDlq(String deadLetterQueue) {
-    if (deadLetterQueue != null && deadLetterQueue.isEmpty()) {
-      throw new IllegalArgumentException("Dead letter queue topic name is not specified");
-    }
   }
 }

@@ -21,12 +21,13 @@ import static org.apache.beam.sdk.util.RowJsonUtils.newObjectMapperWith;
 import static org.apache.beam.sdk.util.RowJsonUtils.rowToJson;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.schemas.Schema;
-import org.apache.beam.sdk.util.RowJsonSerializer;
+import org.apache.beam.sdk.util.RowJson;
+import org.apache.beam.sdk.util.RowJson.RowJsonSerializer;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.Row;
+import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * <i>Experimental</i>
@@ -41,13 +42,17 @@ import org.apache.beam.sdk.values.Row;
 public class ToJson<T> extends PTransform<PCollection<T>, PCollection<String>> {
   private transient volatile @Nullable ObjectMapper objectMapper;
 
-  static <T> ToJson<T> of() {
-    return new ToJson<T>();
+  private ToJson() {}
+
+  public static <T> ToJson<T> of() {
+    return new ToJson<>();
   }
 
   @Override
   public PCollection<String> expand(PCollection<T> rows) {
     Schema inputSchema = rows.getSchema();
+    // Throw exception if this schema is not supported by RowJson
+    RowJson.verifySchemaSupported(inputSchema);
     SerializableFunction<T, Row> toRow = rows.getToRowFunction();
     return rows.apply(
         ParDo.of(

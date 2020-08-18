@@ -36,7 +36,6 @@ import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterables;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hdfs.DFSConfigKeys;
 
 /** {@link AutoService} registrar for the {@link HadoopFileSystem}. */
 @AutoService(FileSystemRegistrar.class)
@@ -45,8 +44,13 @@ public class HadoopFileSystemRegistrar implements FileSystemRegistrar {
 
   private static final List<String> HA_SCHEMES = Arrays.asList("hdfs", "webhdfs");
 
+  // Using hard-coded value to avoid incompatibility between HDFS client
+  // (org.apache.hadoop:hadoop-dfs-client) version 2.7's DFSConfigKeys and version 2.8's
+  // HdfsClientConfigKeys.
+  private static final String CONFIG_KEY_DFS_NAMESERVICES = "dfs.nameservices";
+
   @Override
-  public Iterable<FileSystem> fromOptions(@Nonnull PipelineOptions options) {
+  public Iterable<FileSystem<?>> fromOptions(@Nonnull PipelineOptions options) {
     final List<Configuration> configurations =
         options.as(HadoopFileSystemOptions.class).getHdfsConfiguration();
     if (configurations == null) {
@@ -59,7 +63,7 @@ public class HadoopFileSystemRegistrar implements FileSystemRegistrar {
             "The %s currently only supports at most a single Hadoop configuration.",
             HadoopFileSystemRegistrar.class.getSimpleName()));
 
-    final ImmutableList.Builder<FileSystem> builder = ImmutableList.builder();
+    final ImmutableList.Builder<FileSystem<?>> builder = ImmutableList.builder();
     final Set<String> registeredSchemes = new HashSet<>();
 
     // this will only do zero or one loop
@@ -75,7 +79,7 @@ public class HadoopFileSystemRegistrar implements FileSystemRegistrar {
       builder.add(new HadoopFileSystem(scheme, configuration));
       registeredSchemes.add(scheme);
     }
-    final String nameServices = configuration.get(DFSConfigKeys.DFS_NAMESERVICES);
+    final String nameServices = configuration.get(CONFIG_KEY_DFS_NAMESERVICES);
     if (nameServices != null && !nameServices.isEmpty()) {
       // we can register schemes that are support by HA cluster
       for (String scheme : HA_SCHEMES) {

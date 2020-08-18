@@ -17,20 +17,21 @@
  */
 package org.apache.beam.runners.dataflow.worker;
 
+import com.google.common.base.Strings;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.security.Security;
 import java.util.logging.Handler;
 import java.util.logging.LogManager;
-import javax.annotation.Nullable;
 import org.apache.beam.model.pipeline.v1.Endpoints;
 import org.apache.beam.model.pipeline.v1.RunnerApi;
 import org.apache.beam.runners.dataflow.options.DataflowWorkerHarnessOptions;
 import org.apache.beam.runners.dataflow.worker.ExperimentContext.Experiment;
 import org.apache.beam.runners.dataflow.worker.logging.DataflowWorkerLoggingInitializer;
 import org.apache.beam.runners.dataflow.worker.logging.DataflowWorkerLoggingMDC;
-import org.apache.beam.vendor.grpc.v1p21p0.com.google.protobuf.TextFormat;
+import org.apache.beam.vendor.grpc.v1p26p0.com.google.protobuf.TextFormat;
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.conscrypt.OpenSSLProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,6 +42,7 @@ public final class DataflowWorkerHarnessHelper {
 
   private static final String CONTROL_API_SERVICE_DESCRIPTOR = "CONTROL_API_SERVICE_DESCRIPTOR";
   private static final String LOGGING_API_SERVICE_DESCRIPTOR = "LOGGING_API_SERVICE_DESCRIPTOR";
+  private static final String STATUS_API_SERVICE_DESCRIPTOR = "STATUS_API_SERVICE_DESCRIPTOR";
   private static final String ROOT_LOGGER_NAME = "";
   private static final String PIPELINE_PATH = "PIPELINE_PATH";
 
@@ -113,8 +115,19 @@ public final class DataflowWorkerHarnessHelper {
     return parseApiServiceDescriptorFromText(System.getenv().get(CONTROL_API_SERVICE_DESCRIPTOR));
   }
 
+  public static Endpoints.@Nullable ApiServiceDescriptor getStatusDescriptor()
+      throws TextFormat.ParseException {
+    String statusApiDescriptor = System.getenv().get(STATUS_API_SERVICE_DESCRIPTOR);
+    if (Strings.isNullOrEmpty(statusApiDescriptor)) {
+      // Missing STATUS_API_SERVICE_DESCRIPTOR env var is a signal that the worker status API
+      // is unsupported by the current runner.
+      return null;
+    }
+    return parseApiServiceDescriptorFromText(statusApiDescriptor);
+  }
+
   // TODO: make env logic private to main() so it is never done outside of initializing the process
-  public static @Nullable RunnerApi.Pipeline getPipelineFromEnv() throws IOException {
+  public static RunnerApi.@Nullable Pipeline getPipelineFromEnv() throws IOException {
     String pipelinePath = System.getenv(PIPELINE_PATH);
     if (pipelinePath == null) {
       LOG.warn("Missing pipeline environment variable '{}'", PIPELINE_PATH);

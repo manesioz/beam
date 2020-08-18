@@ -21,6 +21,7 @@ import static org.apache.beam.sdk.io.jdbc.SchemaUtil.checkNullabilityForFields;
 import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions.checkArgument;
 
 import com.google.auto.value.AutoValue;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.io.IOException;
 import java.io.Serializable;
 import java.sql.Connection;
@@ -28,15 +29,17 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import javax.annotation.Nullable;
 import javax.sql.DataSource;
 import org.apache.beam.sdk.annotations.Experimental;
+import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.RowCoder;
 import org.apache.beam.sdk.options.ValueProvider;
@@ -71,6 +74,7 @@ import org.apache.commons.dbcp2.PoolableConnectionFactory;
 import org.apache.commons.dbcp2.PoolingDataSource;
 import org.apache.commons.pool2.impl.GenericObjectPool;
 import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -144,10 +148,29 @@ import org.slf4j.LoggerFactory;
  * );
  * }</pre>
  *
- * By default, the provided function instantiates a DataSource per execution thread. In some
- * circumstances, such as DataSources that have a pool of connections, this can quickly overwhelm
- * the database by requesting too many connections. In that case you should make the DataSource a
- * static singleton so it gets instantiated only once per JVM.
+ * <p>By default, the provided function requests a DataSource per execution thread. In some
+ * circumstances this can quickly overwhelm the database by requesting too many connections. In that
+ * case you should look into sharing a single instance of a {@link PoolingDataSource} across all the
+ * execution threads. For example:
+ *
+ * <pre>{@code
+ * private static class MyDataSourceProviderFn implements SerializableFunction<Void, DataSource> {
+ *   private static transient DataSource dataSource;
+ *
+ *   @Override
+ *   public synchronized DataSource apply(Void input) {
+ *     if (dataSource == null) {
+ *       dataSource = ... build data source ...
+ *     }
+ *     return dataSource;
+ *   }
+ * }
+ *
+ * pipeline.apply(JdbcIO.<KV<Integer, String>>read()
+ *   .withDataSourceProviderFn(new MyDataSourceProviderFn())
+ *   // ...
+ * );
+ * }</pre>
  *
  * <h3>Writing to JDBC datasource</h3>
  *
@@ -182,7 +205,7 @@ import org.slf4j.LoggerFactory;
  * Consider using <a href="https://en.wikipedia.org/wiki/Merge_(SQL)">MERGE ("upsert")
  * statements</a> supported by your database instead.
  */
-@Experimental(Experimental.Kind.SOURCE_SINK)
+@Experimental(Kind.SOURCE_SINK)
 public class JdbcIO {
 
   private static final Logger LOG = LoggerFactory.getLogger(JdbcIO.class);
@@ -200,7 +223,7 @@ public class JdbcIO {
   }
 
   /** Read Beam {@link Row}s from a JDBC data source. */
-  @Experimental(Experimental.Kind.SCHEMAS)
+  @Experimental(Kind.SCHEMAS)
   public static ReadRows readRows() {
     return new AutoValue_JdbcIO_ReadRows.Builder()
         .setFetchSize(DEFAULT_FETCH_SIZE)
@@ -225,6 +248,9 @@ public class JdbcIO {
 
   private static final long DEFAULT_BATCH_SIZE = 1000L;
   private static final int DEFAULT_FETCH_SIZE = 50_000;
+  // Default values used from fluent backoff.
+  private static final Duration DEFAULT_INITIAL_BACKOFF = Duration.standardSeconds(1);
+  private static final Duration DEFAULT_MAX_CUMULATIVE_BACKOFF = Duration.standardDays(1000);
 
   /**
    * Write data to a JDBC datasource.
@@ -239,6 +265,7 @@ public class JdbcIO {
     return new AutoValue_JdbcIO_WriteVoid.Builder<T>()
         .setBatchSize(DEFAULT_BATCH_SIZE)
         .setRetryStrategy(new DefaultRetryStrategy())
+        .setRetryConfiguration(RetryConfiguration.create(5, null, Duration.standardSeconds(5)))
         .build();
   }
 
@@ -271,23 +298,20 @@ public class JdbcIO {
    */
   @AutoValue
   public abstract static class DataSourceConfiguration implements Serializable {
-    @Nullable
-    abstract ValueProvider<String> getDriverClassName();
 
-    @Nullable
-    abstract ValueProvider<String> getUrl();
+    abstract @Nullable ValueProvider<String> getDriverClassName();
 
-    @Nullable
-    abstract ValueProvider<String> getUsername();
+    abstract @Nullable ValueProvider<String> getUrl();
 
-    @Nullable
-    abstract ValueProvider<String> getPassword();
+    abstract @Nullable ValueProvider<String> getUsername();
 
-    @Nullable
-    abstract ValueProvider<String> getConnectionProperties();
+    abstract @Nullable ValueProvider<String> getPassword();
 
-    @Nullable
-    abstract DataSource getDataSource();
+    abstract @Nullable ValueProvider<String> getConnectionProperties();
+
+    abstract @Nullable ValueProvider<Collection<String>> getConnectionInitSqls();
+
+    abstract @Nullable DataSource getDataSource();
 
     abstract Builder builder();
 
@@ -302,6 +326,8 @@ public class JdbcIO {
       abstract Builder setPassword(ValueProvider<String> password);
 
       abstract Builder setConnectionProperties(ValueProvider<String> connectionProperties);
+
+      abstract Builder setConnectionInitSqls(ValueProvider<Collection<String>> connectionInitSqls);
 
       abstract Builder setDataSource(DataSource dataSource);
 
@@ -369,6 +395,25 @@ public class JdbcIO {
       return builder().setConnectionProperties(connectionProperties).build();
     }
 
+    /**
+     * Sets the connection init sql statements to driver.connect(...).
+     *
+     * <p>NOTE - This property is not applicable across databases. Only MySQL and MariaDB support
+     * this. A Sql exception is thrown if your database does not support it.
+     */
+    public DataSourceConfiguration withConnectionInitSqls(Collection<String> connectionInitSqls) {
+      checkArgument(connectionInitSqls != null, "connectionInitSqls can not be null");
+      return withConnectionInitSqls(ValueProvider.StaticValueProvider.of(connectionInitSqls));
+    }
+
+    /** Same as {@link #withConnectionInitSqls(Collection)} but accepting a ValueProvider. */
+    public DataSourceConfiguration withConnectionInitSqls(
+        ValueProvider<Collection<String>> connectionInitSqls) {
+      checkArgument(connectionInitSqls != null, "connectionInitSqls can not be null");
+      checkArgument(!connectionInitSqls.get().isEmpty(), "connectionInitSqls can not be empty");
+      return builder().setConnectionInitSqls(connectionInitSqls).build();
+    }
+
     void populateDisplayData(DisplayData.Builder builder) {
       if (getDataSource() != null) {
         builder.addIfNotNull(DisplayData.item("dataSource", getDataSource().getClass().getName()));
@@ -397,6 +442,12 @@ public class JdbcIO {
         if (getConnectionProperties() != null && getConnectionProperties().get() != null) {
           basicDataSource.setConnectionProperties(getConnectionProperties().get());
         }
+        if (getConnectionInitSqls() != null
+            && getConnectionInitSqls().get() != null
+            && !getConnectionInitSqls().get().isEmpty()) {
+          basicDataSource.setConnectionInitSqls(getConnectionInitSqls().get());
+        }
+
         return basicDataSource;
       }
       return getDataSource();
@@ -414,16 +465,14 @@ public class JdbcIO {
 
   /** Implementation of {@link #readRows()}. */
   @AutoValue
-  @Experimental(Experimental.Kind.SCHEMAS)
+  @Experimental(Kind.SCHEMAS)
   public abstract static class ReadRows extends PTransform<PBegin, PCollection<Row>> {
-    @Nullable
-    abstract SerializableFunction<Void, DataSource> getDataSourceProviderFn();
 
-    @Nullable
-    abstract ValueProvider<String> getQuery();
+    abstract @Nullable SerializableFunction<Void, DataSource> getDataSourceProviderFn();
 
-    @Nullable
-    abstract StatementPreparator getStatementPreparator();
+    abstract @Nullable ValueProvider<String> getQuery();
+
+    abstract @Nullable StatementPreparator getStatementPreparator();
 
     abstract int getFetchSize();
 
@@ -445,6 +494,10 @@ public class JdbcIO {
       abstract Builder setOutputParallelization(boolean outputParallelization);
 
       abstract ReadRows build();
+    }
+
+    public ReadRows withDataSourceConfiguration(DataSourceConfiguration config) {
+      return withDataSourceProviderFn(new DataSourceProviderFromDataSourceConfiguration(config));
     }
 
     public ReadRows withDataSourceProviderFn(
@@ -507,6 +560,8 @@ public class JdbcIO {
       return rows;
     }
 
+    // Spotbugs seems to not understand the multi-statement try-with-resources
+    @SuppressFBWarnings("OBL_UNSATISFIED_OBLIGATION")
     private Schema inferBeamSchema() {
       DataSource ds = getDataSourceProviderFn().apply(null);
       try (Connection conn = ds.getConnection();
@@ -532,20 +587,16 @@ public class JdbcIO {
   /** Implementation of {@link #read}. */
   @AutoValue
   public abstract static class Read<T> extends PTransform<PBegin, PCollection<T>> {
-    @Nullable
-    abstract SerializableFunction<Void, DataSource> getDataSourceProviderFn();
 
-    @Nullable
-    abstract ValueProvider<String> getQuery();
+    abstract @Nullable SerializableFunction<Void, DataSource> getDataSourceProviderFn();
 
-    @Nullable
-    abstract StatementPreparator getStatementPreparator();
+    abstract @Nullable ValueProvider<String> getQuery();
 
-    @Nullable
-    abstract RowMapper<T> getRowMapper();
+    abstract @Nullable StatementPreparator getStatementPreparator();
 
-    @Nullable
-    abstract Coder<T> getCoder();
+    abstract @Nullable RowMapper<T> getRowMapper();
+
+    abstract @Nullable Coder<T> getCoder();
 
     abstract int getFetchSize();
 
@@ -668,20 +719,16 @@ public class JdbcIO {
   @AutoValue
   public abstract static class ReadAll<ParameterT, OutputT>
       extends PTransform<PCollection<ParameterT>, PCollection<OutputT>> {
-    @Nullable
-    abstract SerializableFunction<Void, DataSource> getDataSourceProviderFn();
 
-    @Nullable
-    abstract ValueProvider<String> getQuery();
+    abstract @Nullable SerializableFunction<Void, DataSource> getDataSourceProviderFn();
 
-    @Nullable
-    abstract PreparedStatementSetter<ParameterT> getParameterSetter();
+    abstract @Nullable ValueProvider<String> getQuery();
 
-    @Nullable
-    abstract RowMapper<OutputT> getRowMapper();
+    abstract @Nullable PreparedStatementSetter<ParameterT> getParameterSetter();
 
-    @Nullable
-    abstract Coder<OutputT> getCoder();
+    abstract @Nullable RowMapper<OutputT> getRowMapper();
+
+    abstract @Nullable Coder<OutputT> getCoder();
 
     abstract int getFetchSize();
 
@@ -792,7 +839,10 @@ public class JdbcIO {
         SchemaRegistry registry = input.getPipeline().getSchemaRegistry();
         Schema schema = registry.getSchema(typeDesc);
         output.setSchema(
-            schema, registry.getToRowFunction(typeDesc), registry.getFromRowFunction(typeDesc));
+            schema,
+            typeDesc,
+            registry.getToRowFunction(typeDesc),
+            registry.getFromRowFunction(typeDesc));
       } catch (NoSuchSchemaException e) {
         // ignore
       }
@@ -839,11 +889,16 @@ public class JdbcIO {
     @Setup
     public void setup() throws Exception {
       dataSource = dataSourceProviderFn.apply(null);
-      connection = dataSource.getConnection();
     }
 
     @ProcessElement
+    // Spotbugs seems to not understand the nested try-with-resources
+    @SuppressFBWarnings("OBL_UNSATISFIED_OBLIGATION")
     public void processElement(ProcessContext context) throws Exception {
+      // Only acquire the connection if we need to perform a read.
+      if (connection == null) {
+        connection = dataSource.getConnection();
+      }
       try (PreparedStatement statement =
           connection.prepareStatement(
               query.get(), ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY)) {
@@ -857,9 +912,71 @@ public class JdbcIO {
       }
     }
 
-    @Teardown
-    public void teardown() throws Exception {
-      connection.close();
+    @FinishBundle
+    public void finishBundle() throws Exception {
+      cleanUpConnection();
+    }
+
+    @Override
+    protected void finalize() throws Throwable {
+      cleanUpConnection();
+    }
+
+    private void cleanUpConnection() throws Exception {
+      if (connection != null) {
+        try {
+          connection.close();
+        } finally {
+          connection = null;
+        }
+      }
+    }
+  }
+
+  /**
+   * Builder used to help with retry configuration for {@link JdbcIO}. The retry configuration
+   * accepts maxAttempts and maxDuration for {@link FluentBackoff}.
+   */
+  @AutoValue
+  public abstract static class RetryConfiguration implements Serializable {
+
+    abstract int getMaxAttempts();
+
+    abstract @Nullable Duration getMaxDuration();
+
+    abstract @Nullable Duration getInitialDuration();
+
+    abstract RetryConfiguration.Builder builder();
+
+    @AutoValue.Builder
+    abstract static class Builder {
+      abstract Builder setMaxAttempts(int maxAttempts);
+
+      abstract Builder setMaxDuration(Duration maxDuration);
+
+      abstract Builder setInitialDuration(Duration initialDuration);
+
+      abstract RetryConfiguration build();
+    }
+
+    public static RetryConfiguration create(
+        int maxAttempts, @Nullable Duration maxDuration, @Nullable Duration initialDuration) {
+
+      if (maxDuration == null || maxDuration.equals(Duration.ZERO)) {
+        maxDuration = DEFAULT_MAX_CUMULATIVE_BACKOFF;
+      }
+
+      if (initialDuration == null || initialDuration.equals(Duration.ZERO)) {
+        initialDuration = DEFAULT_INITIAL_BACKOFF;
+      }
+
+      checkArgument(maxAttempts > 0, "maxAttempts must be greater than 0");
+
+      return new AutoValue_JdbcIO_RetryConfiguration.Builder()
+          .setMaxAttempts(maxAttempts)
+          .setInitialDuration(initialDuration)
+          .setMaxDuration(maxDuration)
+          .build();
     }
   }
 
@@ -900,10 +1017,7 @@ public class JdbcIO {
 
     /** See {@link WriteVoid#withDataSourceConfiguration(DataSourceConfiguration)}. */
     public Write<T> withDataSourceConfiguration(DataSourceConfiguration config) {
-      return new Write(
-          inner
-              .withDataSourceConfiguration(config)
-              .withDataSourceProviderFn(new DataSourceProviderFromDataSourceConfiguration(config)));
+      return new Write(inner.withDataSourceConfiguration(config));
     }
 
     /** See {@link WriteVoid#withDataSourceProviderFn(SerializableFunction)}. */
@@ -930,6 +1044,11 @@ public class JdbcIO {
     /** See {@link WriteVoid#withRetryStrategy(RetryStrategy)}. */
     public Write<T> withRetryStrategy(RetryStrategy retryStrategy) {
       return new Write(inner.withRetryStrategy(retryStrategy));
+    }
+
+    /** See {@link WriteVoid#withRetryConfiguration(RetryConfiguration)}. */
+    public Write<T> withRetryConfiguration(RetryConfiguration retryConfiguration) {
+      return new Write(inner.withRetryConfiguration(retryConfiguration));
     }
 
     /** See {@link WriteVoid#withTable(String)}. */
@@ -1102,22 +1221,20 @@ public class JdbcIO {
   /** A {@link PTransform} to write to a JDBC datasource. */
   @AutoValue
   public abstract static class WriteVoid<T> extends PTransform<PCollection<T>, PCollection<Void>> {
-    @Nullable
-    abstract SerializableFunction<Void, DataSource> getDataSourceProviderFn();
 
-    @Nullable
-    abstract ValueProvider<String> getStatement();
+    abstract @Nullable SerializableFunction<Void, DataSource> getDataSourceProviderFn();
+
+    abstract @Nullable ValueProvider<String> getStatement();
 
     abstract long getBatchSize();
 
-    @Nullable
-    abstract PreparedStatementSetter<T> getPreparedStatementSetter();
+    abstract @Nullable PreparedStatementSetter<T> getPreparedStatementSetter();
 
-    @Nullable
-    abstract RetryStrategy getRetryStrategy();
+    abstract @Nullable RetryStrategy getRetryStrategy();
 
-    @Nullable
-    abstract String getTable();
+    abstract @Nullable RetryConfiguration getRetryConfiguration();
+
+    abstract @Nullable String getTable();
 
     abstract Builder<T> toBuilder();
 
@@ -1133,6 +1250,8 @@ public class JdbcIO {
       abstract Builder<T> setPreparedStatementSetter(PreparedStatementSetter<T> setter);
 
       abstract Builder<T> setRetryStrategy(RetryStrategy deadlockPredicate);
+
+      abstract Builder<T> setRetryConfiguration(RetryConfiguration retryConfiguration);
 
       abstract Builder<T> setTable(String table);
 
@@ -1180,6 +1299,38 @@ public class JdbcIO {
       return toBuilder().setRetryStrategy(retryStrategy).build();
     }
 
+    /**
+     * When a SQL exception occurs, {@link Write} uses this {@link RetryConfiguration} to
+     * exponentially back off and retry the statements based on the {@link RetryConfiguration}
+     * mentioned.
+     *
+     * <p>Usage of RetryConfiguration -
+     *
+     * <pre>{@code
+     * pipeline.apply(JdbcIO.<T>write())
+     *    .withDataSourceConfiguration(...)
+     *    .withRetryStrategy(...)
+     *    .withRetryConfiguration(JdbcIO.RetryConfiguration.
+     *        create(5, Duration.standardSeconds(5), Duration.standardSeconds(1))
+     *
+     * }</pre>
+     *
+     * maxDuration and initialDuration are Nullable
+     *
+     * <pre>{@code
+     * pipeline.apply(JdbcIO.<T>write())
+     *    .withDataSourceConfiguration(...)
+     *    .withRetryStrategy(...)
+     *    .withRetryConfiguration(JdbcIO.RetryConfiguration.
+     *        create(5, null, null)
+     *
+     * }</pre>
+     */
+    public WriteVoid<T> withRetryConfiguration(RetryConfiguration retryConfiguration) {
+      checkArgument(retryConfiguration != null, "retryConfiguration can not be null");
+      return toBuilder().setRetryConfiguration(retryConfiguration).build();
+    }
+
     public WriteVoid<T> withTable(String table) {
       checkArgument(table != null, "table name can not be null");
       return toBuilder().setTable(table).build();
@@ -1200,17 +1351,11 @@ public class JdbcIO {
     private static class WriteFn<T> extends DoFn<T, Void> {
 
       private final WriteVoid<T> spec;
-
-      private static final int MAX_RETRIES = 5;
-      private static final FluentBackoff BUNDLE_WRITE_BACKOFF =
-          FluentBackoff.DEFAULT
-              .withMaxRetries(MAX_RETRIES)
-              .withInitialBackoff(Duration.standardSeconds(5));
-
       private DataSource dataSource;
       private Connection connection;
       private PreparedStatement preparedStatement;
       private final List<T> records = new ArrayList<>();
+      private static FluentBackoff retryBackOff;
 
       public WriteFn(WriteVoid<T> spec) {
         this.spec = spec;
@@ -1219,13 +1364,13 @@ public class JdbcIO {
       @Setup
       public void setup() {
         dataSource = spec.getDataSourceProviderFn().apply(null);
-      }
+        RetryConfiguration retryConfiguration = spec.getRetryConfiguration();
 
-      @StartBundle
-      public void startBundle() throws Exception {
-        connection = dataSource.getConnection();
-        connection.setAutoCommit(false);
-        preparedStatement = connection.prepareStatement(spec.getStatement().get());
+        retryBackOff =
+            FluentBackoff.DEFAULT
+                .withInitialBackoff(retryConfiguration.getInitialDuration())
+                .withMaxCumulativeBackoff(retryConfiguration.getMaxDuration())
+                .withMaxRetries(retryConfiguration.getMaxAttempts());
       }
 
       @ProcessElement
@@ -1252,13 +1397,30 @@ public class JdbcIO {
       @FinishBundle
       public void finishBundle() throws Exception {
         executeBatch();
+        cleanUpStatementAndConnection();
+      }
+
+      @Override
+      protected void finalize() throws Throwable {
+        cleanUpStatementAndConnection();
+      }
+
+      private void cleanUpStatementAndConnection() throws Exception {
         try {
           if (preparedStatement != null) {
-            preparedStatement.close();
+            try {
+              preparedStatement.close();
+            } finally {
+              preparedStatement = null;
+            }
           }
         } finally {
           if (connection != null) {
-            connection.close();
+            try {
+              connection.close();
+            } finally {
+              connection = null;
+            }
           }
         }
       }
@@ -1267,8 +1429,14 @@ public class JdbcIO {
         if (records.isEmpty()) {
           return;
         }
+        // Only acquire the connection if there is something to write.
+        if (connection == null) {
+          connection = dataSource.getConnection();
+          connection.setAutoCommit(false);
+          preparedStatement = connection.prepareStatement(spec.getStatement().get());
+        }
         Sleeper sleeper = Sleeper.DEFAULT;
-        BackOff backoff = BUNDLE_WRITE_BACKOFF.backoff();
+        BackOff backoff = retryBackOff.backoff();
         while (true) {
           try (PreparedStatement preparedStatement =
               connection.prepareStatement(spec.getStatement().get())) {
@@ -1334,79 +1502,78 @@ public class JdbcIO {
     }
   }
 
-  /** Wraps a {@link DataSourceConfiguration} to provide a {@link PoolingDataSource}. */
+  /**
+   * Wraps a {@link DataSourceConfiguration} to provide a {@link PoolingDataSource}.
+   *
+   * <p>At most a single {@link DataSource} instance will be constructed during pipeline execution
+   * for each unique {@link DataSourceConfiguration} within the pipeline.
+   */
   public static class PoolableDataSourceProvider
       implements SerializableFunction<Void, DataSource>, HasDisplayData {
-    private static PoolableDataSourceProvider instance;
-    private static transient DataSource source;
-    private static SerializableFunction<Void, DataSource> dataSourceProviderFn;
+    private static final ConcurrentHashMap<DataSourceConfiguration, DataSource> instances =
+        new ConcurrentHashMap<>();
+    private final DataSourceProviderFromDataSourceConfiguration config;
 
     private PoolableDataSourceProvider(DataSourceConfiguration config) {
-      dataSourceProviderFn = DataSourceProviderFromDataSourceConfiguration.of(config);
+      this.config = new DataSourceProviderFromDataSourceConfiguration(config);
     }
 
-    public static synchronized SerializableFunction<Void, DataSource> of(
-        DataSourceConfiguration config) {
-      if (instance == null) {
-        instance = new PoolableDataSourceProvider(config);
-      }
-      return instance;
+    public static SerializableFunction<Void, DataSource> of(DataSourceConfiguration config) {
+      return new PoolableDataSourceProvider(config);
     }
 
     @Override
     public DataSource apply(Void input) {
-      return buildDataSource(input);
-    }
-
-    static synchronized DataSource buildDataSource(Void input) {
-      if (source == null) {
-        DataSource basicSource = dataSourceProviderFn.apply(input);
-        DataSourceConnectionFactory connectionFactory =
-            new DataSourceConnectionFactory(basicSource);
-        PoolableConnectionFactory poolableConnectionFactory =
-            new PoolableConnectionFactory(connectionFactory, null);
-        GenericObjectPoolConfig poolConfig = new GenericObjectPoolConfig();
-        poolConfig.setMaxTotal(1);
-        poolConfig.setMinIdle(0);
-        poolConfig.setMinEvictableIdleTimeMillis(10000);
-        poolConfig.setSoftMinEvictableIdleTimeMillis(30000);
-        GenericObjectPool connectionPool =
-            new GenericObjectPool(poolableConnectionFactory, poolConfig);
-        poolableConnectionFactory.setPool(connectionPool);
-        poolableConnectionFactory.setDefaultAutoCommit(false);
-        poolableConnectionFactory.setDefaultReadOnly(false);
-        source = new PoolingDataSource(connectionPool);
-      }
-      return source;
+      return instances.computeIfAbsent(
+          config.config,
+          ignored -> {
+            DataSource basicSource = config.apply(input);
+            DataSourceConnectionFactory connectionFactory =
+                new DataSourceConnectionFactory(basicSource);
+            PoolableConnectionFactory poolableConnectionFactory =
+                new PoolableConnectionFactory(connectionFactory, null);
+            GenericObjectPoolConfig poolConfig = new GenericObjectPoolConfig();
+            poolConfig.setMinIdle(0);
+            poolConfig.setMinEvictableIdleTimeMillis(10000);
+            poolConfig.setSoftMinEvictableIdleTimeMillis(30000);
+            GenericObjectPool connectionPool =
+                new GenericObjectPool(poolableConnectionFactory, poolConfig);
+            poolableConnectionFactory.setPool(connectionPool);
+            poolableConnectionFactory.setDefaultAutoCommit(false);
+            poolableConnectionFactory.setDefaultReadOnly(false);
+            return new PoolingDataSource(connectionPool);
+          });
     }
 
     @Override
     public void populateDisplayData(DisplayData.Builder builder) {
-      if (dataSourceProviderFn instanceof HasDisplayData) {
-        ((HasDisplayData) dataSourceProviderFn).populateDisplayData(builder);
-      }
+      config.populateDisplayData(builder);
     }
   }
 
-  private static class DataSourceProviderFromDataSourceConfiguration
+  /**
+   * Wraps a {@link DataSourceConfiguration} to provide a {@link DataSource}.
+   *
+   * <p>At most a single {@link DataSource} instance will be constructed during pipeline execution
+   * for each unique {@link DataSourceConfiguration} within the pipeline.
+   */
+  public static class DataSourceProviderFromDataSourceConfiguration
       implements SerializableFunction<Void, DataSource>, HasDisplayData {
+    private static final ConcurrentHashMap<DataSourceConfiguration, DataSource> instances =
+        new ConcurrentHashMap<>();
     private final DataSourceConfiguration config;
-    private static DataSourceProviderFromDataSourceConfiguration instance;
 
     private DataSourceProviderFromDataSourceConfiguration(DataSourceConfiguration config) {
       this.config = config;
     }
 
     public static SerializableFunction<Void, DataSource> of(DataSourceConfiguration config) {
-      if (instance == null) {
-        instance = new DataSourceProviderFromDataSourceConfiguration(config);
-      }
-      return instance;
+      return new DataSourceProviderFromDataSourceConfiguration(config);
     }
 
     @Override
     public DataSource apply(Void input) {
-      return config.buildDatasource();
+      return instances.computeIfAbsent(config, DataSourceConfiguration::buildDatasource);
     }
 
     @Override

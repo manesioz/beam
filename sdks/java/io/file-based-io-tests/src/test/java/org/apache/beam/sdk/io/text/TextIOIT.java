@@ -19,7 +19,6 @@ package org.apache.beam.sdk.io.text;
 
 import static org.apache.beam.sdk.io.FileIO.ReadMatches.DirectoryTreatment;
 import static org.apache.beam.sdk.io.common.FileBasedIOITHelper.appendTimestampSuffix;
-import static org.apache.beam.sdk.io.common.FileBasedIOITHelper.getExpectedHashForLineCount;
 import static org.apache.beam.sdk.io.common.FileBasedIOITHelper.readFileBasedIOITPipelineOptions;
 
 import com.google.cloud.Timestamp;
@@ -42,6 +41,7 @@ import org.apache.beam.sdk.testutils.NamedTestResult;
 import org.apache.beam.sdk.testutils.metrics.IOITMetrics;
 import org.apache.beam.sdk.testutils.metrics.MetricsReader;
 import org.apache.beam.sdk.testutils.metrics.TimeMonitor;
+import org.apache.beam.sdk.testutils.publishing.InfluxDBSettings;
 import org.apache.beam.sdk.transforms.Combine;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.Values;
@@ -64,6 +64,8 @@ import org.slf4j.LoggerFactory;
  *  ./gradlew integrationTest -p sdks/java/io/file-based-io-tests
  *  -DintegrationTestPipelineOptions='[
  *  "--numberOfRecords=100000",
+ *  "--datasetSize=12345",
+ *  "--expectedHash=99f23ab",
  *  "--filenamePrefix=output_file_path",
  *  "--compressionType=GZIP"
  *  ]'
@@ -80,11 +82,14 @@ public class TextIOIT {
 
   private static String filenamePrefix;
   private static Integer numberOfTextLines;
+  private static Integer datasetSize;
+  private static String expectedHash;
   private static Compression compressionType;
   private static Integer numShards;
   private static String bigQueryDataset;
   private static String bigQueryTable;
   private static boolean gatherGcsPerformanceMetrics;
+  private static InfluxDBSettings settings;
   private static final String FILEIOIT_NAMESPACE = TextIOIT.class.getName();
 
   @Rule public TestPipeline pipeline = TestPipeline.create();
@@ -92,14 +97,21 @@ public class TextIOIT {
   @BeforeClass
   public static void setup() {
     FileBasedIOTestPipelineOptions options = readFileBasedIOITPipelineOptions();
-
+    datasetSize = options.getDatasetSize();
+    expectedHash = options.getExpectedHash();
     numberOfTextLines = options.getNumberOfRecords();
-    filenamePrefix = appendTimestampSuffix(options.getFilenamePrefix());
     compressionType = Compression.valueOf(options.getCompressionType());
+    filenamePrefix = appendTimestampSuffix(options.getFilenamePrefix());
     numShards = options.getNumberOfShards();
     bigQueryDataset = options.getBigQueryDataset();
     bigQueryTable = options.getBigQueryTable();
     gatherGcsPerformanceMetrics = options.getReportGcsPerformanceMetrics();
+    settings =
+        InfluxDBSettings.builder()
+            .withHost(options.getInfluxHost())
+            .withDatabase(options.getInfluxDatabase())
+            .withMeasurement(options.getInfluxMeasurement())
+            .get();
   }
 
   @Test
@@ -137,7 +149,6 @@ public class TextIOIT {
                 "Collect read end time", ParDo.of(new TimeMonitor<>(FILEIOIT_NAMESPACE, "endTime")))
             .apply("Calculate hashcode", Combine.globally(new HashingFn()));
 
-    String expectedHash = getExpectedHashForLineCount(numberOfTextLines);
     PAssert.thatSingleton(consolidatedHashcode).isEqualTo(expectedHash);
 
     testFilenames.apply(
@@ -158,8 +169,10 @@ public class TextIOIT {
     Set<Function<MetricsReader, NamedTestResult>> metricSuppliers =
         fillMetricSuppliers(uuid, timestamp.toString());
 
-    new IOITMetrics(metricSuppliers, result, FILEIOIT_NAMESPACE, uuid, timestamp.toString())
-        .publish(bigQueryDataset, bigQueryTable);
+    final IOITMetrics metrics =
+        new IOITMetrics(metricSuppliers, result, FILEIOIT_NAMESPACE, uuid, timestamp.toString());
+    metrics.publish(bigQueryDataset, bigQueryTable);
+    metrics.publishToInflux(settings);
   }
 
   private Set<Function<MetricsReader, NamedTestResult>> fillMetricSuppliers(
@@ -189,7 +202,10 @@ public class TextIOIT {
           double runTime = (readEndTime - writeStartTime) / 1e3;
           return NamedTestResult.create(uuid, timestamp, "run_time", runTime);
         });
-
+    if (datasetSize != null) {
+      metricSuppliers.add(
+          (ignored) -> NamedTestResult.create(uuid, timestamp, "dataset_size", datasetSize));
+    }
     if (gatherGcsPerformanceMetrics) {
       metricSuppliers.add(
           reader -> {

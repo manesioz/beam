@@ -19,8 +19,9 @@ import groovy.json.JsonOutput
  */
 
 plugins { id 'org.apache.beam.module' }
-applyJavaNature(
+applyJavaNature(enableChecker:false,
   automaticModuleName: 'org.apache.beam.sdk.extensions.sql.jdbc',
+  ignoreRawtypeErrors: true,
   exportJavadoc: false,
   testShadowJar: true,
   validateShadowJar: false,
@@ -36,7 +37,6 @@ dependencies {
   compile "jline:jline:2.14.6"
   compile "sqlline:sqlline:1.4.0"
   compile library.java.slf4j_jdk14
-  compile library.java.guava
   testCompile project(path: ":sdks:java:io:google-cloud-platform", configuration: "testRuntime")
   testCompile library.java.junit
   testCompile library.java.hamcrest_core

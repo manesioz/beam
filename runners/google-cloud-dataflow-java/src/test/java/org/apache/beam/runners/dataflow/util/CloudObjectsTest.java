@@ -51,10 +51,10 @@ import org.apache.beam.sdk.coders.SerializableCoder;
 import org.apache.beam.sdk.coders.SetCoder;
 import org.apache.beam.sdk.coders.StructuredCoder;
 import org.apache.beam.sdk.coders.VarLongCoder;
-import org.apache.beam.sdk.schemas.LogicalTypes;
 import org.apache.beam.sdk.schemas.Schema;
 import org.apache.beam.sdk.schemas.Schema.FieldType;
 import org.apache.beam.sdk.schemas.SchemaCoder;
+import org.apache.beam.sdk.schemas.logicaltypes.FixedBytes;
 import org.apache.beam.sdk.transforms.SerializableFunction;
 import org.apache.beam.sdk.transforms.join.CoGbkResult.CoGbkResultCoder;
 import org.apache.beam.sdk.transforms.join.CoGbkResultSchema;
@@ -65,9 +65,11 @@ import org.apache.beam.sdk.util.InstanceBuilder;
 import org.apache.beam.sdk.util.WindowedValue;
 import org.apache.beam.sdk.values.Row;
 import org.apache.beam.sdk.values.TupleTag;
+import org.apache.beam.sdk.values.TypeDescriptors;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList.Builder;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Lists;
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.junit.Test;
 import org.junit.experimental.runners.Enclosed;
 import org.junit.runner.RunWith;
@@ -90,7 +92,7 @@ public class CloudObjectsTest {
           .addDoubleField("double")
           .addStringField("string")
           .addArrayField("list_int32", FieldType.INT32)
-          .addLogicalTypeField("fixed_bytes", LogicalTypes.FixedBytes.of(4))
+          .addLogicalTypeField("fixed_bytes", FixedBytes.of(4))
           .build();
 
   /** Tests that all of the Default Coders are tested. */
@@ -165,8 +167,15 @@ public class CloudObjectsTest {
                       CoGbkResultSchema.of(
                           ImmutableList.of(new TupleTag<Long>(), new TupleTag<byte[]>())),
                       UnionCoder.of(ImmutableList.of(VarLongCoder.of(), ByteArrayCoder.of()))))
-              .add(SchemaCoder.of(Schema.builder().build(), new RowIdentity(), new RowIdentity()))
-              .add(SchemaCoder.of(TEST_SCHEMA, new RowIdentity(), new RowIdentity()));
+              .add(
+                  SchemaCoder.of(
+                      Schema.builder().build(),
+                      TypeDescriptors.rows(),
+                      new RowIdentity(),
+                      new RowIdentity()))
+              .add(
+                  SchemaCoder.of(
+                      TEST_SCHEMA, TypeDescriptors.rows(), new RowIdentity(), new RowIdentity()));
       for (Class<? extends Coder> atomicCoder :
           DefaultCoderCloudObjectTranslatorRegistrar.KNOWN_ATOMIC_CODERS) {
         dataBuilder.add(InstanceBuilder.ofType(atomicCoder).fromFactoryMethod("of").build());
@@ -243,7 +252,7 @@ public class CloudObjectsTest {
     }
 
     @Override
-    public boolean equals(Object other) {
+    public boolean equals(@Nullable Object other) {
       return other != null && getClass().equals(other.getClass());
     }
 
@@ -285,7 +294,7 @@ public class CloudObjectsTest {
     }
 
     @Override
-    public boolean equals(Object o) {
+    public boolean equals(@Nullable Object o) {
       if (this == o) {
         return true;
       }

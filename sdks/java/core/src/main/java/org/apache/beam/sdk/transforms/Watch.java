@@ -36,8 +36,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
+import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.coders.AtomicCoder;
 import org.apache.beam.sdk.coders.CannotProvideCoderException;
 import org.apache.beam.sdk.coders.Coder;
@@ -55,8 +55,11 @@ import org.apache.beam.sdk.transforms.Contextful.Fn;
 import org.apache.beam.sdk.transforms.DoFn.BoundedPerElement;
 import org.apache.beam.sdk.transforms.DoFn.UnboundedPerElement;
 import org.apache.beam.sdk.transforms.Watch.Growth.PollResult;
+import org.apache.beam.sdk.transforms.splittabledofn.ManualWatermarkEstimator;
 import org.apache.beam.sdk.transforms.splittabledofn.OffsetRangeTracker;
 import org.apache.beam.sdk.transforms.splittabledofn.RestrictionTracker;
+import org.apache.beam.sdk.transforms.splittabledofn.SplitResult;
+import org.apache.beam.sdk.transforms.splittabledofn.WatermarkEstimators;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.util.VarInt;
 import org.apache.beam.sdk.values.KV;
@@ -75,6 +78,7 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.hash.Funnel;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.hash.Funnels;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.hash.HashCode;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.hash.Hashing;
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.joda.time.ReadableDuration;
@@ -121,7 +125,7 @@ import org.slf4j.LoggerFactory;
  * <p>Note: This transform works only in runners supporting Splittable DoFn: see <a
  * href="https://beam.apache.org/documentation/runners/capability-matrix/">capability matrix</a>.
  */
-@Experimental(Experimental.Kind.SPLITTABLE_DO_FN)
+@Experimental(Kind.SPLITTABLE_DO_FN)
 public class Watch {
   private static final Logger LOG = LoggerFactory.getLogger(Watch.class);
 
@@ -171,7 +175,7 @@ public class Watch {
     public static final class PollResult<OutputT> {
       private final List<TimestampedValue<OutputT>> outputs;
       // null means unspecified (infer automatically).
-      @Nullable private final Instant watermark;
+      private final @Nullable Instant watermark;
 
       private PollResult(List<TimestampedValue<OutputT>> outputs, @Nullable Instant watermark) {
         this.outputs = outputs;
@@ -255,7 +259,7 @@ public class Watch {
       }
 
       @Override
-      public boolean equals(Object o) {
+      public boolean equals(@Nullable Object o) {
         if (this == o) {
           return true;
         }
@@ -608,20 +612,15 @@ public class Watch {
 
     abstract Contextful<PollFn<InputT, OutputT>> getPollFn();
 
-    @Nullable
-    abstract SerializableFunction<OutputT, KeyT> getOutputKeyFn();
+    abstract @Nullable SerializableFunction<OutputT, KeyT> getOutputKeyFn();
 
-    @Nullable
-    abstract Coder<KeyT> getOutputKeyCoder();
+    abstract @Nullable Coder<KeyT> getOutputKeyCoder();
 
-    @Nullable
-    abstract Duration getPollInterval();
+    abstract @Nullable Duration getPollInterval();
 
-    @Nullable
-    abstract TerminationCondition<InputT, ?> getTerminationPerInput();
+    abstract @Nullable TerminationCondition<InputT, ?> getTerminationPerInput();
 
-    @Nullable
-    abstract Coder<OutputT> getOutputCoder();
+    abstract @Nullable Coder<OutputT> getOutputCoder();
 
     abstract Builder<InputT, OutputT, KeyT> toBuilder();
 
@@ -752,18 +751,29 @@ public class Watch {
       while (tracker.tryClaim(position)) {
         TimestampedValue<OutputT> value = c.element().getValue().get((int) position);
         c.outputWithTimestamp(KV.of(c.element().getKey(), value.getValue()), value.getTimestamp());
-        c.updateWatermark(value.getTimestamp());
         position += 1L;
       }
     }
 
+    @GetInitialWatermarkEstimatorState
+    public Instant getInitialWatermarkEstimatorState(@Timestamp Instant currentElementTimestamp) {
+      return currentElementTimestamp;
+    }
+
+    @NewWatermarkEstimator
+    public WatermarkEstimators.MonotonicallyIncreasing newWatermarkEstimator(
+        @WatermarkEstimatorState Instant watermarkEstimatorState) {
+      return new WatermarkEstimators.MonotonicallyIncreasing(watermarkEstimatorState);
+    }
+
     @GetInitialRestriction
-    public OffsetRange getInitialRestriction(KV<InputT, List<TimestampedValue<OutputT>>> element) {
+    public OffsetRange getInitialRestriction(
+        @Element KV<InputT, List<TimestampedValue<OutputT>>> element) {
       return new OffsetRange(0, element.getValue().size());
     }
 
     @NewTracker
-    public OffsetRangeTracker newTracker(OffsetRange restriction) {
+    public OffsetRangeTracker newTracker(@Restriction OffsetRange restriction) {
       return restriction.newTracker();
     }
 
@@ -803,10 +813,22 @@ public class Watch {
           };
     }
 
+    @GetInitialWatermarkEstimatorState
+    public Instant getInitialWatermarkEstimatorState(@Timestamp Instant currentElementTimestamp) {
+      return currentElementTimestamp;
+    }
+
+    @NewWatermarkEstimator
+    public WatermarkEstimators.Manual newWatermarkEstimator(
+        @WatermarkEstimatorState Instant watermarkEstimatorState) {
+      return new WatermarkEstimators.Manual(watermarkEstimatorState);
+    }
+
     @ProcessElement
     public ProcessContinuation process(
         ProcessContext c,
-        RestrictionTracker<GrowthState, KV<Growth.PollResult<OutputT>, TerminationStateT>> tracker)
+        RestrictionTracker<GrowthState, KV<Growth.PollResult<OutputT>, TerminationStateT>> tracker,
+        ManualWatermarkEstimator<Instant> watermarkEstimator)
         throws Exception {
 
       GrowthState currentRestriction = tracker.currentRestriction();
@@ -821,9 +843,7 @@ public class Watch {
                 priorPoll.getOutputs().size());
             c.output(KV.of(c.element(), priorPoll.getOutputs()));
           }
-          if (priorPoll.getWatermark() != null) {
-            c.updateWatermark(priorPoll.getWatermark());
-          }
+          watermarkEstimator.setWatermark(priorPoll.getWatermark());
         }
         return stop();
       }
@@ -865,7 +885,7 @@ public class Watch {
       }
 
       if (newResults.getWatermark() != null) {
-        c.updateWatermark(newResults.getWatermark());
+        watermarkEstimator.setWatermark(newResults.getWatermark());
       }
 
       Instant currentTime = Instant.now();
@@ -923,12 +943,13 @@ public class Watch {
     }
 
     @GetInitialRestriction
-    public GrowthState getInitialRestriction(InputT element) {
+    public GrowthState getInitialRestriction(@Element InputT element) {
       return PollingGrowthState.of(getTerminationCondition().forNewInput(Instant.now(), element));
     }
 
     @NewTracker
-    public GrowthTracker<OutputT, TerminationStateT> newTracker(GrowthState restriction) {
+    public GrowthTracker<OutputT, TerminationStateT> newTracker(
+        @Restriction GrowthState restriction) {
       return new GrowthTracker<>(restriction, coderFunnel);
     }
 
@@ -990,8 +1011,7 @@ public class Watch {
     // in case of pipeline update. TODO: do this.
     public abstract ImmutableMap<HashCode, Instant> getCompleted();
 
-    @Nullable
-    public abstract Instant getPollWatermark();
+    public abstract @Nullable Instant getPollWatermark();
 
     public abstract TerminationStateT getTerminationState();
   }
@@ -1007,9 +1027,9 @@ public class Watch {
     private final Funnel<OutputT> coderFunnel;
 
     // non-null after first successful tryClaim()
-    @Nullable private Growth.PollResult<OutputT> claimedPollResult;
-    @Nullable private TerminationStateT claimedTerminationState;
-    @Nullable private ImmutableMap<HashCode, Instant> claimedHashes;
+    private Growth.@Nullable PollResult<OutputT> claimedPollResult;
+    private @Nullable TerminationStateT claimedTerminationState;
+    private @Nullable ImmutableMap<HashCode, Instant> claimedHashes;
 
     // The restriction describing the entire work to be done by the current ProcessElement call.
     private GrowthState state;
@@ -1028,7 +1048,10 @@ public class Watch {
     }
 
     @Override
-    public GrowthState checkpoint() {
+    public SplitResult<GrowthState> trySplit(double fractionOfRemainder) {
+      // TODO(BEAM-8873): Add support for splitting off a fixed amount of work for this restriction
+      // instead of only supporting checkpointing.
+
       // residual should contain exactly the work *not* claimed in the current ProcessElement call -
       // unclaimed pending outputs or future polling output
       GrowthState residual;
@@ -1061,7 +1084,7 @@ public class Watch {
       }
 
       shouldStop = true;
-      return residual;
+      return SplitResult.of(state, residual);
     }
 
     private HashCode hash128(OutputT value) {
@@ -1072,6 +1095,14 @@ public class Watch {
     public void checkDone() throws IllegalStateException {
       checkState(
           shouldStop, "Missing tryClaim()/checkpoint() call. Expected " + "one or the other.");
+    }
+
+    @Override
+    public IsBounded isBounded() {
+      if (state == EMPTY_STATE || state instanceof NonPollingGrowthState) {
+        return IsBounded.BOUNDED;
+      }
+      return IsBounded.UNBOUNDED;
     }
 
     @Override

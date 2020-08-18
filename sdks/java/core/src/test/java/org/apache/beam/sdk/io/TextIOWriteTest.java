@@ -41,7 +41,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
-import javax.annotation.Nullable;
 import org.apache.beam.sdk.coders.AvroCoder;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.DefaultCoder;
@@ -75,6 +74,7 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.FluentIt
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterables;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Lists;
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Duration;
 import org.junit.Rule;
 import org.junit.Test;
@@ -639,6 +639,10 @@ public class TextIOWriteTest {
   @Test
   @Category(NeedsRunner.class)
   public void testWindowedWritesWithOnceTrigger() throws Throwable {
+    p.enableAbandonedNodeEnforcement(false);
+    expectedException.expect(IllegalArgumentException.class);
+    expectedException.expectMessage("Unsafe trigger");
+
     // Tests for https://issues.apache.org/jira/browse/BEAM-3169
     PCollection<String> data =
         p.apply(Create.of("0", "1", "2"))
@@ -660,17 +664,6 @@ public class TextIOWriteTest {
                     .<Void>withOutputFilenames())
             .getPerDestinationOutputFilenames()
             .apply(Values.create());
-
-    PAssert.that(
-            filenames
-                .apply(FileIO.matchAll())
-                .apply(FileIO.readMatches())
-                .apply(TextIO.readFiles()))
-        .containsInAnyOrder("0", "1", "2");
-
-    PAssert.that(filenames.apply(TextIO.readAll())).containsInAnyOrder("0", "1", "2");
-
-    p.run();
   }
 
   @Test

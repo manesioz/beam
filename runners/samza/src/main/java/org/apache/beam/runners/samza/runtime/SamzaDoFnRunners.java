@@ -37,6 +37,7 @@ import org.apache.beam.runners.samza.SamzaPipelineOptions;
 import org.apache.beam.runners.samza.metrics.DoFnRunnerWithMetrics;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.fn.data.FnDataReceiver;
+import org.apache.beam.sdk.state.BagState;
 import org.apache.beam.sdk.state.TimeDomain;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.DoFnSchemaInformation;
@@ -84,7 +85,7 @@ public class SamzaDoFnRunners {
 
     final SamzaExecutionContext executionContext =
         (SamzaExecutionContext) context.getApplicationContainerContext();
-    if (signature.usesState()) {
+    if (DoFnSignatures.isStateful(doFn)) {
       keyedInternals = new KeyedInternals(stateInternalsFactory, timerInternalsFactory);
       stateInternals = keyedInternals.stateInternals();
       timerInternals = keyedInternals.timerInternals();
@@ -94,6 +95,7 @@ public class SamzaDoFnRunners {
       timerInternals = timerInternalsFactory.timerInternalsForKey(null);
     }
 
+    final StepContext stepContext = createStepContext(stateInternals, timerInternals);
     final DoFnRunner<InT, FnOutT> underlyingRunner =
         DoFnRunners.simpleRunner(
             pipelineOptions,
@@ -102,7 +104,7 @@ public class SamzaDoFnRunners {
             outputManager,
             mainOutputTag,
             sideOutputTags,
-            createStepContext(stateInternals, timerInternals),
+            stepContext,
             inputCoder,
             outputCoders,
             windowingStrategy,
@@ -119,7 +121,9 @@ public class SamzaDoFnRunners {
       final DoFnRunner<InT, FnOutT> statefulDoFnRunner =
           DoFnRunners.defaultStatefulDoFnRunner(
               doFn,
+              inputCoder,
               doFnRunnerWithMetrics,
+              stepContext,
               windowingStrategy,
               new StatefulDoFnRunner.TimeInternalsCleanupTimer(timerInternals, windowingStrategy),
               createStateCleaner(doFn, windowingStrategy, keyedInternals.stateInternals()));
@@ -163,6 +167,8 @@ public class SamzaDoFnRunners {
 
   /** Create DoFnRunner for portable runner. */
   public static <InT, FnOutT> DoFnRunner<InT, FnOutT> createPortable(
+      SamzaPipelineOptions pipelineOptions,
+      BagState<WindowedValue<InT>> bundledEventsBag,
       DoFnRunners.OutputManager outputManager,
       StageBundleFactory stageBundleFactory,
       TupleTag<FnOutT> mainOutputTag,
@@ -173,7 +179,7 @@ public class SamzaDoFnRunners {
         (SamzaExecutionContext) context.getApplicationContainerContext();
     final DoFnRunner<InT, FnOutT> sdkHarnessDoFnRunner =
         new SdkHarnessDoFnRunner<>(
-            outputManager, stageBundleFactory, mainOutputTag, idToTupleTagMap);
+            outputManager, stageBundleFactory, mainOutputTag, idToTupleTagMap, bundledEventsBag);
     return DoFnRunnerWithMetrics.wrap(
         sdkHarnessDoFnRunner, executionContext.getMetricsContainer(), transformFullName);
   }
@@ -184,23 +190,25 @@ public class SamzaDoFnRunners {
     private final TupleTag<FnOutT> mainOutputTag;
     private final Map<String, TupleTag<?>> idToTupleTagMap;
     private final LinkedBlockingQueue<KV<String, FnOutT>> outputQueue = new LinkedBlockingQueue<>();
+    private final BagState<WindowedValue<InT>> bundledEventsBag;
+    private RemoteBundle remoteBundle;
+    private FnDataReceiver<WindowedValue<?>> inputReceiver;
 
     private SdkHarnessDoFnRunner(
         DoFnRunners.OutputManager outputManager,
         StageBundleFactory stageBundleFactory,
         TupleTag<FnOutT> mainOutputTag,
-        Map<String, TupleTag<?>> idToTupleTagMap) {
+        Map<String, TupleTag<?>> idToTupleTagMap,
+        BagState<WindowedValue<InT>> bundledEventsBag) {
       this.outputManager = outputManager;
       this.stageBundleFactory = stageBundleFactory;
       this.mainOutputTag = mainOutputTag;
       this.idToTupleTagMap = idToTupleTagMap;
+      this.bundledEventsBag = bundledEventsBag;
     }
 
     @Override
-    public void startBundle() {}
-
-    @Override
-    public void processElement(WindowedValue<InT> elem) {
+    public void startBundle() {
       try {
         OutputReceiverFactory receiverFactory =
             new OutputReceiverFactory() {
@@ -213,31 +221,75 @@ public class SamzaDoFnRunners {
               }
             };
 
-        try (RemoteBundle bundle =
+        remoteBundle =
             stageBundleFactory.getBundle(
                 receiverFactory,
                 StateRequestHandler.unsupported(),
-                BundleProgressHandler.ignored())) {
-          Iterables.getOnlyElement(bundle.getInputReceivers().values()).accept(elem);
-        }
+                BundleProgressHandler.ignored());
 
-        // RemoteBundle close blocks until all results are received
-        KV<String, FnOutT> result;
-        while ((result = outputQueue.poll()) != null) {
-          outputManager.output(
-              idToTupleTagMap.get(result.getKey()), (WindowedValue) result.getValue());
-        }
+        // TODO: side input support needs to implement to handle this properly
+        inputReceiver = Iterables.getOnlyElement(remoteBundle.getInputReceivers().values());
+        bundledEventsBag
+            .read()
+            .forEach(
+                elem -> {
+                  try {
+                    inputReceiver.accept(elem);
+                  } catch (Exception e) {
+                    throw new RuntimeException(e);
+                  }
+                });
       } catch (Exception e) {
         throw new RuntimeException(e);
       }
     }
 
     @Override
-    public void onTimer(
-        String timerId, BoundedWindow window, Instant timestamp, TimeDomain timeDomain) {}
+    public void processElement(WindowedValue<InT> elem) {
+      try {
+        bundledEventsBag.add(elem);
+        inputReceiver.accept(elem);
+        emitResults();
+      } catch (Exception e) {
+        throw new RuntimeException(e);
+      }
+    }
+
+    private void emitResults() {
+      KV<String, FnOutT> result;
+      while ((result = outputQueue.poll()) != null) {
+        outputManager.output(
+            idToTupleTagMap.get(result.getKey()), (WindowedValue) result.getValue());
+      }
+    }
 
     @Override
-    public void finishBundle() {}
+    public <KeyT> void onTimer(
+        String timerId,
+        String timerFamilyId,
+        KeyT key,
+        BoundedWindow window,
+        Instant timestamp,
+        Instant outputTimestamp,
+        TimeDomain timeDomain) {}
+
+    @Override
+    public void finishBundle() {
+      try {
+        // RemoteBundle close blocks until all results are received
+        remoteBundle.close();
+        emitResults();
+        bundledEventsBag.clear();
+      } catch (Exception e) {
+        throw new RuntimeException("Failed to finish remote bundle", e);
+      } finally {
+        remoteBundle = null;
+        inputReceiver = null;
+      }
+    }
+
+    @Override
+    public <KeyT> void onWindowExpiration(BoundedWindow window, Instant timestamp, KeyT key) {}
 
     @Override
     public DoFn<InT, FnOutT> getFn() {

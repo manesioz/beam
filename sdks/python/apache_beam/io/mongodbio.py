@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+
 """This module implements IO classes to read and write data on MongoDB.
 
 
@@ -51,6 +52,8 @@ Example usage::
 No backward compatibility guarantees. Everything in this module is experimental.
 """
 
+# pytype: skip-file
+
 from __future__ import absolute_import
 from __future__ import division
 
@@ -66,6 +69,8 @@ from apache_beam.transforms import PTransform
 from apache_beam.transforms import Reshuffle
 from apache_beam.utils.annotations import experimental
 
+_LOGGER = logging.getLogger(__name__)
+
 try:
   # Mongodb has its own bundled bson, which is not compatible with bson pakcage.
   # (https://github.com/py-bson/bson/issues/82). Try to import objectid and if
@@ -80,23 +85,23 @@ try:
   from pymongo import ReplaceOne
 except ImportError:
   objectid = None
-  logging.warning("Could not find a compatible bson package.")
+  _LOGGER.warning("Could not find a compatible bson package.")
 
 __all__ = ['ReadFromMongoDB', 'WriteToMongoDB']
 
 
 @experimental()
 class ReadFromMongoDB(PTransform):
-  """A ``PTransfrom`` to read MongoDB documents into a ``PCollection``.
+  """A ``PTransform`` to read MongoDB documents into a ``PCollection``.
   """
-
-  def __init__(self,
-               uri='mongodb://localhost:27017',
-               db=None,
-               coll=None,
-               filter=None,
-               projection=None,
-               extra_client_params=None):
+  def __init__(
+      self,
+      uri='mongodb://localhost:27017',
+      db=None,
+      coll=None,
+      filter=None,
+      projection=None,
+      extra_client_params=None):
     """Initialize a :class:`ReadFromMongoDB`
 
     Args:
@@ -122,8 +127,9 @@ class ReadFromMongoDB(PTransform):
     if not isinstance(db, str):
       raise ValueError('ReadFromMongDB db param must be specified as a string')
     if not isinstance(coll, str):
-      raise ValueError('ReadFromMongDB coll param must be specified as a '
-                       'string')
+      raise ValueError(
+          'ReadFromMongDB coll param must be specified as a '
+          'string')
     self._mongo_source = _BoundedMongoSource(
         uri=uri,
         db=db,
@@ -137,13 +143,14 @@ class ReadFromMongoDB(PTransform):
 
 
 class _BoundedMongoSource(iobase.BoundedSource):
-  def __init__(self,
-               uri=None,
-               db=None,
-               coll=None,
-               filter=None,
-               projection=None,
-               extra_client_params=None):
+  def __init__(
+      self,
+      uri=None,
+      db=None,
+      coll=None,
+      filter=None,
+      projection=None,
+      extra_client_params=None):
     if extra_client_params is None:
       extra_client_params = {}
     if filter is None:
@@ -164,25 +171,33 @@ class _BoundedMongoSource(iobase.BoundedSource):
         start_position, stop_position)
 
     desired_bundle_size_in_mb = desired_bundle_size // 1024 // 1024
-    split_keys = self._get_split_keys(desired_bundle_size_in_mb, start_position,
-                                      stop_position)
+
+    # for desired bundle size, if desired chunk size smaller than 1mb, use
+    # mongodb default split size of 1mb.
+    if desired_bundle_size_in_mb < 1:
+      desired_bundle_size_in_mb = 1
+
+    split_keys = self._get_split_keys(
+        desired_bundle_size_in_mb, start_position, stop_position)
 
     bundle_start = start_position
     for split_key_id in split_keys:
       if bundle_start >= stop_position:
         break
-      bundle_end = min(stop_position, split_key_id)
-      yield iobase.SourceBundle(weight=desired_bundle_size_in_mb,
-                                source=self,
-                                start_position=bundle_start,
-                                stop_position=bundle_end)
+      bundle_end = min(stop_position, split_key_id['_id'])
+      yield iobase.SourceBundle(
+          weight=desired_bundle_size_in_mb,
+          source=self,
+          start_position=bundle_start,
+          stop_position=bundle_end)
       bundle_start = bundle_end
     # add range of last split_key to stop_position
     if bundle_start < stop_position:
-      yield iobase.SourceBundle(weight=desired_bundle_size_in_mb,
-                                source=self,
-                                start_position=bundle_start,
-                                stop_position=stop_position)
+      yield iobase.SourceBundle(
+          weight=desired_bundle_size_in_mb,
+          source=self,
+          start_position=bundle_start,
+          stop_position=stop_position)
 
   def get_range_tracker(self, start_position, stop_position):
     start_position, stop_position = self._replace_none_positions(
@@ -192,7 +207,9 @@ class _BoundedMongoSource(iobase.BoundedSource):
   def read(self, range_tracker):
     with MongoClient(self.uri, **self.spec) as client:
       all_filters = self._merge_id_filter(range_tracker)
-      docs_cursor = client[self.db][self.coll].find(filter=all_filters)
+      docs_cursor = client[self.db][self.coll].find(
+          filter=all_filters,
+          projection=self.projection).sort([('_id', ASCENDING)])
       for doc in docs_cursor:
         if not range_tracker.try_claim(doc['_id']):
           return
@@ -210,22 +227,19 @@ class _BoundedMongoSource(iobase.BoundedSource):
 
   def _get_split_keys(self, desired_chunk_size_in_mb, start_pos, end_pos):
     # calls mongodb splitVector command to get document ids at split position
-    # for desired bundle size, if desired chunk size smaller than 1mb, use
-    # mongodb default split size of 1mb.
-    if desired_chunk_size_in_mb < 1:
-      desired_chunk_size_in_mb = 1
     if start_pos >= end_pos:
       # single document not splittable
       return []
     with MongoClient(self.uri, **self.spec) as client:
       name_space = '%s.%s' % (self.db, self.coll)
-      return (client[self.db].command(
-          'splitVector',
-          name_space,
-          keyPattern={'_id': 1},  # Ascending index
-          min={'_id': start_pos},
-          max={'_id': end_pos},
-          maxChunkSize=desired_chunk_size_in_mb)['splitKeys'])
+      return (
+          client[self.db].command(
+              'splitVector',
+              name_space,
+              keyPattern={'_id': 1},  # Ascending index
+              min={'_id': start_pos},
+              max={'_id': end_pos},
+              maxChunkSize=desired_chunk_size_in_mb)['splitKeys'])
 
   def _merge_id_filter(self, range_tracker):
     # Merge the default filter with refined _id field range of range_tracker.
@@ -251,9 +265,8 @@ class _BoundedMongoSource(iobase.BoundedSource):
 
   def _get_head_document_id(self, sort_order):
     with MongoClient(self.uri, **self.spec) as client:
-      cursor = client[self.db][self.coll].find(filter={}, projection=[]).sort([
-          ('_id', sort_order)
-      ]).limit(1)
+      cursor = client[self.db][self.coll].find(
+          filter={}, projection=[]).sort([('_id', sort_order)]).limit(1)
       try:
         return cursor[0]['_id']
       except IndexError:
@@ -272,7 +285,6 @@ class _BoundedMongoSource(iobase.BoundedSource):
 
 class _ObjectIdHelper(object):
   """A Utility class to manipulate bson object ids."""
-
   @classmethod
   def id_to_int(cls, id):
     """
@@ -322,14 +334,14 @@ class _ObjectIdHelper(object):
     id_number = _ObjectIdHelper.id_to_int(object_id)
     new_number = id_number + inc
     if new_number < 0 or new_number >= (1 << 96):
-      raise ValueError('invalid incremental, inc value must be within ['
-                       '%s, %s)' % (0 - id_number, 1 << 96 - id_number))
+      raise ValueError(
+          'invalid incremental, inc value must be within ['
+          '%s, %s)' % (0 - id_number, 1 << 96 - id_number))
     return _ObjectIdHelper.int_to_id(new_number)
 
 
 class _ObjectIdRangeTracker(OrderedPositionRangeTracker):
   """RangeTracker for tracking mongodb _id of bson ObjectId type."""
-
   def position_to_fraction(self, pos, start, end):
     pos_number = _ObjectIdHelper.id_to_int(pos)
     start_number = _ObjectIdHelper.id_to_int(start)
@@ -374,13 +386,13 @@ class WriteToMongoDB(PTransform):
   with different unique IDs.
 
   """
-
-  def __init__(self,
-               uri='mongodb://localhost:27017',
-               db=None,
-               coll=None,
-               batch_size=100,
-               extra_client_params=None):
+  def __init__(
+      self,
+      uri='mongodb://localhost:27017',
+      db=None,
+      coll=None,
+      batch_size=100,
+      extra_client_params=None):
     """
 
     Args:
@@ -402,8 +414,9 @@ class WriteToMongoDB(PTransform):
     if not isinstance(db, str):
       raise ValueError('WriteToMongoDB db param must be specified as a string')
     if not isinstance(coll, str):
-      raise ValueError('WriteToMongoDB coll param must be specified as a '
-                       'string')
+      raise ValueError(
+          'WriteToMongoDB coll param must be specified as a '
+          'string')
     self._uri = uri
     self._db = db
     self._coll = coll
@@ -435,12 +448,8 @@ class _GenerateObjectIdFn(DoFn):
 
 
 class _WriteMongoFn(DoFn):
-  def __init__(self,
-               uri=None,
-               db=None,
-               coll=None,
-               batch_size=100,
-               extra_params=None):
+  def __init__(
+      self, uri=None, db=None, coll=None, batch_size=100, extra_params=None):
     if extra_params is None:
       extra_params = {}
     self.uri = uri
@@ -493,14 +502,18 @@ class _MongoSink(object):
       # match document based on _id field, if not found in current collection,
       # insert new one, otherwise overwrite it.
       requests.append(
-          ReplaceOne(filter={'_id': doc.get('_id', None)},
-                     replacement=doc,
-                     upsert=True))
+          ReplaceOne(
+              filter={'_id': doc.get('_id', None)},
+              replacement=doc,
+              upsert=True))
     resp = self.client[self.db][self.coll].bulk_write(requests)
-    logging.debug('BulkWrite to MongoDB result in nModified:%d, nUpserted:%d, '
-                  'nMatched:%d, Errors:%s' %
-                  (resp.modified_count, resp.upserted_count, resp.matched_count,
-                   resp.bulk_api_result.get('writeErrors')))
+    _LOGGER.debug(
+        'BulkWrite to MongoDB result in nModified:%d, nUpserted:%d, '
+        'nMatched:%d, Errors:%s' % (
+            resp.modified_count,
+            resp.upserted_count,
+            resp.matched_count,
+            resp.bulk_api_result.get('writeErrors')))
 
   def __enter__(self):
     if self.client is None:

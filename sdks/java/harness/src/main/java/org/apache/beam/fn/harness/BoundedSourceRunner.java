@@ -21,10 +21,12 @@ import com.google.auto.service.AutoService;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.Map;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 import org.apache.beam.fn.harness.control.BundleSplitListener;
 import org.apache.beam.fn.harness.control.ProcessBundleHandler;
 import org.apache.beam.fn.harness.data.BeamFnDataClient;
+import org.apache.beam.fn.harness.data.BeamFnTimerClient;
 import org.apache.beam.fn.harness.data.PCollectionConsumerRegistry;
 import org.apache.beam.fn.harness.data.PTransformFunctionRegistry;
 import org.apache.beam.fn.harness.state.BeamFnStateClient;
@@ -36,12 +38,14 @@ import org.apache.beam.model.pipeline.v1.RunnerApi.ReadPayload;
 import org.apache.beam.runners.core.construction.PTransformTranslation;
 import org.apache.beam.runners.core.construction.ReadTranslation;
 import org.apache.beam.sdk.fn.data.FnDataReceiver;
+import org.apache.beam.sdk.function.ThrowingRunnable;
 import org.apache.beam.sdk.io.BoundedSource;
 import org.apache.beam.sdk.io.Source.Reader;
 import org.apache.beam.sdk.options.PipelineOptions;
+import org.apache.beam.sdk.transforms.DoFn.BundleFinalizer;
 import org.apache.beam.sdk.util.SerializableUtils;
 import org.apache.beam.sdk.util.WindowedValue;
-import org.apache.beam.vendor.grpc.v1p21p0.com.google.protobuf.InvalidProtocolBufferException;
+import org.apache.beam.vendor.grpc.v1p26p0.com.google.protobuf.InvalidProtocolBufferException;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableMap;
 
@@ -71,6 +75,7 @@ public class BoundedSourceRunner<InputT extends BoundedSource<OutputT>, OutputT>
         PipelineOptions pipelineOptions,
         BeamFnDataClient beamFnDataClient,
         BeamFnStateClient beamFnStateClient,
+        BeamFnTimerClient beamFnTimerClient,
         String pTransformId,
         PTransform pTransform,
         Supplier<String> processBundleInstructionId,
@@ -80,7 +85,10 @@ public class BoundedSourceRunner<InputT extends BoundedSource<OutputT>, OutputT>
         PCollectionConsumerRegistry pCollectionConsumerRegistry,
         PTransformFunctionRegistry startFunctionRegistry,
         PTransformFunctionRegistry finishFunctionRegistry,
-        BundleSplitListener splitListener) {
+        Consumer<ThrowingRunnable> tearDownFunctions,
+        Consumer<ProgressRequestCallback> addProgressRequestCallback,
+        BundleSplitListener splitListener,
+        BundleFinalizer bundleFinalizer) {
       ImmutableList.Builder<FnDataReceiver<WindowedValue<?>>> consumers = ImmutableList.builder();
       for (String pCollectionId : pTransform.getOutputsMap().values()) {
         consumers.add(pCollectionConsumerRegistry.getMultiplexingConsumer(pCollectionId));

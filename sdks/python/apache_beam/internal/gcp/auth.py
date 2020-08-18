@@ -17,6 +17,8 @@
 
 """Dataflow credentials and authentication."""
 
+# pytype: skip-file
+
 from __future__ import absolute_import
 
 import logging
@@ -40,18 +42,20 @@ is_running_in_gce = False
 # information.
 executing_project = None
 
+_LOGGER = logging.getLogger(__name__)
+
 if GceAssertionCredentials is not None:
+
   class _GceAssertionCredentials(GceAssertionCredentials):
     """GceAssertionCredentials with retry wrapper.
 
     For internal use only; no backwards-compatibility guarantees.
     """
-
     @retry.with_exponential_backoff(
         retry_filter=retry.retry_on_server_errors_and_timeout_filter)
     def _do_refresh_request(self, http_request):
-      return super(_GceAssertionCredentials, self)._do_refresh_request(
-          http_request)
+      return super(_GceAssertionCredentials,
+                   self)._do_refresh_request(http_request)
 
 
 def set_running_in_gce(worker_executing_project):
@@ -101,10 +105,10 @@ class _Credentials(object):
       # apitools use urllib with the global timeout. Set it to 60 seconds
       # to prevent network related stuckness issues.
       if not socket.getdefaulttimeout():
-        logging.info("Setting socket default timeout to 60 seconds.")
+        _LOGGER.info("Setting socket default timeout to 60 seconds.")
         socket.setdefaulttimeout(60)
-      logging.info(
-          "socket default timeout is % seconds.", socket.getdefaulttimeout())
+      _LOGGER.info(
+          "socket default timeout is %s seconds.", socket.getdefaulttimeout())
 
       cls._credentials = cls._get_service_credentials()
       cls._credentials_init = True
@@ -122,16 +126,20 @@ class _Credentials(object):
           'https://www.googleapis.com/auth/cloud-platform',
           'https://www.googleapis.com/auth/devstorage.full_control',
           'https://www.googleapis.com/auth/userinfo.email',
-          'https://www.googleapis.com/auth/datastore'
+          'https://www.googleapis.com/auth/datastore',
+          'https://www.googleapis.com/auth/spanner.admin',
+          'https://www.googleapis.com/auth/spanner.data'
       ]
       try:
         credentials = GoogleCredentials.get_application_default()
         credentials = credentials.create_scoped(client_scopes)
-        logging.debug('Connecting using Google Application Default '
-                      'Credentials.')
+        logging.debug(
+            'Connecting using Google Application Default '
+            'Credentials.')
         return credentials
       except Exception as e:
-        logging.warning(
+        _LOGGER.warning(
             'Unable to find default credentials to use: %s\n'
-            'Connecting anonymously.', e)
+            'Connecting anonymously.',
+            e)
         return None

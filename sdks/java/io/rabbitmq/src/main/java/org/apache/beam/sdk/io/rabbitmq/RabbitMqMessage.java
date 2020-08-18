@@ -20,16 +20,16 @@ package org.apache.beam.sdk.io.rabbitmq;
 import com.rabbitmq.client.AMQP;
 import com.rabbitmq.client.AMQP.BasicProperties;
 import com.rabbitmq.client.Envelope;
+import com.rabbitmq.client.GetResponse;
 import com.rabbitmq.client.LongString;
-import com.rabbitmq.client.QueueingConsumer;
-import com.rabbitmq.client.QueueingConsumer.Delivery;
 import java.io.Serializable;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
-import javax.annotation.Nullable;
+import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * It contains the message payload, and additional metadata like routing key or attributes. The main
@@ -44,11 +44,11 @@ public class RabbitMqMessage implements Serializable {
    * @param processed
    * @return
    */
-  private static Delivery serializableDeliveryOf(Delivery processed) {
+  private static GetResponse serializableDeliveryOf(GetResponse processed) {
     // All content of envelope is serializable, so no problem there
     Envelope envelope = processed.getEnvelope();
     // in basicproperties, there may be LongString, which are *not* serializable
-    BasicProperties properties = processed.getProperties();
+    BasicProperties properties = processed.getProps();
     BasicProperties nextProperties =
         new BasicProperties.Builder()
             .appId(properties.getAppId())
@@ -66,7 +66,8 @@ public class RabbitMqMessage implements Serializable {
             .type(properties.getType())
             .userId(properties.getUserId())
             .build();
-    return new Delivery(envelope, nextProperties, processed.getBody());
+    return new GetResponse(
+        envelope, nextProperties, processed.getBody(), processed.getMessageCount());
   }
 
   private static Map<String, Object> serializableHeaders(Map<String, Object> headers) {
@@ -79,7 +80,7 @@ public class RabbitMqMessage implements Serializable {
             if (value instanceof LongString) {
               LongString longString = (LongString) value;
               byte[] bytes = longString.getBytes();
-              String s = new String(bytes, "UTF-8");
+              String s = new String(bytes, StandardCharsets.UTF_8);
               value = s;
             } else {
               throw new RuntimeException(String.format("no transformation defined for %s", value));
@@ -98,22 +99,22 @@ public class RabbitMqMessage implements Serializable {
     return returned;
   }
 
-  @Nullable private final String routingKey;
+  private final @Nullable String routingKey;
   private final byte[] body;
   private final String contentType;
   private final String contentEncoding;
   private final Map<String, Object> headers;
   private final Integer deliveryMode;
   private final Integer priority;
-  @Nullable private final String correlationId;
-  @Nullable private final String replyTo;
+  private final @Nullable String correlationId;
+  private final @Nullable String replyTo;
   private final String expiration;
   private final String messageId;
   private final Date timestamp;
-  @Nullable private final String type;
-  @Nullable private final String userId;
-  @Nullable private final String appId;
-  @Nullable private final String clusterId;
+  private final @Nullable String type;
+  private final @Nullable String userId;
+  private final @Nullable String appId;
+  private final @Nullable String clusterId;
 
   public RabbitMqMessage(byte[] body) {
     this.body = body;
@@ -134,24 +135,24 @@ public class RabbitMqMessage implements Serializable {
     clusterId = null;
   }
 
-  public RabbitMqMessage(String routingKey, QueueingConsumer.Delivery delivery) {
+  public RabbitMqMessage(String routingKey, GetResponse delivery) {
     this.routingKey = routingKey;
     delivery = serializableDeliveryOf(delivery);
     body = delivery.getBody();
-    contentType = delivery.getProperties().getContentType();
-    contentEncoding = delivery.getProperties().getContentEncoding();
-    headers = delivery.getProperties().getHeaders();
-    deliveryMode = delivery.getProperties().getDeliveryMode();
-    priority = delivery.getProperties().getPriority();
-    correlationId = delivery.getProperties().getCorrelationId();
-    replyTo = delivery.getProperties().getReplyTo();
-    expiration = delivery.getProperties().getExpiration();
-    messageId = delivery.getProperties().getMessageId();
-    timestamp = delivery.getProperties().getTimestamp();
-    type = delivery.getProperties().getType();
-    userId = delivery.getProperties().getUserId();
-    appId = delivery.getProperties().getAppId();
-    clusterId = delivery.getProperties().getClusterId();
+    contentType = delivery.getProps().getContentType();
+    contentEncoding = delivery.getProps().getContentEncoding();
+    headers = delivery.getProps().getHeaders();
+    deliveryMode = delivery.getProps().getDeliveryMode();
+    priority = delivery.getProps().getPriority();
+    correlationId = delivery.getProps().getCorrelationId();
+    replyTo = delivery.getProps().getReplyTo();
+    expiration = delivery.getProps().getExpiration();
+    messageId = delivery.getProps().getMessageId();
+    timestamp = delivery.getProps().getTimestamp();
+    type = delivery.getProps().getType();
+    userId = delivery.getProps().getUserId();
+    appId = delivery.getProps().getAppId();
+    clusterId = delivery.getProps().getClusterId();
   }
 
   public RabbitMqMessage(
@@ -294,7 +295,7 @@ public class RabbitMqMessage implements Serializable {
   }
 
   @Override
-  public boolean equals(Object obj) {
+  public boolean equals(@Nullable Object obj) {
     if (obj instanceof RabbitMqMessage) {
       RabbitMqMessage other = (RabbitMqMessage) obj;
       return Objects.equals(routingKey, other.routingKey)

@@ -29,7 +29,8 @@ import com.google.api.services.bigquery.model.TimePartitioning;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
-import javax.annotation.Nullable;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.apache.beam.sdk.coders.KvCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.coders.VoidCoder;
@@ -38,6 +39,7 @@ import org.apache.beam.sdk.io.fs.ResourceId;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryHelpers.PendingJob;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryHelpers.PendingJobManager;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO.Write.CreateDisposition;
+import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO.Write.SchemaUpdateOption;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO.Write.WriteDisposition;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryServices.DatasetService;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryServices.JobService;
@@ -48,6 +50,7 @@ import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.Values;
 import org.apache.beam.sdk.transforms.WithKeys;
+import org.apache.beam.sdk.transforms.display.DisplayData;
 import org.apache.beam.sdk.transforms.windowing.AfterPane;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.GlobalWindows;
@@ -64,6 +67,7 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Strings;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Lists;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Maps;
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -90,6 +94,7 @@ class WriteTables<DestinationT>
   private final PCollectionView<String> loadJobIdPrefixView;
   private final WriteDisposition firstPaneWriteDisposition;
   private final CreateDisposition firstPaneCreateDisposition;
+  private final Set<SchemaUpdateOption> schemaUpdateOptions;
   private final DynamicDestinations<?, DestinationT> dynamicDestinations;
   private final List<PCollectionView<?>> sideInputs;
   private final TupleTag<KV<TableDestination, String>> mainOutputTag;
@@ -97,7 +102,9 @@ class WriteTables<DestinationT>
   private final ValueProvider<String> loadJobProjectId;
   private final int maxRetryJobs;
   private final boolean ignoreUnknownValues;
-  @Nullable private final String kmsKey;
+  private final @Nullable String kmsKey;
+  private final String sourceFormat;
+  private final boolean useAvroLogicalTypes;
 
   private class WriteTablesDoFn
       extends DoFn<KV<ShardedKey<DestinationT>, List<String>>, KV<TableDestination, String>> {
@@ -185,7 +192,7 @@ class WriteTables<DestinationT>
       Integer partition = c.element().getKey().getShardNumber();
       List<String> partitionFiles = Lists.newArrayList(c.element().getValue());
       String jobIdPrefix =
-          BigQueryHelpers.createJobId(
+          BigQueryResourceNaming.createJobIdWithDestination(
               c.sideInput(loadJobIdPrefixView), tableDestination, partition, c.pane().getIndex());
 
       if (tempTable) {
@@ -218,9 +225,17 @@ class WriteTables<DestinationT>
               tableSchema,
               partitionFiles,
               writeDisposition,
-              createDisposition);
+              createDisposition,
+              schemaUpdateOptions);
       pendingJobs.add(
           new PendingJobData(window, retryJob, partitionFiles, tableDestination, tableReference));
+    }
+
+    @Override
+    public void populateDisplayData(DisplayData.Builder builder) {
+      builder.add(
+          DisplayData.item("launchesBigQueryJobs", true)
+              .withLabel("This transform launches BigQuery jobs to read/write elements."));
     }
 
     @FinishBundle
@@ -286,7 +301,11 @@ class WriteTables<DestinationT>
       @Nullable ValueProvider<String> loadJobProjectId,
       int maxRetryJobs,
       boolean ignoreUnknownValues,
-      String kmsKey) {
+      String kmsKey,
+      String sourceFormat,
+      boolean useAvroLogicalTypes,
+      Set<SchemaUpdateOption> schemaUpdateOptions) {
+
     this.tempTable = tempTable;
     this.bqServices = bqServices;
     this.loadJobIdPrefixView = loadJobIdPrefixView;
@@ -300,6 +319,9 @@ class WriteTables<DestinationT>
     this.maxRetryJobs = maxRetryJobs;
     this.ignoreUnknownValues = ignoreUnknownValues;
     this.kmsKey = kmsKey;
+    this.sourceFormat = sourceFormat;
+    this.useAvroLogicalTypes = useAvroLogicalTypes;
+    this.schemaUpdateOptions = schemaUpdateOptions;
   }
 
   @Override
@@ -343,7 +365,8 @@ class WriteTables<DestinationT>
       @Nullable TableSchema schema,
       List<String> gcsUris,
       WriteDisposition writeDisposition,
-      CreateDisposition createDisposition) {
+      CreateDisposition createDisposition,
+      Set<SchemaUpdateOption> schemaUpdateOptions) {
     JobConfigurationLoad loadConfig =
         new JobConfigurationLoad()
             .setDestinationTable(ref)
@@ -351,8 +374,16 @@ class WriteTables<DestinationT>
             .setSourceUris(gcsUris)
             .setWriteDisposition(writeDisposition.name())
             .setCreateDisposition(createDisposition.name())
-            .setSourceFormat("NEWLINE_DELIMITED_JSON")
-            .setIgnoreUnknownValues(ignoreUnknownValues);
+            .setSourceFormat(sourceFormat)
+            .setIgnoreUnknownValues(ignoreUnknownValues)
+            .setUseAvroLogicalTypes(useAvroLogicalTypes);
+    if (schemaUpdateOptions != null) {
+      List<String> options =
+          schemaUpdateOptions.stream()
+              .map(Enum<SchemaUpdateOption>::name)
+              .collect(Collectors.toList());
+      loadConfig.setSchemaUpdateOptions(options);
+    }
     if (timePartitioning != null) {
       loadConfig.setTimePartitioning(timePartitioning);
       // only set clustering if timePartitioning is set

@@ -32,13 +32,14 @@ import org.apache.beam.runners.dataflow.worker.status.BaseStatusServlet;
 import org.apache.beam.runners.dataflow.worker.status.StatusDataProvider;
 import org.apache.beam.sdk.state.State;
 import org.apache.beam.sdk.util.Weighted;
-import org.apache.beam.vendor.grpc.v1p21p0.com.google.protobuf.ByteString;
+import org.apache.beam.vendor.grpc.v1p26p0.com.google.protobuf.ByteString;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Equivalence;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.cache.Cache;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.cache.CacheBuilder;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.cache.RemovalCause;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.cache.Weigher;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.HashMultimap;
+import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Process-wide cache of per-key state.
@@ -50,6 +51,8 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.HashMult
  * thread at a time, so this is safe.
  */
 public class WindmillStateCache implements StatusDataProvider {
+  // Convert Megabytes to bytes
+  private static final long MEGABYTES = 1024 * 1024;
   // Estimate of overhead per StateId.
   private static final int PER_STATE_ID_OVERHEAD = 20;
   // Initial size of hash tables per entry.
@@ -64,13 +67,14 @@ public class WindmillStateCache implements StatusDataProvider {
   private HashMultimap<ComputationKey, StateId> keyIndex =
       HashMultimap.<ComputationKey, StateId>create();
   private int displayedWeight = 0; // Only used for status pages and unit tests.
+  private long workerCacheBytes; // Copy workerCacheMb and convert to bytes.
 
-  public WindmillStateCache() {
+  public WindmillStateCache(Integer workerCacheMb) {
     final Weigher<Weighted, Weighted> weigher = Weighers.weightedKeysAndValues();
-
+    workerCacheBytes = workerCacheMb * MEGABYTES;
     stateCache =
         CacheBuilder.newBuilder()
-            .maximumWeight(100000000 /* 100 MB */)
+            .maximumWeight(workerCacheBytes)
             .recordStats()
             .weigher(weigher)
             .removalListener(
@@ -94,6 +98,10 @@ public class WindmillStateCache implements StatusDataProvider {
     return displayedWeight;
   }
 
+  public long getMaxWeight() {
+    return workerCacheBytes;
+  }
+
   /** Per-computation view of the state cache. */
   public class ForComputation {
     private final String computation;
@@ -106,10 +114,9 @@ public class WindmillStateCache implements StatusDataProvider {
     public void invalidate(ByteString processingKey) {
       synchronized (this) {
         ComputationKey key = new ComputationKey(computation, processingKey);
-        for (StateId id : keyIndex.get(key)) {
+        for (StateId id : keyIndex.removeAll(key)) {
           stateCache.invalidate(id);
         }
-        keyIndex.removeAll(key);
       }
     }
 
@@ -228,7 +235,7 @@ public class WindmillStateCache implements StatusDataProvider {
     }
 
     @Override
-    public boolean equals(Object that) {
+    public boolean equals(@Nullable Object that) {
       if (that instanceof ComputationKey) {
         ComputationKey other = (ComputationKey) that;
         return computation.equals(other.computation) && key.equals(other.key);
@@ -259,7 +266,7 @@ public class WindmillStateCache implements StatusDataProvider {
     }
 
     @Override
-    public boolean equals(Object other) {
+    public boolean equals(@Nullable Object other) {
       if (other instanceof StateId) {
         StateId otherId = (StateId) other;
         return computationKey.equals(otherId.computationKey)
@@ -355,7 +362,7 @@ public class WindmillStateCache implements StatusDataProvider {
       }
 
       @Override
-      public boolean equals(Object other) {
+      public boolean equals(@Nullable Object other) {
         if (!(other instanceof NamespacedTag)) {
           return false;
         }
