@@ -28,7 +28,6 @@ import org.apache.beam.sdk.state.TimeDomain;
 import org.apache.beam.sdk.transforms.windowing.GlobalWindow;
 import org.apache.beam.sdk.transforms.windowing.PaneInfo;
 import org.apache.beam.sdk.util.WindowedValue;
-import org.apache.beam.sdk.values.KV;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
 import org.hamcrest.Matchers;
 import org.joda.time.Instant;
@@ -45,21 +44,15 @@ public class BufferedElementsTest {
     org.apache.beam.sdk.coders.Coder windowCoder = GlobalWindow.Coder.INSTANCE;
     WindowedValue.WindowedValueCoder windowedValueCoder =
         WindowedValue.FullWindowedValueCoder.of(elementCoder, windowCoder);
-    KV<String, Integer> key = KV.of("one", 1);
-    BufferedElements.Coder coder = new BufferedElements.Coder(windowedValueCoder, windowCoder, key);
+
+    BufferedElements.Coder coder = new BufferedElements.Coder(windowedValueCoder, windowCoder);
 
     BufferedElement element =
         new BufferedElements.Element(
             WindowedValue.of("test", new Instant(2), GlobalWindow.INSTANCE, PaneInfo.NO_FIRING));
     BufferedElement timerElement =
         new BufferedElements.Timer(
-            "timerId",
-            "timerId",
-            key,
-            GlobalWindow.INSTANCE,
-            new Instant(1),
-            new Instant(1),
-            TimeDomain.EVENT_TIME);
+            "timerId", GlobalWindow.INSTANCE, new Instant(1), TimeDomain.EVENT_TIME);
 
     testRoundTrip(ImmutableList.of(element), coder);
     testRoundTrip(ImmutableList.of(timerElement), coder);

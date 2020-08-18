@@ -42,9 +42,4 @@ public final class DefaultTableFilter implements BeamSqlTableFilter {
   public List<RexNode> getNotSupported() {
     return filters;
   }
-
-  @Override
-  public int numSupported() {
-    return 0;
-  }
 }

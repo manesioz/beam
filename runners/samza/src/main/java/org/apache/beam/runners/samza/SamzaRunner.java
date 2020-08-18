@@ -24,7 +24,7 @@ import java.util.Map;
 import java.util.ServiceLoader;
 import org.apache.beam.model.pipeline.v1.RunnerApi;
 import org.apache.beam.runners.core.construction.renderer.PipelineDotRenderer;
-import org.apache.beam.runners.jobsubmission.PortablePipelineResult;
+import org.apache.beam.runners.fnexecution.jobsubmission.PortablePipelineResult;
 import org.apache.beam.runners.samza.translation.ConfigBuilder;
 import org.apache.beam.runners.samza.translation.PViewToIdMapper;
 import org.apache.beam.runners.samza.translation.PortableTranslationContext;
@@ -36,7 +36,6 @@ import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.PipelineRunner;
 import org.apache.beam.sdk.metrics.MetricsEnvironment;
 import org.apache.beam.sdk.options.PipelineOptions;
-import org.apache.beam.sdk.options.PipelineOptionsValidator;
 import org.apache.beam.sdk.values.PValue;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterators;
 import org.apache.samza.application.StreamApplication;
@@ -55,11 +54,9 @@ import org.slf4j.LoggerFactory;
  */
 public class SamzaRunner extends PipelineRunner<SamzaPipelineResult> {
   private static final Logger LOG = LoggerFactory.getLogger(SamzaRunner.class);
-  private static final String BEAM_DOT_GRAPH = "beamDotGraph";
 
   public static SamzaRunner fromOptions(PipelineOptions opts) {
-    final SamzaPipelineOptions samzaOptions =
-        PipelineOptionsValidator.validate(SamzaPipelineOptions.class, opts);
+    final SamzaPipelineOptions samzaOptions = SamzaPipelineOptionsValidator.validate(opts);
     return new SamzaRunner(samzaOptions);
   }
 
@@ -75,12 +72,8 @@ public class SamzaRunner extends PipelineRunner<SamzaPipelineResult> {
   }
 
   public PortablePipelineResult runPortablePipeline(RunnerApi.Pipeline pipeline) {
-    final String dotGraph = PipelineDotRenderer.toDotString(pipeline);
-    LOG.info("Portable pipeline to run:\n{}", dotGraph);
-
     final ConfigBuilder configBuilder = new ConfigBuilder(options);
     SamzaPortablePipelineTranslator.createConfig(pipeline, configBuilder, options);
-    configBuilder.put(BEAM_DOT_GRAPH, dotGraph);
 
     final Config config = configBuilder.build();
     options.setConfigOverride(config);
@@ -114,14 +107,12 @@ public class SamzaRunner extends PipelineRunner<SamzaPipelineResult> {
 
     pipeline.replaceAll(SamzaTransformOverrides.getDefaultOverrides());
 
-    final String dotGraph = PipelineDotRenderer.toDotString(pipeline);
-    LOG.info("Beam pipeline DOT graph:\n{}", dotGraph);
+    LOG.info("Beam pipeline DOT graph:\n{}", PipelineDotRenderer.toDotString(pipeline));
 
     final Map<PValue, String> idMap = PViewToIdMapper.buildIdMap(pipeline);
-    final ConfigBuilder configBuilder = new ConfigBuilder(options);
 
+    final ConfigBuilder configBuilder = new ConfigBuilder(options);
     SamzaPipelineTranslator.createConfig(pipeline, options, idMap, configBuilder);
-    configBuilder.put(BEAM_DOT_GRAPH, dotGraph);
 
     final Config config = configBuilder.build();
     options.setConfigOverride(config);
@@ -142,9 +133,6 @@ public class SamzaRunner extends PipelineRunner<SamzaPipelineResult> {
               pipeline, new TranslationContext(appDescriptor, idMap, options));
         };
 
-    // perform a final round of validation for the pipeline options now that all configs are
-    // generated
-    SamzaPipelineOptionsValidator.validate(options);
     ApplicationRunner runner = runSamzaApp(app, config);
     return new SamzaPipelineResult(app, runner, executionContext, listener, config);
   }

@@ -108,25 +108,14 @@ class DataflowProcessFnRunner<InputT, OutputT, RestrictionT>
   }
 
   @Override
-  public <KeyT> void onTimer(
-      String timerId,
-      String timerFamilyId,
-      KeyT key,
-      BoundedWindow window,
-      Instant timestamp,
-      Instant outputTimestamp,
-      TimeDomain timeDomain) {
+  public void onTimer(
+      String timerId, BoundedWindow window, Instant timestamp, TimeDomain timeDomain) {
     throw new UnsupportedOperationException("Unsupported for ProcessFn");
   }
 
   @Override
   public void finishBundle() {
     simpleRunner.finishBundle();
-  }
-
-  @Override
-  public <KeyT> void onWindowExpiration(BoundedWindow window, Instant timestamp, KeyT key) {
-    simpleRunner.onWindowExpiration(window, timestamp, key);
   }
 
   @Override

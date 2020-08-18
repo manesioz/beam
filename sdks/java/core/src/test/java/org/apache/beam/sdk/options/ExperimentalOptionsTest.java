@@ -17,7 +17,6 @@
  */
 package org.apache.beam.sdk.options;
 
-import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -36,15 +35,5 @@ public class ExperimentalOptionsTest {
     assertTrue(ExperimentalOptions.hasExperiment(options, "experimentA"));
     assertTrue(ExperimentalOptions.hasExperiment(options, "experimentB"));
     assertFalse(ExperimentalOptions.hasExperiment(options, "experimentC"));
-  }
-
-  @Test
-  public void testExperimentGetValue() {
-    ExperimentalOptions options =
-        PipelineOptionsFactory.fromArgs(
-                "--experiments=experimentA=0,state_cache_size=1,experimentB=0")
-            .as(ExperimentalOptions.class);
-    assertEquals(
-        "1", ExperimentalOptions.getExperimentValue(options, ExperimentalOptions.STATE_CACHE_SIZE));
   }
 }

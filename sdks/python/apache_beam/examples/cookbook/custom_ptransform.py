@@ -20,8 +20,6 @@
 These example show the different ways you can write custom PTransforms.
 """
 
-# pytype: skip-file
-
 from __future__ import absolute_import
 
 import argparse
@@ -38,6 +36,7 @@ from apache_beam.options.pipeline_options import PipelineOptions
 
 class Count1(beam.PTransform):
   """Count as a subclass of PTransform, with an apply method."""
+
   def expand(self, pcoll):
     return (
         pcoll
@@ -49,10 +48,9 @@ def run_count1(known_args, options):
   """Runs the first example pipeline."""
   logging.info('Running first pipeline')
   with beam.Pipeline(options=options) as p:
-    (
-        p | beam.io.ReadFromText(known_args.input)
-        | Count1()
-        | beam.io.WriteToText(known_args.output))
+    (p | beam.io.ReadFromText(known_args.input)
+     | Count1()
+     | beam.io.WriteToText(known_args.output))
 
 
 @beam.ptransform_fn
@@ -68,10 +66,9 @@ def run_count2(known_args, options):
   """Runs the second example pipeline."""
   logging.info('Running second pipeline')
   with beam.Pipeline(options=options) as p:
-    (
-        p | ReadFromText(known_args.input)
-        | Count2()  # pylint: disable=no-value-for-parameter
-        | WriteToText(known_args.output))
+    (p | ReadFromText(known_args.input)
+     | Count2()  # pylint: disable=no-value-for-parameter
+     | WriteToText(known_args.output))
 
 
 @beam.ptransform_fn
@@ -95,10 +92,9 @@ def run_count3(known_args, options):
   """Runs the third example pipeline."""
   logging.info('Running third pipeline')
   with beam.Pipeline(options=options) as p:
-    (
-        p | ReadFromText(known_args.input)
-        | Count3(2)  # pylint: disable=no-value-for-parameter
-        | WriteToText(known_args.output))
+    (p | ReadFromText(known_args.input)
+     | Count3(2)  # pylint: disable=no-value-for-parameter
+     | WriteToText(known_args.output))
 
 
 def get_args(argv):
@@ -112,9 +108,12 @@ def get_args(argv):
   """
 
   parser = argparse.ArgumentParser()
-  parser.add_argument('--input', required=True, help='Input file to process.')
-  parser.add_argument(
-      '--output', required=True, help='Output file to write results to.')
+  parser.add_argument('--input',
+                      required=True,
+                      help='Input file to process.')
+  parser.add_argument('--output',
+                      required=True,
+                      help='Output file to write results to.')
   return parser.parse_known_args(argv)
 
 

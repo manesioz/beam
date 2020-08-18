@@ -21,23 +21,20 @@ import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Prec
 import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions.checkNotNull;
 
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import javax.annotation.Nullable;
 import org.apache.beam.runners.core.DoFnRunners.OutputManager;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.schemas.SchemaCoder;
-import org.apache.beam.sdk.state.ReadableState;
 import org.apache.beam.sdk.state.State;
 import org.apache.beam.sdk.state.StateSpec;
 import org.apache.beam.sdk.state.TimeDomain;
 import org.apache.beam.sdk.state.Timer;
-import org.apache.beam.sdk.state.TimerMap;
 import org.apache.beam.sdk.state.TimerSpec;
 import org.apache.beam.sdk.transforms.DoFn;
-import org.apache.beam.sdk.transforms.DoFn.BundleFinalizer;
 import org.apache.beam.sdk.transforms.DoFn.MultiOutputReceiver;
 import org.apache.beam.sdk.transforms.DoFn.OutputReceiver;
 import org.apache.beam.sdk.transforms.DoFnOutputReceivers;
@@ -48,7 +45,6 @@ import org.apache.beam.sdk.transforms.reflect.DoFnInvokers;
 import org.apache.beam.sdk.transforms.reflect.DoFnSignature;
 import org.apache.beam.sdk.transforms.reflect.DoFnSignatures;
 import org.apache.beam.sdk.transforms.splittabledofn.RestrictionTracker;
-import org.apache.beam.sdk.transforms.splittabledofn.WatermarkEstimator;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.PaneInfo;
 import org.apache.beam.sdk.util.SystemDoFnInternal;
@@ -61,7 +57,6 @@ import org.apache.beam.sdk.values.WindowingStrategy;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.FluentIterable;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterables;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Sets;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.joda.time.format.PeriodFormat;
@@ -103,13 +98,13 @@ public class SimpleDoFnRunner<InputT, OutputT> implements DoFnRunner<InputT, Out
   // Because of setKey(Object), we really must refresh stateInternals() at each access
   private final StepContext stepContext;
 
-  private final @Nullable SchemaCoder<InputT> schemaCoder;
+  @Nullable private final SchemaCoder<InputT> schemaCoder;
 
-  final @Nullable SchemaCoder<OutputT> mainOutputSchemaCoder;
+  @Nullable final SchemaCoder<OutputT> mainOutputSchemaCoder;
 
-  private @Nullable Map<TupleTag<?>, Coder<?>> outputCoders;
+  @Nullable private Map<TupleTag<?>, Coder<?>> outputCoders;
 
-  private final @Nullable DoFnSchemaInformation doFnSchemaInformation;
+  @Nullable private final DoFnSchemaInformation doFnSchemaInformation;
 
   private final Map<String, PCollectionView<?>> sideInputMapping;
 
@@ -134,7 +129,9 @@ public class SimpleDoFnRunner<InputT, OutputT> implements DoFnRunner<InputT, Out
     this.invoker = DoFnInvokers.invokerFor(fn);
     this.sideInputReader = sideInputReader;
     this.schemaCoder =
-        (inputCoder instanceof SchemaCoder) ? (SchemaCoder<InputT>) inputCoder : null;
+        (inputCoder != null && inputCoder instanceof SchemaCoder)
+            ? (SchemaCoder<InputT>) inputCoder
+            : null;
     this.outputCoders = outputCoders;
     if (outputCoders != null && !outputCoders.isEmpty()) {
       Coder<OutputT> outputCoder = (Coder<OutputT>) outputCoders.get(mainOutputTag);
@@ -169,7 +166,7 @@ public class SimpleDoFnRunner<InputT, OutputT> implements DoFnRunner<InputT, Out
   public void startBundle() {
     // This can contain user code. Wrap it in case it throws an exception.
     try {
-      invoker.invokeStartBundle(new DoFnStartBundleArgumentProvider());
+      invoker.invokeStartBundle(new DoFnStartBundleContext());
     } catch (Throwable t) {
       // Exception in user code.
       throw wrapUserCodeException(t);
@@ -188,24 +185,19 @@ public class SimpleDoFnRunner<InputT, OutputT> implements DoFnRunner<InputT, Out
   }
 
   @Override
-  public <KeyT> void onTimer(
-      String timerId,
-      String timerFamilyId,
-      KeyT key,
-      BoundedWindow window,
-      Instant timestamp,
-      Instant outputTimestamp,
-      TimeDomain timeDomain) {
+  public void onTimer(
+      String timerId, BoundedWindow window, Instant timestamp, TimeDomain timeDomain) {
 
     // The effective timestamp is when derived elements will have their timestamp set, if not
-    // otherwise specified. If this is an event time timer, then they have the timer's output
-    // timestamp. Otherwise, they are set to the input timestamp, which is by definition
+    // otherwise specified. If this is an event time timer, then they have the timestamp of the
+    // timer itself. Otherwise, they are set to the input timestamp, which is by definition
     // non-late.
     Instant effectiveTimestamp;
     switch (timeDomain) {
       case EVENT_TIME:
-        effectiveTimestamp = outputTimestamp;
+        effectiveTimestamp = timestamp;
         break;
+
       case PROCESSING_TIME:
       case SYNCHRONIZED_PROCESSING_TIME:
         effectiveTimestamp = stepContext.timerInternals().currentInputWatermarkTime();
@@ -215,10 +207,9 @@ public class SimpleDoFnRunner<InputT, OutputT> implements DoFnRunner<InputT, Out
         throw new IllegalArgumentException(String.format("Unknown time domain: %s", timeDomain));
     }
 
-    OnTimerArgumentProvider<KeyT> argumentProvider =
-        new OnTimerArgumentProvider<>(
-            timerId, key, window, timestamp, effectiveTimestamp, timeDomain);
-    invoker.invokeOnTimer(timerId, timerFamilyId, argumentProvider);
+    OnTimerArgumentProvider argumentProvider =
+        new OnTimerArgumentProvider(window, effectiveTimestamp, timeDomain);
+    invoker.invokeOnTimer(timerId, argumentProvider);
   }
 
   private void invokeProcessElement(WindowedValue<InputT> elem) {
@@ -234,17 +225,11 @@ public class SimpleDoFnRunner<InputT, OutputT> implements DoFnRunner<InputT, Out
   public void finishBundle() {
     // This can contain user code. Wrap it in case it throws an exception.
     try {
-      invoker.invokeFinishBundle(new DoFnFinishBundleArgumentProvider());
+      invoker.invokeFinishBundle(new DoFnFinishBundleContext());
     } catch (Throwable t) {
       // Exception in user code.
       throw wrapUserCodeException(t);
     }
-  }
-
-  @Override
-  public <KeyT> void onWindowExpiration(BoundedWindow window, Instant timestamp, KeyT key) {
-    invoker.invokeOnWindowExpiration(
-        new OnWindowExpirationArgumentProvider<>(window, timestamp, key));
   }
 
   private RuntimeException wrapUserCodeException(Throwable t) {
@@ -267,80 +252,253 @@ public class SimpleDoFnRunner<InputT, OutputT> implements DoFnRunner<InputT, Out
     outputManager.output(tag, windowedElem);
   }
 
-  /** An {@link DoFnInvoker.ArgumentProvider} for {@link DoFn.StartBundle @StartBundle}. */
-  private class DoFnStartBundleArgumentProvider
-      extends DoFnInvoker.BaseArgumentProvider<InputT, OutputT> {
-    /** A concrete implementation of {@link DoFn.StartBundleContext}. */
-    private class Context extends DoFn<InputT, OutputT>.StartBundleContext {
-      private Context() {
-        fn.super();
-      }
-
-      @Override
-      public PipelineOptions getPipelineOptions() {
-        return options;
-      }
+  /** A concrete implementation of {@link DoFn.StartBundleContext}. */
+  private class DoFnStartBundleContext extends DoFn<InputT, OutputT>.StartBundleContext
+      implements DoFnInvoker.ArgumentProvider<InputT, OutputT> {
+    private DoFnStartBundleContext() {
+      fn.super();
     }
 
-    private final Context context = new Context();
+    @Override
+    public PipelineOptions getPipelineOptions() {
+      return options;
+    }
+
+    @Override
+    public BoundedWindow window() {
+      throw new UnsupportedOperationException(
+          "Cannot access window outside of @ProcessElement and @OnTimer methods.");
+    }
+
+    @Override
+    public PaneInfo paneInfo(DoFn<InputT, OutputT> doFn) {
+      throw new UnsupportedOperationException(
+          "Cannot access paneInfo outside of @ProcessElement methods.");
+    }
 
     @Override
     public PipelineOptions pipelineOptions() {
-      return options;
+      return getPipelineOptions();
     }
 
     @Override
     public DoFn<InputT, OutputT>.StartBundleContext startBundleContext(DoFn<InputT, OutputT> doFn) {
-      return context;
-    }
-
-    @Override
-    public String getErrorContext() {
-      return "SimpleDoFnRunner/StartBundle";
-    }
-  }
-
-  /** An {@link DoFnInvoker.ArgumentProvider} for {@link DoFn.StartBundle @StartBundle}. */
-  private class DoFnFinishBundleArgumentProvider
-      extends DoFnInvoker.BaseArgumentProvider<InputT, OutputT> {
-    /** A concrete implementation of {@link DoFn.FinishBundleContext}. */
-    private class Context extends DoFn<InputT, OutputT>.FinishBundleContext {
-      private Context() {
-        fn.super();
-      }
-
-      @Override
-      public PipelineOptions getPipelineOptions() {
-        return options;
-      }
-
-      @Override
-      public void output(OutputT output, Instant timestamp, BoundedWindow window) {
-        output(mainOutputTag, output, timestamp, window);
-      }
-
-      @Override
-      public <T> void output(TupleTag<T> tag, T output, Instant timestamp, BoundedWindow window) {
-        outputWindowedValue(tag, WindowedValue.of(output, timestamp, window, PaneInfo.NO_FIRING));
-      }
-    }
-
-    private final Context context = new Context();
-
-    @Override
-    public PipelineOptions pipelineOptions() {
-      return options;
+      return this;
     }
 
     @Override
     public DoFn<InputT, OutputT>.FinishBundleContext finishBundleContext(
         DoFn<InputT, OutputT> doFn) {
-      return context;
+      throw new UnsupportedOperationException(
+          "Cannot access FinishBundleContext outside of @FinishBundle method.");
     }
 
     @Override
-    public String getErrorContext() {
-      return "SimpleDoFnRunner/FinishBundle";
+    public DoFn<InputT, OutputT>.ProcessContext processContext(DoFn<InputT, OutputT> doFn) {
+      throw new UnsupportedOperationException(
+          "Cannot access ProcessContext outside of @ProcessElement method.");
+    }
+
+    @Override
+    public InputT element(DoFn<InputT, OutputT> doFn) {
+      throw new UnsupportedOperationException(
+          "Element parameters are not supported outside of @ProcessElement method.");
+    }
+
+    @Override
+    public InputT sideInput(String tagId) {
+      throw new UnsupportedOperationException(
+          "SideInput parameters are not supported outside of @ProcessElement method.");
+    }
+
+    @Override
+    public Object schemaElement(int index) {
+      throw new UnsupportedOperationException(
+          "Element parameters are not supported outside of @ProcessElement method.");
+    }
+
+    @Override
+    public Instant timestamp(DoFn<InputT, OutputT> doFn) {
+      throw new UnsupportedOperationException(
+          "Cannot access timestamp outside of @ProcessElement method.");
+    }
+
+    @Override
+    public TimeDomain timeDomain(DoFn<InputT, OutputT> doFn) {
+      throw new UnsupportedOperationException(
+          "Cannot access time domain outside of @ProcessTimer method.");
+    }
+
+    @Override
+    public OutputReceiver<OutputT> outputReceiver(DoFn<InputT, OutputT> doFn) {
+      throw new UnsupportedOperationException(
+          "Cannot access output receiver outside of @ProcessElement method.");
+    }
+
+    @Override
+    public OutputReceiver<Row> outputRowReceiver(DoFn<InputT, OutputT> doFn) {
+      throw new UnsupportedOperationException(
+          "Cannot access output receiver outside of @ProcessElement method.");
+    }
+
+    @Override
+    public MultiOutputReceiver taggedOutputReceiver(DoFn<InputT, OutputT> doFn) {
+      throw new UnsupportedOperationException(
+          "Cannot access output receiver outside of @ProcessElement method.");
+    }
+
+    @Override
+    public DoFn<InputT, OutputT>.OnTimerContext onTimerContext(DoFn<InputT, OutputT> doFn) {
+      throw new UnsupportedOperationException(
+          "Cannot access OnTimerContext outside of @OnTimer methods.");
+    }
+
+    @Override
+    public RestrictionTracker<?, ?> restrictionTracker() {
+      throw new UnsupportedOperationException(
+          "Cannot access RestrictionTracker outside of @ProcessElement method.");
+    }
+
+    @Override
+    public State state(String stateId) {
+      throw new UnsupportedOperationException(
+          "Cannot access state outside of @ProcessElement and @OnTimer methods.");
+    }
+
+    @Override
+    public Timer timer(String timerId) {
+      throw new UnsupportedOperationException(
+          "Cannot access timers outside of @ProcessElement and @OnTimer methods.");
+    }
+  }
+
+  /** B A concrete implementation of {@link DoFn.FinishBundleContext}. */
+  private class DoFnFinishBundleContext extends DoFn<InputT, OutputT>.FinishBundleContext
+      implements DoFnInvoker.ArgumentProvider<InputT, OutputT> {
+    private DoFnFinishBundleContext() {
+      fn.super();
+    }
+
+    @Override
+    public PipelineOptions getPipelineOptions() {
+      return options;
+    }
+
+    @Override
+    public BoundedWindow window() {
+      throw new UnsupportedOperationException(
+          "Cannot access window outside of @ProcessElement and @OnTimer methods.");
+    }
+
+    @Override
+    public PaneInfo paneInfo(DoFn<InputT, OutputT> doFn) {
+      throw new UnsupportedOperationException(
+          "Cannot access paneInfo outside of @ProcessElement methods.");
+    }
+
+    @Override
+    public PipelineOptions pipelineOptions() {
+      return getPipelineOptions();
+    }
+
+    @Override
+    public DoFn<InputT, OutputT>.StartBundleContext startBundleContext(DoFn<InputT, OutputT> doFn) {
+      throw new UnsupportedOperationException(
+          "Cannot access StartBundleContext outside of @StartBundle method.");
+    }
+
+    @Override
+    public DoFn<InputT, OutputT>.FinishBundleContext finishBundleContext(
+        DoFn<InputT, OutputT> doFn) {
+      return this;
+    }
+
+    @Override
+    public DoFn<InputT, OutputT>.ProcessContext processContext(DoFn<InputT, OutputT> doFn) {
+      throw new UnsupportedOperationException(
+          "Cannot access ProcessContext outside of @ProcessElement method.");
+    }
+
+    @Override
+    public InputT element(DoFn<InputT, OutputT> doFn) {
+      throw new UnsupportedOperationException(
+          "Cannot access element outside of @ProcessElement method.");
+    }
+
+    @Override
+    public InputT sideInput(String tagId) {
+      throw new UnsupportedOperationException(
+          "Cannot access sideInput outside of @ProcessElement method.");
+    }
+
+    @Override
+    public Object schemaElement(int index) {
+      throw new UnsupportedOperationException(
+          "Cannot access element outside of @ProcessElement method.");
+    }
+
+    @Override
+    public Instant timestamp(DoFn<InputT, OutputT> doFn) {
+      throw new UnsupportedOperationException(
+          "Cannot access timestamp outside of @ProcessElement method.");
+    }
+
+    @Override
+    public TimeDomain timeDomain(DoFn<InputT, OutputT> doFn) {
+      throw new UnsupportedOperationException(
+          "Cannot access time domain outside of @ProcessTimer method.");
+    }
+
+    @Override
+    public OutputReceiver<OutputT> outputReceiver(DoFn<InputT, OutputT> doFn) {
+      throw new UnsupportedOperationException(
+          "Cannot access outputReceiver in @FinishBundle method.");
+    }
+
+    @Override
+    public OutputReceiver<Row> outputRowReceiver(DoFn<InputT, OutputT> doFn) {
+      throw new UnsupportedOperationException(
+          "Cannot access outputReceiver in @FinishBundle method.");
+    }
+
+    @Override
+    public MultiOutputReceiver taggedOutputReceiver(DoFn<InputT, OutputT> doFn) {
+      throw new UnsupportedOperationException(
+          "Cannot access outputReceiver in @FinishBundle method.");
+    }
+
+    @Override
+    public DoFn<InputT, OutputT>.OnTimerContext onTimerContext(DoFn<InputT, OutputT> doFn) {
+      throw new UnsupportedOperationException(
+          "Cannot access OnTimerContext outside of @OnTimer methods.");
+    }
+
+    @Override
+    public RestrictionTracker<?, ?> restrictionTracker() {
+      throw new UnsupportedOperationException(
+          "Cannot access RestrictionTracker outside of @ProcessElement method.");
+    }
+
+    @Override
+    public State state(String stateId) {
+      throw new UnsupportedOperationException(
+          "Cannot access state outside of @ProcessElement and @OnTimer methods.");
+    }
+
+    @Override
+    public Timer timer(String timerId) {
+      throw new UnsupportedOperationException(
+          "Cannot access timers outside of @ProcessElement and @OnTimer methods.");
+    }
+
+    @Override
+    public void output(OutputT output, Instant timestamp, BoundedWindow window) {
+      output(mainOutputTag, output, timestamp, window);
+    }
+
+    @Override
+    public <T> void output(TupleTag<T> tag, T output, Instant timestamp, BoundedWindow window) {
+      outputWindowedValue(tag, WindowedValue.of(output, timestamp, window, PaneInfo.NO_FIRING));
     }
   }
 
@@ -352,7 +510,7 @@ public class SimpleDoFnRunner<InputT, OutputT> implements DoFnRunner<InputT, Out
       implements DoFnInvoker.ArgumentProvider<InputT, OutputT> {
     final WindowedValue<InputT> elem;
     /** Lazily initialized; should only be accessed via {@link #getNamespace()}. */
-    private @Nullable StateNamespace namespace;
+    @Nullable private StateNamespace namespace;
 
     /**
      * The state namespace for this context.
@@ -394,6 +552,11 @@ public class SimpleDoFnRunner<InputT, OutputT> implements DoFnRunner<InputT, Out
     @Override
     public PaneInfo pane() {
       return elem.getPane();
+    }
+
+    @Override
+    public void updateWatermark(Instant watermark) {
+      throw new UnsupportedOperationException("Only splittable DoFn's can use updateWatermark()");
     }
 
     @Override
@@ -485,12 +648,6 @@ public class SimpleDoFnRunner<InputT, OutputT> implements DoFnRunner<InputT, Out
     }
 
     @Override
-    public Object key() {
-      throw new UnsupportedOperationException(
-          "Cannot access key as parameter outside of @OnTimer method.");
-    }
-
-    @Override
     public Object sideInput(String tagId) {
       return sideInput(sideInputMapping.get(tagId));
     }
@@ -504,12 +661,6 @@ public class SimpleDoFnRunner<InputT, OutputT> implements DoFnRunner<InputT, Out
     @Override
     public Instant timestamp(DoFn<InputT, OutputT> doFn) {
       return timestamp();
-    }
-
-    @Override
-    public String timerId(DoFn<InputT, OutputT> doFn) {
-      throw new UnsupportedOperationException(
-          "Cannot access timerId as parameter outside of @OnTimer method.");
     }
 
     @Override
@@ -534,12 +685,6 @@ public class SimpleDoFnRunner<InputT, OutputT> implements DoFnRunner<InputT, Out
     }
 
     @Override
-    public Object restriction() {
-      throw new UnsupportedOperationException(
-          "@Restriction parameters are not supported. Only the RestrictionTracker is accessible.");
-    }
-
-    @Override
     public DoFn<InputT, OutputT>.OnTimerContext onTimerContext(DoFn<InputT, OutputT> doFn) {
       throw new UnsupportedOperationException(
           "Cannot access OnTimerContext outside of @OnTimer methods.");
@@ -551,30 +696,13 @@ public class SimpleDoFnRunner<InputT, OutputT> implements DoFnRunner<InputT, Out
     }
 
     @Override
-    public Object watermarkEstimatorState() {
-      throw new UnsupportedOperationException(
-          "@WatermarkEstimatorState parameters are not supported.");
-    }
-
-    @Override
-    public WatermarkEstimator<?> watermarkEstimator() {
-      throw new UnsupportedOperationException("WatermarkEstimator parameters are not supported.");
-    }
-
-    @Override
-    public State state(String stateId, boolean alwaysFetched) {
+    public State state(String stateId) {
       try {
         StateSpec<?> spec =
             (StateSpec<?>) signature.stateDeclarations().get(stateId).field().get(fn);
-        State state =
-            stepContext
-                .stateInternals()
-                .state(getNamespace(), StateTags.tagForSpec(stateId, (StateSpec) spec));
-        if (alwaysFetched) {
-          return (State) ((ReadableState) state).readLater();
-        } else {
-          return state;
-        }
+        return stepContext
+            .stateInternals()
+            .state(getNamespace(), StateTags.tagForSpec(stateId, (StateSpec) spec));
       } catch (IllegalAccessException e) {
         throw new RuntimeException(e);
       }
@@ -585,32 +713,10 @@ public class SimpleDoFnRunner<InputT, OutputT> implements DoFnRunner<InputT, Out
       try {
         TimerSpec spec = (TimerSpec) signature.timerDeclarations().get(timerId).field().get(fn);
         return new TimerInternalsTimer(
-            window(), getNamespace(), timerId, spec, timestamp(), stepContext.timerInternals());
+            window(), getNamespace(), timerId, spec, stepContext.timerInternals());
       } catch (IllegalAccessException e) {
         throw new RuntimeException(e);
       }
-    }
-
-    @Override
-    public TimerMap timerFamily(String timerFamilyId) {
-      try {
-        TimerSpec spec =
-            (TimerSpec) signature.timerFamilyDeclarations().get(timerFamilyId).field().get(fn);
-        return new TimerInternalsTimerMap(
-            timerFamilyId,
-            window(),
-            getNamespace(),
-            spec,
-            timestamp(),
-            stepContext.timerInternals());
-      } catch (IllegalAccessException e) {
-        throw new RuntimeException(e);
-      }
-    }
-
-    @Override
-    public BundleFinalizer bundleFinalizer() {
-      return stepContext.bundleFinalizer();
     }
   }
 
@@ -618,14 +724,11 @@ public class SimpleDoFnRunner<InputT, OutputT> implements DoFnRunner<InputT, Out
    * A concrete implementation of {@link DoFnInvoker.ArgumentProvider} used for running a {@link
    * DoFn} on a timer.
    */
-  private class OnTimerArgumentProvider<KeyT> extends DoFn<InputT, OutputT>.OnTimerContext
+  private class OnTimerArgumentProvider extends DoFn<InputT, OutputT>.OnTimerContext
       implements DoFnInvoker.ArgumentProvider<InputT, OutputT> {
     private final BoundedWindow window;
-    private final Instant fireTimestamp;
     private final Instant timestamp;
     private final TimeDomain timeDomain;
-    private final String timerId;
-    private final KeyT key;
 
     /** Lazily initialized; should only be accessed via {@link #getNamespace()}. */
     private @Nullable StateNamespace namespace;
@@ -645,29 +748,16 @@ public class SimpleDoFnRunner<InputT, OutputT> implements DoFnRunner<InputT, Out
     }
 
     private OnTimerArgumentProvider(
-        String timerId,
-        KeyT key,
-        BoundedWindow window,
-        Instant fireTimestamp,
-        Instant timestamp,
-        TimeDomain timeDomain) {
+        BoundedWindow window, Instant timestamp, TimeDomain timeDomain) {
       fn.super();
-      this.timerId = timerId;
       this.window = window;
-      this.fireTimestamp = fireTimestamp;
       this.timestamp = timestamp;
       this.timeDomain = timeDomain;
-      this.key = key;
     }
 
     @Override
     public Instant timestamp() {
       return timestamp;
-    }
-
-    @Override
-    public Instant fireTimestamp() {
-      return fireTimestamp;
     }
 
     @Override
@@ -703,11 +793,6 @@ public class SimpleDoFnRunner<InputT, OutputT> implements DoFnRunner<InputT, Out
     }
 
     @Override
-    public KeyT key() {
-      return key;
-    }
-
-    @Override
     public DoFn<InputT, OutputT>.ProcessContext processContext(DoFn<InputT, OutputT> doFn) {
       throw new UnsupportedOperationException("ProcessContext parameters are not supported.");
     }
@@ -733,11 +818,6 @@ public class SimpleDoFnRunner<InputT, OutputT> implements DoFnRunner<InputT, Out
     }
 
     @Override
-    public String timerId(DoFn<InputT, OutputT> doFn) {
-      return timerId;
-    }
-
-    @Override
     public TimeDomain timeDomain(DoFn<InputT, OutputT> doFn) {
       return timeDomain();
     }
@@ -758,11 +838,6 @@ public class SimpleDoFnRunner<InputT, OutputT> implements DoFnRunner<InputT, Out
     }
 
     @Override
-    public Object restriction() {
-      throw new UnsupportedOperationException("@Restriction parameters are not supported.");
-    }
-
-    @Override
     public DoFn<InputT, OutputT>.OnTimerContext onTimerContext(DoFn<InputT, OutputT> doFn) {
       return this;
     }
@@ -773,30 +848,13 @@ public class SimpleDoFnRunner<InputT, OutputT> implements DoFnRunner<InputT, Out
     }
 
     @Override
-    public Object watermarkEstimatorState() {
-      throw new UnsupportedOperationException(
-          "@WatermarkEstimatorState parameters are not supported.");
-    }
-
-    @Override
-    public WatermarkEstimator<?> watermarkEstimator() {
-      throw new UnsupportedOperationException("WatermarkEstimator parameters are not supported.");
-    }
-
-    @Override
-    public State state(String stateId, boolean alwaysFetched) {
+    public State state(String stateId) {
       try {
         StateSpec<?> spec =
             (StateSpec<?>) signature.stateDeclarations().get(stateId).field().get(fn);
-        State state =
-            stepContext
-                .stateInternals()
-                .state(getNamespace(), StateTags.tagForSpec(stateId, (StateSpec) spec));
-        if (alwaysFetched) {
-          return (State) ((ReadableState) state).readLater();
-        } else {
-          return state;
-        }
+        return stepContext
+            .stateInternals()
+            .state(getNamespace(), StateTags.tagForSpec(stateId, (StateSpec) spec));
       } catch (IllegalAccessException e) {
         throw new RuntimeException(e);
       }
@@ -807,24 +865,7 @@ public class SimpleDoFnRunner<InputT, OutputT> implements DoFnRunner<InputT, Out
       try {
         TimerSpec spec = (TimerSpec) signature.timerDeclarations().get(timerId).field().get(fn);
         return new TimerInternalsTimer(
-            window, getNamespace(), timerId, spec, timestamp(), stepContext.timerInternals());
-      } catch (IllegalAccessException e) {
-        throw new RuntimeException(e);
-      }
-    }
-
-    @Override
-    public TimerMap timerFamily(String timerFamilyId) {
-      try {
-        TimerSpec spec =
-            (TimerSpec) signature.timerFamilyDeclarations().get(timerFamilyId).field().get(fn);
-        return new TimerInternalsTimerMap(
-            timerFamilyId,
-            window(),
-            getNamespace(),
-            spec,
-            timestamp(),
-            stepContext.timerInternals());
+            window, getNamespace(), timerId, spec, stepContext.timerInternals());
       } catch (IllegalAccessException e) {
         throw new RuntimeException(e);
       }
@@ -853,216 +894,6 @@ public class SimpleDoFnRunner<InputT, OutputT> implements DoFnRunner<InputT, Out
     @Override
     public <T> void outputWithTimestamp(TupleTag<T> tag, T output, Instant timestamp) {
       outputWindowedValue(tag, WindowedValue.of(output, timestamp, window(), PaneInfo.NO_FIRING));
-    }
-
-    @Override
-    public BundleFinalizer bundleFinalizer() {
-      throw new UnsupportedOperationException(
-          "Bundle finalization is not supported in non-portable pipelines.");
-    }
-  }
-
-  /**
-   * A concrete implementation of {@link DoFnInvoker.ArgumentProvider} used for running a {@link
-   * DoFn} on window expiration.
-   */
-  private class OnWindowExpirationArgumentProvider<KeyT>
-      extends DoFn<InputT, OutputT>.OnWindowExpirationContext
-      implements DoFnInvoker.ArgumentProvider<InputT, OutputT> {
-    private final BoundedWindow window;
-    private final Instant timestamp;
-    private final KeyT key;
-    /** Lazily initialized; should only be accessed via {@link #getNamespace()}. */
-    private @Nullable StateNamespace namespace;
-
-    /**
-     * The state namespace for this context.
-     *
-     * <p>Any call to this method when more than one window is present will crash; this represents a
-     * bug in the runner or the {@link DoFnSignature}, since values must be in exactly one window
-     * when state or timers are relevant.
-     */
-    private StateNamespace getNamespace() {
-      if (namespace == null) {
-        namespace = StateNamespaces.window(windowCoder, window);
-      }
-      return namespace;
-    }
-
-    private OnWindowExpirationArgumentProvider(BoundedWindow window, Instant timestamp, KeyT key) {
-      fn.super();
-      this.window = window;
-      this.timestamp = timestamp;
-      this.key = key;
-    }
-
-    @Override
-    public BoundedWindow window() {
-      return window;
-    }
-
-    @Override
-    public PaneInfo paneInfo(DoFn<InputT, OutputT> doFn) {
-      throw new UnsupportedOperationException(
-          "Cannot access paneInfo outside of @ProcessElement methods.");
-    }
-
-    @Override
-    public PipelineOptions pipelineOptions() {
-      return getPipelineOptions();
-    }
-
-    @Override
-    public DoFn<InputT, OutputT>.StartBundleContext startBundleContext(DoFn<InputT, OutputT> doFn) {
-      throw new UnsupportedOperationException("StartBundleContext parameters are not supported.");
-    }
-
-    @Override
-    public DoFn<InputT, OutputT>.FinishBundleContext finishBundleContext(
-        DoFn<InputT, OutputT> doFn) {
-      throw new UnsupportedOperationException("FinishBundleContext parameters are not supported.");
-    }
-
-    @Override
-    public DoFn<InputT, OutputT>.ProcessContext processContext(DoFn<InputT, OutputT> doFn) {
-      throw new UnsupportedOperationException("ProcessContext parameters are not supported.");
-    }
-
-    @Override
-    public InputT element(DoFn<InputT, OutputT> doFn) {
-      throw new UnsupportedOperationException("Element parameters are not supported.");
-    }
-
-    @Override
-    public Object sideInput(String tagId) {
-      throw new UnsupportedOperationException("SideInput parameters are not supported.");
-    }
-
-    @Override
-    public Object schemaElement(int index) {
-      throw new UnsupportedOperationException("Element parameters are not supported.");
-    }
-
-    @Override
-    public Instant timestamp(DoFn<InputT, OutputT> doFn) {
-      return timestamp;
-    }
-
-    @Override
-    public String timerId(DoFn<InputT, OutputT> doFn) {
-      throw new UnsupportedOperationException("Timer parameters are not supported.");
-    }
-
-    @Override
-    public TimeDomain timeDomain(DoFn<InputT, OutputT> doFn) {
-      throw new UnsupportedOperationException(
-          "Cannot access time domain outside of @ProcessTimer method.");
-    }
-
-    @Override
-    public KeyT key() {
-      return key;
-    }
-
-    @Override
-    public OutputReceiver<OutputT> outputReceiver(DoFn<InputT, OutputT> doFn) {
-      return DoFnOutputReceivers.windowedReceiver(this, mainOutputTag);
-    }
-
-    @Override
-    public OutputReceiver<Row> outputRowReceiver(DoFn<InputT, OutputT> doFn) {
-      return DoFnOutputReceivers.rowReceiver(this, mainOutputTag, mainOutputSchemaCoder);
-    }
-
-    @Override
-    public MultiOutputReceiver taggedOutputReceiver(DoFn<InputT, OutputT> doFn) {
-      return DoFnOutputReceivers.windowedMultiReceiver(this, outputCoders);
-    }
-
-    @Override
-    public Object restriction() {
-      throw new UnsupportedOperationException("@Restriction parameters are not supported.");
-    }
-
-    @Override
-    public DoFn<InputT, OutputT>.OnTimerContext onTimerContext(DoFn<InputT, OutputT> doFn) {
-      throw new UnsupportedOperationException("OnTimerContext parameters are not supported.");
-    }
-
-    @Override
-    public RestrictionTracker<?, ?> restrictionTracker() {
-      throw new UnsupportedOperationException("RestrictionTracker parameters are not supported.");
-    }
-
-    @Override
-    public Object watermarkEstimatorState() {
-      throw new UnsupportedOperationException(
-          "@WatermarkEstimatorState parameters are not supported.");
-    }
-
-    @Override
-    public WatermarkEstimator<?> watermarkEstimator() {
-      throw new UnsupportedOperationException("WatermarkEstimator parameters are not supported.");
-    }
-
-    @Override
-    public State state(String stateId, boolean alwaysFetched) {
-      try {
-        StateSpec<?> spec =
-            (StateSpec<?>) signature.stateDeclarations().get(stateId).field().get(fn);
-        State state =
-            stepContext
-                .stateInternals()
-                .state(getNamespace(), StateTags.tagForSpec(stateId, (StateSpec) spec));
-        if (alwaysFetched) {
-          return (State) ((ReadableState) state).readLater();
-        } else {
-          return state;
-        }
-      } catch (IllegalAccessException e) {
-        throw new RuntimeException(e);
-      }
-    }
-
-    @Override
-    public Timer timer(String timerId) {
-      throw new UnsupportedOperationException("Timer parameters are not supported.");
-    }
-
-    @Override
-    public TimerMap timerFamily(String timerFamilyId) {
-      throw new UnsupportedOperationException("TimerFamily parameters are not supported.");
-    }
-
-    @Override
-    public PipelineOptions getPipelineOptions() {
-      return options;
-    }
-
-    @Override
-    public void output(OutputT output) {
-      output(mainOutputTag, output);
-    }
-
-    @Override
-    public void outputWithTimestamp(OutputT output, Instant timestamp) {
-      outputWithTimestamp(mainOutputTag, output, timestamp);
-    }
-
-    @Override
-    public <T> void output(TupleTag<T> tag, T output) {
-      outputWindowedValue(tag, WindowedValue.of(output, timestamp, window(), PaneInfo.NO_FIRING));
-    }
-
-    @Override
-    public <T> void outputWithTimestamp(TupleTag<T> tag, T output, Instant timestamp) {
-      outputWindowedValue(tag, WindowedValue.of(output, timestamp, window(), PaneInfo.NO_FIRING));
-    }
-
-    @Override
-    public BundleFinalizer bundleFinalizer() {
-      throw new UnsupportedOperationException(
-          "Bundle finalization is not supported in non-portable pipelines.");
     }
   }
 
@@ -1075,11 +906,7 @@ public class SimpleDoFnRunner<InputT, OutputT> implements DoFnRunner<InputT, Out
     private final BoundedWindow window;
     private final StateNamespace namespace;
     private final String timerId;
-    private final String timerFamilyId;
     private final TimerSpec spec;
-    private Instant target;
-    private Instant outputTimestamp;
-    private final Instant elementInputTimestamp;
     private Duration period = Duration.ZERO;
     private Duration offset = Duration.ZERO;
 
@@ -1088,44 +915,40 @@ public class SimpleDoFnRunner<InputT, OutputT> implements DoFnRunner<InputT, Out
         StateNamespace namespace,
         String timerId,
         TimerSpec spec,
-        Instant elementInputTimestamp,
         TimerInternals timerInternals) {
       this.window = window;
       this.namespace = namespace;
       this.timerId = timerId;
-      this.timerFamilyId = "";
       this.spec = spec;
-      this.elementInputTimestamp = elementInputTimestamp;
-      this.timerInternals = timerInternals;
-    }
-
-    public TimerInternalsTimer(
-        BoundedWindow window,
-        StateNamespace namespace,
-        String timerId,
-        String timerFamilyId,
-        TimerSpec spec,
-        Instant elementInputTimestamp,
-        TimerInternals timerInternals) {
-      this.window = window;
-      this.namespace = namespace;
-      this.timerId = timerId;
-      this.timerFamilyId = timerFamilyId;
-      this.spec = spec;
-      this.elementInputTimestamp = elementInputTimestamp;
       this.timerInternals = timerInternals;
     }
 
     @Override
     public void set(Instant target) {
-      this.target = target;
-      verifyAbsoluteTimeDomain();
-      setAndVerifyOutputTimestamp();
-      setUnderlyingTimer();
+      // Verifies that the time domain of this timer is acceptable for absolute timers.
+      if (!TimeDomain.EVENT_TIME.equals(spec.getTimeDomain())) {
+        throw new IllegalStateException(
+            "Can only set relative timers in processing time domain. Use #setRelative()");
+      }
+
+      // Ensures that the target time is reasonable. For event time timers this means that the time
+      // should be prior to window GC time.
+      if (TimeDomain.EVENT_TIME.equals(spec.getTimeDomain())) {
+        Instant windowExpiry = window.maxTimestamp().plus(allowedLateness);
+        checkArgument(
+            !target.isAfter(windowExpiry),
+            "Attempted to set event time timer for %s but that is after"
+                + " the expiration of window %s",
+            target,
+            windowExpiry);
+      }
+
+      setUnderlyingTimer(target);
     }
 
     @Override
     public void setRelative() {
+      Instant target;
       Instant now = getCurrentTime();
       if (period.equals(Duration.ZERO)) {
         target = now.plus(offset);
@@ -1134,9 +957,7 @@ public class SimpleDoFnRunner<InputT, OutputT> implements DoFnRunner<InputT, Out
         target = millisSinceStart == 0 ? now : now.plus(period).minus(millisSinceStart);
       }
       target = minTargetAndGcTime(target);
-
-      setAndVerifyOutputTimestamp();
-      setUnderlyingTimer();
+      setUnderlyingTimer(target);
     }
 
     @Override
@@ -1165,84 +986,13 @@ public class SimpleDoFnRunner<InputT, OutputT> implements DoFnRunner<InputT, Out
       return target;
     }
 
-    @Override
-    public Timer withOutputTimestamp(Instant outputTimestamp) {
-      this.outputTimestamp = outputTimestamp;
-      return this;
-    }
-
-    /** Verifies that the time domain of this timer is acceptable for absolute timers. */
-    private void verifyAbsoluteTimeDomain() {
-      if (!TimeDomain.EVENT_TIME.equals(spec.getTimeDomain())) {
-        throw new IllegalStateException(
-            "Cannot only set relative timers in processing time domain." + " Use #setRelative()");
-      }
-    }
-
-    /**
-     *
-     *
-     * <ul>
-     *   Ensures that:
-     *   <li>Users can't set {@code outputTimestamp} for processing time timers.
-     *   <li>Event time timers' {@code outputTimestamp} is set before window expiration.
-     * </ul>
-     */
-    private void setAndVerifyOutputTimestamp() {
-
-      if (outputTimestamp != null) {
-        checkArgument(
-            !outputTimestamp.isBefore(elementInputTimestamp),
-            "output timestamp %s should be after input message timestamp or output timestamp of firing timers %s",
-            outputTimestamp,
-            elementInputTimestamp);
-      }
-
-      // Output timestamp is set to the delivery time if not initialized by an user.
-      if (outputTimestamp == null && TimeDomain.EVENT_TIME.equals(spec.getTimeDomain())) {
-        outputTimestamp = target;
-      }
-      // For processing timers
-      if (outputTimestamp == null) {
-        // For processing timers output timestamp will be:
-        // 1) timestamp of input element
-        // OR
-        // 2) output timestamp of firing timer.
-        outputTimestamp = elementInputTimestamp;
-      }
-
-      Instant windowExpiry = window.maxTimestamp().plus(allowedLateness);
-      if (TimeDomain.EVENT_TIME.equals(spec.getTimeDomain())) {
-        checkArgument(
-            !outputTimestamp.isAfter(target),
-            "Attempted to set an event-time timer with an output timestamp of %s that is"
-                + " after the timer firing timestamp %s",
-            outputTimestamp,
-            target);
-        checkArgument(
-            !target.isAfter(windowExpiry),
-            "Attempted to set an event-time timer with a firing timestamp of %s that is"
-                + " after the expiration of window %s",
-            target,
-            windowExpiry);
-      } else {
-        checkArgument(
-            !outputTimestamp.isAfter(windowExpiry),
-            "Attempted to set a processing-time timer with an output timestamp of %s that is"
-                + " after the expiration of window %s",
-            outputTimestamp,
-            windowExpiry);
-      }
-    }
-
     /**
      * Sets the timer for the target time without checking anything about whether it is a reasonable
      * thing to do. For example, absolute processing time timers are not really sensible since the
      * user has no way to compute a good choice of time.
      */
-    private void setUnderlyingTimer() {
-      timerInternals.setTimer(
-          namespace, timerId, timerFamilyId, target, outputTimestamp, spec.getTimeDomain());
+    private void setUnderlyingTimer(Instant target) {
+      timerInternals.setTimer(namespace, timerId, target, spec.getTimeDomain());
     }
 
     private Instant getCurrentTime() {
@@ -1257,64 +1007,6 @@ public class SimpleDoFnRunner<InputT, OutputT> implements DoFnRunner<InputT, Out
           throw new IllegalStateException(
               String.format("Timer created for unknown time domain %s", spec.getTimeDomain()));
       }
-    }
-  }
-
-  private class TimerInternalsTimerMap implements TimerMap {
-
-    Map<String, Timer> timers = new HashMap<>();
-    private final TimerInternals timerInternals;
-    private final BoundedWindow window;
-    private final StateNamespace namespace;
-    private final TimerSpec spec;
-    private final Instant elementInputTimestamp;
-    private final String timerFamilyId;
-
-    public TimerInternalsTimerMap(
-        String timerFamilyId,
-        BoundedWindow window,
-        StateNamespace namespace,
-        TimerSpec spec,
-        Instant elementInputTimestamp,
-        TimerInternals timerInternals) {
-      this.window = window;
-      this.namespace = namespace;
-      this.spec = spec;
-      this.elementInputTimestamp = elementInputTimestamp;
-      this.timerInternals = timerInternals;
-      this.timerFamilyId = timerFamilyId;
-    }
-
-    @Override
-    public void set(String timerId, Instant absoluteTime) {
-      Timer timer =
-          new TimerInternalsTimer(
-              window,
-              namespace,
-              timerId,
-              timerFamilyId,
-              spec,
-              elementInputTimestamp,
-              timerInternals);
-      timer.set(absoluteTime);
-      timers.put(timerId, timer);
-    }
-
-    @Override
-    public Timer get(String timerId) {
-      if (timers.get(timerId) == null) {
-        Timer timer =
-            new TimerInternalsTimer(
-                window,
-                namespace,
-                timerId,
-                timerFamilyId,
-                spec,
-                elementInputTimestamp,
-                timerInternals);
-        timers.put(timerId, timer);
-      }
-      return timers.get(timerId);
     }
   }
 }

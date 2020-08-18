@@ -1236,8 +1236,7 @@ public class ViewTest implements Serializable {
                             c.output(
                                 KV.of(
                                     c.element(),
-                                    c.sideInput(view)
-                                        .getOrDefault(c.element().substring(0, 1), 0)));
+                                    c.sideInput(view).get(c.element().substring(0, 1))));
                           }
                         })
                     .withSideInputs(view));

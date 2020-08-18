@@ -17,6 +17,8 @@
  */
 package org.apache.beam.runners.core;
 
+import org.apache.beam.sdk.annotations.Experimental;
+import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.state.State;
 
 /**
@@ -24,6 +26,7 @@ import org.apache.beam.sdk.state.State;
  *
  * <p>For internal use only.
  */
+@Experimental(Kind.STATE)
 public interface StateAccessor<K> {
   /**
    * Access the storage for the given {@code address} in the current window.

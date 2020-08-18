@@ -39,6 +39,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.KvCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
@@ -68,11 +69,9 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.hash.Funnel;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.hash.Funnels;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.hash.HashCode;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.hash.Hashing;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.joda.time.ReadableDuration;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -307,7 +306,6 @@ public class WatchTest implements Serializable {
 
   @Test
   @Category({NeedsRunner.class, UsesUnboundedSplittableParDo.class})
-  @Ignore("https://issues.apache.org/jira/browse/BEAM-8035")
   public void testMultiplePollsWithManyResults() {
     final long numResults = 3000;
     List<Integer> all = Lists.newArrayList();
@@ -556,8 +554,7 @@ public class WatchTest implements Serializable {
 
     assertTrue(tracker.tryClaim(KV.of(claim, 1 /* termination state */)));
 
-    PollingGrowthState<Integer> residual =
-        (PollingGrowthState<Integer>) tracker.trySplit(0).getResidual();
+    PollingGrowthState<Integer> residual = (PollingGrowthState<Integer>) tracker.checkpoint();
     NonPollingGrowthState<String> primary =
         (NonPollingGrowthState<String>) tracker.currentRestriction();
     tracker.checkDone();
@@ -577,8 +574,7 @@ public class WatchTest implements Serializable {
   public void testPollingGrowthTrackerCheckpointEmpty() {
     GrowthTracker<String, Integer> tracker = newPollingGrowthTracker();
 
-    PollingGrowthState<Integer> residual =
-        (PollingGrowthState<Integer>) tracker.trySplit(0).getResidual();
+    PollingGrowthState<Integer> residual = (PollingGrowthState<Integer>) tracker.checkpoint();
     GrowthState primary = tracker.currentRestriction();
     tracker.checkDone();
 
@@ -607,8 +603,7 @@ public class WatchTest implements Serializable {
 
     assertTrue(tracker.tryClaim(KV.of(claim, 1 /* termination state */)));
 
-    PollingGrowthState<Integer> residual =
-        (PollingGrowthState<Integer>) tracker.trySplit(0).getResidual();
+    PollingGrowthState<Integer> residual = (PollingGrowthState<Integer>) tracker.checkpoint();
 
     assertFalse(newTracker(residual).tryClaim(KV.of(claim, 2)));
   }
@@ -628,7 +623,7 @@ public class WatchTest implements Serializable {
     GrowthTracker<String, Integer> tracker = newTracker(NonPollingGrowthState.of(claim));
 
     assertTrue(tracker.tryClaim(KV.of(claim, 1 /* termination state */)));
-    GrowthState residual = tracker.trySplit(0).getResidual();
+    GrowthState residual = tracker.checkpoint();
     NonPollingGrowthState<String> primary =
         (NonPollingGrowthState<String>) tracker.currentRestriction();
     tracker.checkDone();
@@ -654,8 +649,7 @@ public class WatchTest implements Serializable {
 
     GrowthTracker<String, Integer> tracker = newTracker(NonPollingGrowthState.of(claim));
 
-    NonPollingGrowthState<String> residual =
-        (NonPollingGrowthState<String>) tracker.trySplit(0).getResidual();
+    NonPollingGrowthState<String> residual = (NonPollingGrowthState<String>) tracker.checkpoint();
     GrowthState primary = tracker.currentRestriction();
     tracker.checkDone();
 

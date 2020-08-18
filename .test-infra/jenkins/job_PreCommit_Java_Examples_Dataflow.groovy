@@ -17,15 +17,12 @@
  */
 
 import PrecommitJobBuilder
-import CommonJobProperties as common
 
 PrecommitJobBuilder builder = new PrecommitJobBuilder(
     scope: this,
     nameBase: 'Java_Examples_Dataflow',
     gradleTask: ':javaExamplesDataflowPreCommit',
-    gradleSwitches: [
-      '-PdisableSpotlessCheck=true'
-    ], // spotless checked in separate pre-commit
+    gradleSwitches: ['-PdisableSpotlessCheck=true'], // spotless checked in separate pre-commit
     triggerPathPatterns: [
       '^model/.*$',
       '^sdks/java/.*$',
@@ -33,11 +30,10 @@ PrecommitJobBuilder builder = new PrecommitJobBuilder(
       '^examples/java/.*$',
       '^examples/kotlin/.*$',
       '^release/.*$',
-    ],
-    timeoutMins: 30,
-    )
+    ]
+)
 builder.build {
   publishers {
-    common.setArchiveJunitWithStabilityHistory(delegate, '**/build/test-results/**/*.xml')
+    archiveJunit('**/build/test-results/**/*.xml')
   }
 }

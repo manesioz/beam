@@ -19,7 +19,6 @@ package org.apache.beam.sdk.coders;
 
 import java.util.Objects;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.MoreObjects;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /** A Pojo at the top level for use in tests. */
 class AvroCoderTestPojo {
@@ -35,7 +34,7 @@ class AvroCoderTestPojo {
   }
 
   @Override
-  public boolean equals(@Nullable Object other) {
+  public boolean equals(Object other) {
     return (other instanceof AvroCoderTestPojo) && ((AvroCoderTestPojo) other).text.equals(text);
   }
 

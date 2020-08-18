@@ -31,7 +31,6 @@ import org.apache.beam.sdk.coders.AtomicCoder;
 import org.apache.beam.sdk.util.SerializableUtils;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.hamcrest.Matchers;
 import org.junit.Rule;
 import org.junit.Test;
@@ -135,7 +134,7 @@ public class SerializableMatchersTest implements Serializable {
 
   private static class NotSerializableClass {
     @Override
-    public boolean equals(@Nullable Object other) {
+    public boolean equals(Object other) {
       return other instanceof NotSerializableClass;
     }
 

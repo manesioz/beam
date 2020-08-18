@@ -20,11 +20,11 @@ package org.apache.beam.sdk.testing;
 import static org.hamcrest.Matchers.in;
 import static org.hamcrest.core.Is.is;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.io.Serializable;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.CoderException;
 import org.apache.beam.sdk.coders.ListCoder;
@@ -32,7 +32,6 @@ import org.apache.beam.sdk.util.CoderUtils;
 import org.apache.beam.sdk.util.UserCodeException;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.MoreObjects;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.hamcrest.BaseMatcher;
 import org.hamcrest.Description;
 import org.hamcrest.Matcher;
@@ -760,7 +759,7 @@ public class SerializableMatchers implements Serializable {
    */
   private static class SerializableViaCoder<T> implements SerializableSupplier<T> {
     /** Cached value that is not serialized. */
-    private transient @Nullable T value;
+    @Nullable private transient T value;
 
     /** The bytes of {@link #value} when encoded via {@link #coder}. */
     private byte[] encodedValue;
@@ -797,8 +796,7 @@ public class SerializableMatchers implements Serializable {
    */
   private static class SerializableArrayViaCoder<T> implements SerializableSupplier<T[]> {
     /** Cached value that is not serialized. */
-    @SuppressFBWarnings("SE_TRANSIENT_FIELD_NOT_RESTORED")
-    private transient T @Nullable [] value;
+    @Nullable private transient T[] value;
 
     /** The bytes of {@link #value} when encoded via {@link #coder}. */
     private byte[] encodedValue;

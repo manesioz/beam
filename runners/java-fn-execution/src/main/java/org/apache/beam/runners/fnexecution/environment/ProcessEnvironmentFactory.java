@@ -47,15 +47,28 @@ public class ProcessEnvironmentFactory implements EnvironmentFactory {
 
   public static ProcessEnvironmentFactory create(
       ProcessManager processManager,
+      GrpcFnServer<FnApiControlClientPoolService> controlServiceServer,
+      GrpcFnServer<GrpcLoggingService> loggingServiceServer,
+      GrpcFnServer<ArtifactRetrievalService> retrievalServiceServer,
       GrpcFnServer<StaticGrpcProvisionService> provisioningServiceServer,
       ControlClientPool.Source clientSource,
       IdGenerator idGenerator,
       PipelineOptions pipelineOptions) {
     return new ProcessEnvironmentFactory(
-        processManager, provisioningServiceServer, idGenerator, clientSource, pipelineOptions);
+        processManager,
+        controlServiceServer,
+        loggingServiceServer,
+        retrievalServiceServer,
+        provisioningServiceServer,
+        idGenerator,
+        clientSource,
+        pipelineOptions);
   }
 
   private final ProcessManager processManager;
+  private final GrpcFnServer<FnApiControlClientPoolService> controlServiceServer;
+  private final GrpcFnServer<GrpcLoggingService> loggingServiceServer;
+  private final GrpcFnServer<ArtifactRetrievalService> retrievalServiceServer;
   private final GrpcFnServer<StaticGrpcProvisionService> provisioningServiceServer;
   private final IdGenerator idGenerator;
   private final ControlClientPool.Source clientSource;
@@ -63,11 +76,17 @@ public class ProcessEnvironmentFactory implements EnvironmentFactory {
 
   private ProcessEnvironmentFactory(
       ProcessManager processManager,
+      GrpcFnServer<FnApiControlClientPoolService> controlServiceServer,
+      GrpcFnServer<GrpcLoggingService> loggingServiceServer,
+      GrpcFnServer<ArtifactRetrievalService> retrievalServiceServer,
       GrpcFnServer<StaticGrpcProvisionService> provisioningServiceServer,
       IdGenerator idGenerator,
       ControlClientPool.Source clientSource,
       PipelineOptions pipelineOptions) {
     this.processManager = processManager;
+    this.controlServiceServer = controlServiceServer;
+    this.loggingServiceServer = loggingServiceServer;
+    this.retrievalServiceServer = retrievalServiceServer;
     this.provisioningServiceServer = provisioningServiceServer;
     this.idGenerator = idGenerator;
     this.clientSource = clientSource;
@@ -76,8 +95,7 @@ public class ProcessEnvironmentFactory implements EnvironmentFactory {
 
   /** Creates a new, active {@link RemoteEnvironment} backed by a forked process. */
   @Override
-  public RemoteEnvironment createEnvironment(Environment environment, String workerId)
-      throws Exception {
+  public RemoteEnvironment createEnvironment(Environment environment) throws Exception {
     Preconditions.checkState(
         environment
             .getUrn()
@@ -85,15 +103,22 @@ public class ProcessEnvironmentFactory implements EnvironmentFactory {
         "The passed environment does not contain a ProcessPayload.");
     final RunnerApi.ProcessPayload processPayload =
         RunnerApi.ProcessPayload.parseFrom(environment.getPayload());
+    final String workerId = idGenerator.getId();
 
     String executable = processPayload.getCommand();
+    String loggingEndpoint = loggingServiceServer.getApiServiceDescriptor().getUrl();
+    String artifactEndpoint = retrievalServiceServer.getApiServiceDescriptor().getUrl();
     String provisionEndpoint = provisioningServiceServer.getApiServiceDescriptor().getUrl();
+    String controlEndpoint = controlServiceServer.getApiServiceDescriptor().getUrl();
 
     String semiPersistDir = pipelineOptions.as(RemoteEnvironmentOptions.class).getSemiPersistDir();
     ImmutableList.Builder<String> argsBuilder =
         ImmutableList.<String>builder()
             .add(String.format("--id=%s", workerId))
-            .add(String.format("--provision_endpoint=%s", provisionEndpoint));
+            .add(String.format("--logging_endpoint=%s", loggingEndpoint))
+            .add(String.format("--artifact_endpoint=%s", artifactEndpoint))
+            .add(String.format("--provision_endpoint=%s", provisionEndpoint))
+            .add(String.format("--control_endpoint=%s", controlEndpoint));
     if (semiPersistDir != null) {
       argsBuilder.add(String.format("--semi_persist_dir=%s", semiPersistDir));
     }
@@ -110,7 +135,7 @@ public class ProcessEnvironmentFactory implements EnvironmentFactory {
         try {
           // If the process is not alive anymore, we abort.
           process.isAliveOrThrow();
-          instructionHandler = clientSource.take(workerId, Duration.ofSeconds(5));
+          instructionHandler = clientSource.take(workerId, Duration.ofMinutes(2));
         } catch (TimeoutException timeoutEx) {
           LOG.info(
               "Still waiting for startup of environment '{}' for worker id {}",
@@ -151,6 +176,9 @@ public class ProcessEnvironmentFactory implements EnvironmentFactory {
         IdGenerator idGenerator) {
       return create(
           ProcessManager.create(),
+          controlServiceServer,
+          loggingServiceServer,
+          retrievalServiceServer,
           provisioningServiceServer,
           clientPool.getSource(),
           idGenerator,

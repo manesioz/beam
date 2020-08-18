@@ -15,15 +15,13 @@
 # limitations under the License.
 #
 
-# pytype: skip-file
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 import collections
+import datetime
 import os
-import sys
 import tempfile
 import urllib
 
@@ -34,12 +32,13 @@ from apache_beam.io import textio
 from apache_beam.io import tfrecordio
 from apache_beam.transforms import combiners
 
-if sys.version_info[0] > 2:
+try:                    # Python 3
   unquote_to_bytes = urllib.parse.unquote_to_bytes
   quote = urllib.parse.quote
-else:
-  unquote_to_bytes = urllib.unquote  # pylint: disable=deprecated-urllib-function
-  quote = urllib.quote  # pylint: disable=deprecated-urllib-function
+except AttributeError:  # Python 2
+  # pylint: disable=deprecated-urllib-function
+  unquote_to_bytes = urllib.unquote
+  quote = urllib.quote
 
 
 class CacheManager(object):
@@ -49,39 +48,28 @@ class CacheManager(object):
   'full' or 'sample') and a cache_label which is a hash of the PCollection
   derivation.
   """
-  def exists(self, *labels):
-    # type (*str) -> bool
 
+  def exists(self, *labels):
     """Returns if the PCollection cache exists."""
     raise NotImplementedError
 
   def is_latest_version(self, version, *labels):
-    # type (str, *str) -> bool
-
     """Returns if the given version number is the latest."""
     return version == self._latest_version(*labels)
 
   def _latest_version(self, *labels):
-    # type (*str) -> str
-
     """Returns the latest version number of the PCollection cache."""
     raise NotImplementedError
 
-  def read(self, *labels, **args):
-    # type (*str, Dict[str, Any]) -> Tuple[str, Generator[Any]]
-
+  def read(self, *labels):
     """Return the PCollection as a list as well as the version number.
 
     Args:
       *labels: List of labels for PCollection instance.
-      **args: Dict of additional arguments. Currently only supports 'limiters'
-        as a list of ElementLimiters, and 'tail' as a boolean. Limiters limits
-        the amount of elements read and duration with respect to processing
-        time.
 
     Returns:
-      A tuple containing an iterator for the items in the PCollection and the
-        version number.
+      Tuple[List[Any], int]: A tuple containing a list of items in the
+        PCollection and the version number.
 
     It is possible that the version numbers from read() and_latest_version()
     are different. This usually means that the cache's been evicted (thus
@@ -90,47 +78,15 @@ class CacheManager(object):
     """
     raise NotImplementedError
 
-  def write(self, value, *labels):
-    # type (Any, *str) -> None
-
-    """Writes the value to the given cache.
-
-    Args:
-      value: An encodable (with corresponding PCoder) value
-      *labels: List of labels for PCollection instance
-    """
-    raise NotImplementedError
-
-  def clear(self, *labels):
-    # type (*str) -> Boolean
-
-    """Clears the cache entry of the given labels and returns True on success.
-
-    Args:
-      value: An encodable (with corresponding PCoder) value
-      *labels: List of labels for PCollection instance
-    """
-    raise NotImplementedError
-
   def source(self, *labels):
-    # type (*str) -> ptransform.PTransform
-
-    """Returns a PTransform that reads the PCollection cache."""
+    """Returns a beam.io.Source that reads the PCollection cache."""
     raise NotImplementedError
 
-  def sink(self, labels, is_capture=False):
-    # type (*str, bool) -> ptransform.PTransform
-
-    """Returns a PTransform that writes the PCollection cache.
-
-    TODO(BEAM-10514): Make sure labels will not be converted into an
-    arbitrarily long file path: e.g., windows has a 260 path limit.
-    """
+  def sink(self, *labels):
+    """Returns a beam.io.Sink that writes the PCollection cache."""
     raise NotImplementedError
 
   def save_pcoder(self, pcoder, *labels):
-    # type (coders.Coder, *str) -> None
-
     """Saves pcoder for given PCollection.
 
     Correct reading of PCollection from Cache requires PCoder to be known.
@@ -146,14 +102,10 @@ class CacheManager(object):
     raise NotImplementedError
 
   def load_pcoder(self, *labels):
-    # type (*str) -> coders.Coder
-
     """Returns previously saved PCoder for reading and writing PCollection."""
     raise NotImplementedError
 
   def cleanup(self):
-    # type () -> None
-
     """Cleans up all the PCollection caches."""
     raise NotImplementedError
 
@@ -168,10 +120,12 @@ class FileBasedCacheManager(CacheManager):
 
   def __init__(self, cache_dir=None, cache_format='text'):
     if cache_dir:
-      self._cache_dir = cache_dir
+      self._cache_dir = filesystems.FileSystems.join(
+          cache_dir,
+          datetime.datetime.now().strftime("cache-%y-%m-%d-%H_%M_%S"))
     else:
       self._cache_dir = tempfile.mkdtemp(
-          prefix='it-', dir=os.environ.get('TEST_TMPDIR', None))
+          prefix='interactive-temp-', dir=os.environ.get('TEST_TMPDIR', None))
     self._versions = collections.defaultdict(lambda: self._CacheVersion())
 
     if cache_format not in self._available_formats:
@@ -207,63 +161,26 @@ class FileBasedCacheManager(CacheManager):
     self._saved_pcoders[self._path(*labels)] = pcoder
 
   def load_pcoder(self, *labels):
-    return (
-        self._default_pcoder if self._default_pcoder is not None else
-        self._saved_pcoders[self._path(*labels)])
+    return (self._default_pcoder if self._default_pcoder is not None else
+            self._saved_pcoders[self._path(*labels)])
 
-  def read(self, *labels, **args):
-    # Return an iterator to an empty list if it doesn't exist.
+  def read(self, *labels):
     if not self.exists(*labels):
-      return iter([]), -1
+      return [], -1
 
-    limiters = args.pop('limiters', [])
-
-    # Otherwise, return a generator to the cached PCollection.
-    source = self.source(*labels)._source
+    source = self.source(*labels)
     range_tracker = source.get_range_tracker(None, None)
-    reader = source.read(range_tracker)
+    result = list(source.read(range_tracker))
     version = self._latest_version(*labels)
-
-    # The return type is a generator, so in order to implement the limiter for
-    # the FileBasedCacheManager we wrap the original generator with the logic
-    # to limit yielded elements.
-    def limit_reader(r):
-      for e in r:
-        # Update the limiters and break early out of reading from cache if any
-        # are triggered.
-        for l in limiters:
-          l.update(e)
-
-        if any(l.is_triggered() for l in limiters):
-          break
-
-        yield e
-
-    return limit_reader(reader), version
-
-  def write(self, values, *labels):
-    sink = self.sink(labels)._sink
-    path = self._path(*labels)
-
-    init_result = sink.initialize_write()
-    writer = sink.open_writer(init_result, path)
-    for v in values:
-      writer.write(v)
-    writer.close()
-
-  def clear(self, *labels):
-    if self.exists(*labels):
-      filesystems.FileSystems.delete(self._match(*labels))
-      return True
-    return False
+    return result, version
 
   def source(self, *labels):
     return self._reader_class(
-        self._glob_path(*labels), coder=self.load_pcoder(*labels))
+        self._glob_path(*labels), coder=self.load_pcoder(*labels))._source
 
-  def sink(self, labels, is_capture=False):
+  def sink(self, *labels):
     return self._writer_class(
-        self._path(*labels), coder=self.load_pcoder(*labels))
+        self._path(*labels), coder=self.load_pcoder(*labels))._sink
 
   def cleanup(self):
     if filesystems.FileSystems.exists(self._cache_dir):
@@ -283,6 +200,7 @@ class FileBasedCacheManager(CacheManager):
 
   class _CacheVersion(object):
     """This class keeps track of the timestamp and the corresponding version."""
+
     def __init__(self):
       self.current_version = -1
       self.current_timestamp = 0
@@ -310,23 +228,17 @@ class ReadCache(beam.PTransform):
 
   def expand(self, pbegin):
     # pylint: disable=expression-not-assigned
-    return pbegin | 'Read' >> self._cache_manager.source('full', self._label)
+    return pbegin | 'Read' >> beam.io.Read(
+        self._cache_manager.source('full', self._label))
 
 
 class WriteCache(beam.PTransform):
   """A PTransform that writes the PCollections to the cache."""
-  def __init__(
-      self,
-      cache_manager,
-      label,
-      sample=False,
-      sample_size=0,
-      is_capture=False):
+  def __init__(self, cache_manager, label, sample=False, sample_size=0):
     self._cache_manager = cache_manager
     self._label = label
     self._sample = sample
     self._sample_size = sample_size
-    self._is_capture = is_capture
 
   def expand(self, pcoll):
     prefix = 'sample' if self._sample else 'full'
@@ -335,25 +247,25 @@ class WriteCache(beam.PTransform):
     # cached PCollection. _cache_manager.sink(...) call below
     # should be using this saved pcoder.
     self._cache_manager.save_pcoder(
-        coders.registry.get_coder(pcoll.element_type), prefix, self._label)
+        coders.registry.get_coder(pcoll.element_type),
+        prefix, self._label)
 
     if self._sample:
       pcoll |= 'Sample' >> (
           combiners.Sample.FixedSizeGlobally(self._sample_size)
           | beam.FlatMap(lambda sample: sample))
     # pylint: disable=expression-not-assigned
-    return pcoll | 'Write' >> self._cache_manager.sink(
-        (prefix, self._label), is_capture=self._is_capture)
+    return pcoll | 'Write' >> beam.io.Write(
+        self._cache_manager.sink(prefix, self._label))
 
 
 class SafeFastPrimitivesCoder(coders.Coder):
   """This class add an quote/unquote step to escape special characters."""
-
   # pylint: disable=deprecated-urllib-function
 
   def encode(self, value):
-    return quote(
-        coders.coders.FastPrimitivesCoder().encode(value)).encode('utf-8')
+    return quote(coders.coders.FastPrimitivesCoder().encode(value)).encode(
+        'utf-8')
 
   def decode(self, value):
     return coders.coders.FastPrimitivesCoder().decode(unquote_to_bytes(value))

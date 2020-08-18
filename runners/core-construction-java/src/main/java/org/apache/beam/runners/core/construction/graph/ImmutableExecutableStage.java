@@ -22,7 +22,6 @@ import java.util.Collection;
 import java.util.stream.Collectors;
 import org.apache.beam.model.pipeline.v1.RunnerApi.Components;
 import org.apache.beam.model.pipeline.v1.RunnerApi.Environment;
-import org.apache.beam.model.pipeline.v1.RunnerApi.ExecutableStagePayload.WireCoderSetting;
 import org.apache.beam.runners.core.construction.graph.PipelineNode.PCollectionNode;
 import org.apache.beam.runners.core.construction.graph.PipelineNode.PTransformNode;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableSet;
@@ -38,8 +37,7 @@ public abstract class ImmutableExecutableStage implements ExecutableStage {
       Collection<UserStateReference> userStates,
       Collection<TimerReference> timers,
       Collection<PTransformNode> transforms,
-      Collection<PCollectionNode> outputs,
-      Collection<WireCoderSetting> wireCoderSettings) {
+      Collection<PCollectionNode> outputs) {
     Components prunedComponents =
         components
             .toBuilder()
@@ -49,15 +47,7 @@ public abstract class ImmutableExecutableStage implements ExecutableStage {
                     .collect(Collectors.toMap(PTransformNode::getId, PTransformNode::getTransform)))
             .build();
     return of(
-        prunedComponents,
-        environment,
-        input,
-        sideInputs,
-        userStates,
-        timers,
-        transforms,
-        outputs,
-        wireCoderSettings);
+        prunedComponents, environment, input, sideInputs, userStates, timers, transforms, outputs);
   }
 
   public static ImmutableExecutableStage of(
@@ -68,8 +58,7 @@ public abstract class ImmutableExecutableStage implements ExecutableStage {
       Collection<UserStateReference> userStates,
       Collection<TimerReference> timers,
       Collection<PTransformNode> transforms,
-      Collection<PCollectionNode> outputs,
-      Collection<WireCoderSetting> wireCoderSettings) {
+      Collection<PCollectionNode> outputs) {
     return new AutoValue_ImmutableExecutableStage(
         components,
         environment,
@@ -78,8 +67,7 @@ public abstract class ImmutableExecutableStage implements ExecutableStage {
         ImmutableSet.copyOf(userStates),
         ImmutableSet.copyOf(timers),
         ImmutableSet.copyOf(transforms),
-        ImmutableSet.copyOf(outputs),
-        wireCoderSettings);
+        ImmutableSet.copyOf(outputs));
   }
 
   @Override
@@ -106,7 +94,4 @@ public abstract class ImmutableExecutableStage implements ExecutableStage {
 
   @Override
   public abstract Collection<PCollectionNode> getOutputPCollections();
-
-  @Override
-  public abstract Collection<WireCoderSetting> getWireCoderSettings();
 }

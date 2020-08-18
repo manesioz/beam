@@ -23,11 +23,11 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
-import java.io.EOFException;
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 import java.util.UUID;
+import javax.annotation.Nonnull;
 import org.apache.beam.sdk.values.KV;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -37,8 +37,6 @@ import org.apache.hadoop.io.SequenceFile.CompressionType;
 import org.apache.hadoop.io.SequenceFile.Sorter.RawKeyValueIterator;
 import org.apache.hadoop.io.SequenceFile.Writer;
 import org.apache.hadoop.mapred.JobConf;
-import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /** Does an external sort of the provided values using Hadoop's {@link SequenceFile}. */
 class HadoopExternalSorter extends ExternalSorter {
@@ -47,18 +45,18 @@ class HadoopExternalSorter extends ExternalSorter {
   private boolean sortCalled = false;
 
   /** SequenceFile Writer for writing all input data to a file. */
-  private @MonotonicNonNull Writer writer = null;
+  private Writer writer;
 
   /** Sorter used to sort the input file. */
-  private SequenceFile.@MonotonicNonNull Sorter sorter = null;
-
-  private @MonotonicNonNull JobConf conf;
+  private SequenceFile.Sorter sorter;
 
   /** Temporary directory for input and intermediate files. */
   private Path tempDir;
 
   /** The list of input files to be sorted. */
   private Path[] paths;
+
+  private boolean initialized = false;
 
   /** Returns a {@link Sorter} configured with the given {@link Options}. */
   public static HadoopExternalSorter create(Options options) {
@@ -68,76 +66,69 @@ class HadoopExternalSorter extends ExternalSorter {
   @Override
   public void add(KV<byte[], byte[]> record) throws IOException {
     checkState(!sortCalled, "Records can only be added before sort()");
+
+    initHadoopSorter();
+
     BytesWritable key = new BytesWritable(record.getKey());
     BytesWritable value = new BytesWritable(record.getValue());
-    getWriter().append(key, value);
+
+    writer.append(key, value);
   }
 
   @Override
   public Iterable<KV<byte[], byte[]>> sort() throws IOException {
     checkState(!sortCalled, "sort() can only be called once.");
     sortCalled = true;
-    getWriter().close();
+
+    initHadoopSorter();
+
+    writer.close();
+
     return new SortedRecordsIterable();
   }
 
   private HadoopExternalSorter(Options options) {
     super(options);
-    tempDir = new Path(options.getTempLocation(), "tmp" + UUID.randomUUID().toString());
-    paths = new Path[] {new Path(tempDir, "test.seq")};
-  }
-
-  private JobConf getConf() {
-    if (conf == null) {
-      // This call is expensive in the constructor (check
-      // BufferedExternalSorterTest.testManySortersFewRecords)
-      conf = new JobConf();
-      // Sets directory for intermediate files created during merge of merge sort
-      conf.set("io.seqfile.local.dir", tempDir.toUri().getPath());
-    }
-    return conf;
   }
 
   /**
-   * Initializes the writer. Does some local file system setup, and is somewhat expensive (~20 ms on
-   * local machine). Only executed when necessary.
+   * Initializes the hadoop sorter. Does some local file system setup, and is somewhat expensive
+   * (~20 ms on local machine). Only executed when necessary.
    */
-  private Writer getWriter() throws IOException {
-    if (writer == null) {
+  private void initHadoopSorter() throws IOException {
+    if (!initialized) {
+      tempDir = new Path(options.getTempLocation(), "tmp" + UUID.randomUUID().toString());
+      paths = new Path[] {new Path(tempDir, "test.seq")};
+
+      JobConf conf = new JobConf();
+      // Sets directory for intermediate files created during merge of merge sort
+      conf.set("io.seqfile.local.dir", tempDir.toUri().getPath());
+
       writer =
           SequenceFile.createWriter(
-              getConf(),
+              conf,
               Writer.valueClass(BytesWritable.class),
               Writer.keyClass(BytesWritable.class),
               Writer.file(paths[0]),
               Writer.compression(CompressionType.NONE));
 
-      FileSystem fs = FileSystem.getLocal(getConf());
+      FileSystem fs = FileSystem.getLocal(conf);
       // Directory has to exist for Hadoop to recognize it as deletable on exit
       fs.mkdirs(tempDir);
       fs.deleteOnExit(tempDir);
-    }
-    return writer;
-  }
 
-  /** Sorter used to sort the input file. */
-  private SequenceFile.Sorter getSorter() throws IOException {
-    if (sorter == null) {
-      FileSystem fs = FileSystem.getLocal(getConf());
       sorter =
           new SequenceFile.Sorter(
-              fs,
-              new BytesWritable.Comparator(),
-              BytesWritable.class,
-              BytesWritable.class,
-              getConf());
+              fs, new BytesWritable.Comparator(), BytesWritable.class, BytesWritable.class, conf);
       sorter.setMemory(options.getMemoryMB() * 1024 * 1024);
+
+      initialized = true;
     }
-    return sorter;
   }
 
   /** An {@link Iterable} producing the iterators over sorted data. */
   private class SortedRecordsIterable implements Iterable<KV<byte[], byte[]>> {
+    @Nonnull
     @Override
     public Iterator<KV<byte[], byte[]>> iterator() {
       return new SortedRecordsIterator();
@@ -149,15 +140,17 @@ class HadoopExternalSorter extends ExternalSorter {
     private RawKeyValueIterator iterator;
 
     /** Next {@link KV} to return from {@link #next()}. */
-    private @Nullable KV<byte[], byte[]> nextKV;
+    private KV<byte[], byte[]> nextKV;
 
     SortedRecordsIterator() {
       try {
-        this.iterator = getSorter().sortAndIterate(paths, tempDir, false);
+        this.iterator = sorter.sortAndIterate(paths, tempDir, false);
       } catch (IOException e) {
         throw new RuntimeException(e);
       }
-      nextKV = readKeyValueOrFail(iterator);
+
+      nextKV = KV.of(null, null); // A dummy value that will be overwritten by next().
+      next();
     }
 
     @Override
@@ -171,40 +164,36 @@ class HadoopExternalSorter extends ExternalSorter {
         throw new NoSuchElementException();
       }
 
-      KV<byte[], byte[]> r = nextKV;
-      nextKV = readKeyValueOrFail(iterator);
-      return r;
+      KV<byte[], byte[]> current = nextKV;
+
+      try {
+        if (iterator.next()) {
+          // Parse key from DataOutputBuffer.
+          ByteArrayInputStream keyStream = new ByteArrayInputStream(iterator.getKey().getData());
+          BytesWritable key = new BytesWritable();
+          key.readFields(new DataInputStream(keyStream));
+
+          // Parse value from ValueBytes.
+          ByteArrayOutputStream valOutStream = new ByteArrayOutputStream();
+          iterator.getValue().writeUncompressedBytes(new DataOutputStream(valOutStream));
+          ByteArrayInputStream valInStream = new ByteArrayInputStream(valOutStream.toByteArray());
+          BytesWritable value = new BytesWritable();
+          value.readFields(new DataInputStream(valInStream));
+
+          nextKV = KV.of(key.copyBytes(), value.copyBytes());
+        } else {
+          nextKV = null;
+        }
+      } catch (IOException e) {
+        throw new RuntimeException(e);
+      }
+
+      return current;
     }
-  }
 
-  private @Nullable KV<byte[], byte[]> readKeyValueOrFail(RawKeyValueIterator iterator) {
-    try {
-      return readKeyValue(iterator);
-    } catch (EOFException e) {
-      return null;
-    } catch (IOException e) {
-      throw new IllegalStateException(e);
+    @Override
+    public void remove() {
+      throw new UnsupportedOperationException("Iterator does not support remove");
     }
-  }
-
-  private @Nullable KV<byte[], byte[]> readKeyValue(RawKeyValueIterator iterator)
-      throws IOException {
-    if (!iterator.next()) {
-      return null;
-    }
-
-    // Parse key from DataOutputBuffer.
-    ByteArrayInputStream keyStream = new ByteArrayInputStream(iterator.getKey().getData());
-    BytesWritable key = new BytesWritable();
-    key.readFields(new DataInputStream(keyStream));
-
-    // Parse value from ValueBytes.
-    ByteArrayOutputStream valOutStream = new ByteArrayOutputStream();
-    iterator.getValue().writeUncompressedBytes(new DataOutputStream(valOutStream));
-    ByteArrayInputStream valInStream = new ByteArrayInputStream(valOutStream.toByteArray());
-    BytesWritable value = new BytesWritable();
-    value.readFields(new DataInputStream(valInStream));
-
-    return KV.of(key.copyBytes(), value.copyBytes());
   }
 }

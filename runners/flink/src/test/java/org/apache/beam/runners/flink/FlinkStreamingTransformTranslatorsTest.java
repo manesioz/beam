@@ -27,6 +27,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import javax.annotation.Nullable;
 import org.apache.beam.runners.core.construction.PTransformTranslation;
 import org.apache.beam.runners.flink.FlinkStreamingTransformTranslators.UnboundedSourceWrapperNoValueWithRecordId;
 import org.apache.beam.runners.flink.translation.wrappers.streaming.io.UnboundedSourceWrapper;
@@ -46,7 +47,8 @@ import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.WindowingStrategy;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.transformations.OneInputTransformation;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.apache.flink.streaming.api.transformations.SourceTransformation;
+import org.apache.flink.streaming.api.transformations.StreamTransformation;
 import org.junit.Test;
 
 /** Tests for Flink streaming transform translators. */
@@ -63,12 +65,12 @@ public class FlinkStreamingTransformTranslatorsTest {
     env.setParallelism(parallelism);
     env.setMaxParallelism(maxParallelism);
 
-    Object sourceTransform =
+    StreamTransformation<?> sourceTransform =
         applyReadSourceTransform(transform, PCollection.IsBounded.BOUNDED, env);
 
     UnboundedSourceWrapperNoValueWithRecordId source =
         (UnboundedSourceWrapperNoValueWithRecordId)
-            SourceTransformationCompat.getOperator(sourceTransform).getUserFunction();
+            ((SourceTransformation<?>) sourceTransform).getOperator().getUserFunction();
 
     assertEquals(maxParallelism, source.getUnderlyingSource().getSplitSources().size());
   }
@@ -82,12 +84,12 @@ public class FlinkStreamingTransformTranslatorsTest {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(parallelism);
 
-    Object sourceTransform =
+    StreamTransformation<?> sourceTransform =
         applyReadSourceTransform(transform, PCollection.IsBounded.BOUNDED, env);
 
     UnboundedSourceWrapperNoValueWithRecordId source =
         (UnboundedSourceWrapperNoValueWithRecordId)
-            SourceTransformationCompat.getOperator(sourceTransform).getUserFunction();
+            ((SourceTransformation<?>) sourceTransform).getOperator().getUserFunction();
 
     assertEquals(parallelism, source.getUnderlyingSource().getSplitSources().size());
   }
@@ -103,13 +105,14 @@ public class FlinkStreamingTransformTranslatorsTest {
     env.setParallelism(parallelism);
     env.setMaxParallelism(maxParallelism);
 
-    OneInputTransformation<?, ?> sourceTransform =
-        (OneInputTransformation)
-            applyReadSourceTransform(transform, PCollection.IsBounded.UNBOUNDED, env);
+    StreamTransformation<?> sourceTransform =
+        applyReadSourceTransform(transform, PCollection.IsBounded.UNBOUNDED, env);
 
     UnboundedSourceWrapper source =
         (UnboundedSourceWrapper)
-            SourceTransformationCompat.getOperator(sourceTransform.getInput()).getUserFunction();
+            ((SourceTransformation) ((OneInputTransformation) sourceTransform).getInput())
+                .getOperator()
+                .getUserFunction();
 
     assertEquals(maxParallelism, source.getSplitSources().size());
   }
@@ -123,18 +126,19 @@ public class FlinkStreamingTransformTranslatorsTest {
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(parallelism);
 
-    OneInputTransformation<?, ?> sourceTransform =
-        (OneInputTransformation)
-            applyReadSourceTransform(transform, PCollection.IsBounded.UNBOUNDED, env);
+    StreamTransformation<?> sourceTransform =
+        applyReadSourceTransform(transform, PCollection.IsBounded.UNBOUNDED, env);
 
     UnboundedSourceWrapper source =
         (UnboundedSourceWrapper)
-            SourceTransformationCompat.getOperator(sourceTransform.getInput()).getUserFunction();
+            ((SourceTransformation) ((OneInputTransformation) sourceTransform).getInput())
+                .getOperator()
+                .getUserFunction();
 
     assertEquals(parallelism, source.getSplitSources().size());
   }
 
-  private Object applyReadSourceTransform(
+  private StreamTransformation<?> applyReadSourceTransform(
       PTransform<?, ?> transform, PCollection.IsBounded isBounded, StreamExecutionEnvironment env) {
 
     FlinkStreamingPipelineTranslator.StreamTransformTranslator<PTransform<?, ?>> translator =

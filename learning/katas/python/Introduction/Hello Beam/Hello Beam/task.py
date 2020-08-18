@@ -18,8 +18,9 @@ import apache_beam as beam
 
 from log_elements import LogElements
 
-with beam.Pipeline() as p:
+p = beam.Pipeline()
 
-  (p | beam.Create(['Hello Beam'])
-     | LogElements())
+(p | beam.Create(['Hello Beam'])
+   | LogElements())
 
+p.run()

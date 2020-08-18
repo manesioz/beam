@@ -18,7 +18,7 @@
 package org.apache.beam.runners.dataflow;
 
 import java.util.Objects;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import javax.annotation.Nullable;
 
 /** A {@link RuntimeException} that contains information about a {@link DataflowPipelineJob}. */
 public abstract class DataflowJobException extends RuntimeException {

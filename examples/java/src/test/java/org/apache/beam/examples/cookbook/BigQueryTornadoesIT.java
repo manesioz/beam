@@ -17,8 +17,6 @@
  */
 package org.apache.beam.examples.cookbook;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO.TypedRead.Method;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryOptions;
 import org.apache.beam.sdk.io.gcp.testing.BigqueryMatcher;
@@ -65,11 +63,11 @@ public class BigQueryTornadoesIT {
 
   private void runE2EBigQueryTornadoesTest(BigQueryTornadoesITOptions options) throws Exception {
     String query = String.format("SELECT month, tornado_count FROM [%s]", options.getOutput());
-    BigQueryTornadoes.runBigQueryTornadoes(options);
+    options.setOnSuccessMatcher(
+        new BigqueryMatcher(
+            options.getAppName(), options.getProject(), query, DEFAULT_OUTPUT_CHECKSUM));
 
-    assertThat(
-        BigqueryMatcher.createQuery(options.getAppName(), options.getProject(), query),
-        BigqueryMatcher.queryResultHasChecksum(DEFAULT_OUTPUT_CHECKSUM));
+    BigQueryTornadoes.runBigQueryTornadoes(options);
   }
 
   @Test
@@ -93,33 +91,6 @@ public class BigQueryTornadoesIT {
         String.format(
             "%s.%s",
             "BigQueryTornadoesIT", "monthly_tornadoes_storage_" + System.currentTimeMillis()));
-
-    runE2EBigQueryTornadoesTest(options);
-  }
-
-  @Test
-  public void testE2EBigQueryTornadoesWithExportUsingQuery() throws Exception {
-    BigQueryTornadoesITOptions options =
-        TestPipeline.testingPipelineOptions().as(BigQueryTornadoesITOptions.class);
-    options.setReadMethod(Method.EXPORT);
-    options.setOutput(
-        String.format(
-            "%s.%s", "BigQueryTornadoesIT", "monthly_tornadoes_" + System.currentTimeMillis()));
-    options.setInputQuery("SELECT * FROM `clouddataflow-readonly.samples.weather_stations`");
-
-    runE2EBigQueryTornadoesTest(options);
-  }
-
-  @Test
-  public void testE2eBigQueryTornadoesWithStorageApiUsingQuery() throws Exception {
-    BigQueryTornadoesITOptions options =
-        TestPipeline.testingPipelineOptions().as(BigQueryTornadoesITOptions.class);
-    options.setReadMethod(Method.DIRECT_READ);
-    options.setOutput(
-        String.format(
-            "%s.%s",
-            "BigQueryTornadoesIT", "monthly_tornadoes_storage_" + System.currentTimeMillis()));
-    options.setInputQuery("SELECT * FROM `clouddataflow-readonly.samples.weather_stations`");
 
     runE2EBigQueryTornadoesTest(options);
   }

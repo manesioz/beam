@@ -22,7 +22,6 @@ import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Prec
 import com.google.api.services.bigquery.model.QueryResponse;
 import com.google.api.services.bigquery.model.TableCell;
 import com.google.api.services.bigquery.model.TableRow;
-import com.google.auto.value.AutoValue;
 import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.nio.charset.StandardCharsets;
@@ -31,8 +30,8 @@ import java.util.List;
 import java.util.Objects;
 import javax.annotation.Nonnull;
 import javax.annotation.concurrent.NotThreadSafe;
+import org.apache.beam.sdk.PipelineResult;
 import org.apache.beam.sdk.annotations.Experimental;
-import org.apache.beam.sdk.io.gcp.testing.BigqueryMatcher.TableAndQuery;
 import org.apache.beam.sdk.testing.SerializableMatcher;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Strings;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Lists;
@@ -55,70 +54,60 @@ import org.slf4j.LoggerFactory;
  */
 @NotThreadSafe
 @Experimental
-public class BigqueryMatcher extends TypeSafeMatcher<TableAndQuery>
-    implements SerializableMatcher<TableAndQuery> {
+public class BigqueryMatcher extends TypeSafeMatcher<PipelineResult>
+    implements SerializableMatcher<PipelineResult> {
   private static final Logger LOG = LoggerFactory.getLogger(BigqueryMatcher.class);
 
   // The total number of rows in query response to be formatted for debugging purpose
   private static final int TOTAL_FORMATTED_ROWS = 20;
 
+  private final String projectId;
+  private final String query;
+  private final boolean usingStandardSql;
   private final String expectedChecksum;
   private String actualChecksum;
   private transient QueryResponse response;
   private BigqueryClient bigqueryClient;
 
-  private BigqueryMatcher(String expectedChecksum) {
+  public BigqueryMatcher(
+      String applicationName, String projectId, String query, String expectedChecksum) {
+    this(applicationName, projectId, query, false, expectedChecksum);
+  }
+
+  private BigqueryMatcher(
+      String applicationName,
+      String projectId,
+      String query,
+      boolean usingStandardSql,
+      String expectedChecksum) {
+    validateArgument("applicationName", applicationName);
+    validateArgument("projectId", projectId);
+    validateArgument("query", query);
     validateArgument("expectedChecksum", expectedChecksum);
 
+    this.projectId = projectId;
+    this.query = query;
+    this.usingStandardSql = usingStandardSql;
     this.expectedChecksum = expectedChecksum;
+    this.bigqueryClient = BigqueryClient.getClient(applicationName);
   }
 
-  public static BigqueryMatcher queryResultHasChecksum(String checksum) {
-    return new BigqueryMatcher(checksum);
-  }
-
-  public static TableAndQuery createQuery(String applicationName, String projectId, String query) {
-    return TableAndQuery.create(applicationName, projectId, query, false);
-  }
-
-  public static TableAndQuery createQueryUsingStandardSql(
-      String applicationName, String projectId, String query) {
-    return TableAndQuery.create(applicationName, projectId, query, true);
-  }
-
-  @AutoValue
-  public abstract static class TableAndQuery {
-    public static TableAndQuery create(
-        String applicationName, String projectId, String query, Boolean usingStandardSql) {
-      return new AutoValue_BigqueryMatcher_TableAndQuery(
-          applicationName, projectId, query, usingStandardSql);
-    }
-
-    public abstract String getApplicationName();
-
-    public abstract String getProjectId();
-
-    public abstract String getQuery();
-
-    public abstract Boolean getUsingStandardSql();
+  public static BigqueryMatcher createUsingStandardSql(
+      String applicationName, String projectId, String query, String expectedChecksum) {
+    return new BigqueryMatcher(applicationName, projectId, query, true, expectedChecksum);
   }
 
   @Override
-  protected boolean matchesSafely(TableAndQuery tableAndQuery) {
-    bigqueryClient = BigqueryClient.getClient(tableAndQuery.getApplicationName());
-
+  protected boolean matchesSafely(PipelineResult pipelineResult) {
     LOG.info("Verifying Bigquery data");
 
     // execute query
-    LOG.debug("Executing query: {}", tableAndQuery.getQuery());
+    LOG.debug("Executing query: {}", query);
     try {
-      if (tableAndQuery.getUsingStandardSql()) {
-        response =
-            bigqueryClient.queryWithRetriesUsingStandardSql(
-                tableAndQuery.getQuery(), tableAndQuery.getProjectId());
+      if (usingStandardSql) {
+        response = bigqueryClient.queryWithRetriesUsingStandardSql(query, this.projectId);
       } else {
-        response =
-            bigqueryClient.queryWithRetries(tableAndQuery.getQuery(), tableAndQuery.getProjectId());
+        response = bigqueryClient.queryWithRetries(query, this.projectId);
       }
     } catch (IOException | InterruptedException e) {
       if (e instanceof InterruptedIOException) {
@@ -162,7 +151,7 @@ public class BigqueryMatcher extends TypeSafeMatcher<TableAndQuery>
   }
 
   @Override
-  public void describeMismatchSafely(TableAndQuery tableAndQuery, Description description) {
+  public void describeMismatchSafely(PipelineResult pResult, Description description) {
     String info;
     if (!response.getJobComplete()) {
       // query job not complete

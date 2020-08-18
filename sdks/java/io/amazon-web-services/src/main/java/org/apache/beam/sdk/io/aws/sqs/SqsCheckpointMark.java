@@ -25,7 +25,6 @@ import java.util.Optional;
 import org.apache.beam.sdk.io.UnboundedSource;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Objects;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 class SqsCheckpointMark implements UnboundedSource.CheckpointMark, Serializable {
 
@@ -48,7 +47,7 @@ class SqsCheckpointMark implements UnboundedSource.CheckpointMark, Serializable 
   }
 
   @Override
-  public boolean equals(@Nullable Object o) {
+  public boolean equals(Object o) {
     if (this == o) {
       return true;
     }

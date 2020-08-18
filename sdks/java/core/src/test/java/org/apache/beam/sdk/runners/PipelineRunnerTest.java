@@ -34,7 +34,6 @@ import org.apache.beam.sdk.testing.CrashingRunner;
 import org.apache.beam.sdk.testing.NeedsRunner;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
-import org.apache.beam.sdk.testing.UsesCommittedMetrics;
 import org.apache.beam.sdk.testing.UsesCounterMetrics;
 import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.transforms.MapElements;
@@ -81,7 +80,7 @@ public class PipelineRunnerTest {
   }
 
   @Test
-  @Category({NeedsRunner.class, UsesCommittedMetrics.class, UsesCounterMetrics.class})
+  @Category({NeedsRunner.class, UsesCounterMetrics.class})
   public void testRunPTransform() {
     final String namespace = PipelineRunnerTest.class.getName();
     final Counter counter = Metrics.counter(namespace, "count");

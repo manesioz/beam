@@ -17,8 +17,5 @@
  */
 package org.apache.beam.sdk.testing;
 
-import org.apache.beam.sdk.annotations.Internal;
-
 /** Category for tests that use {@link org.apache.beam.sdk.transforms.Impulse} transformations. */
-@Internal
 public class UsesImpulse {}

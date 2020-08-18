@@ -17,11 +17,7 @@
  */
 package org.apache.beam.runners.core.metrics;
 
-import java.util.List;
-import java.util.stream.Collectors;
-import java.util.stream.StreamSupport;
 import org.apache.beam.sdk.metrics.MetricQueryResults;
-import org.apache.beam.sdk.metrics.MetricResult;
 import org.apache.beam.sdk.metrics.MetricsOptions;
 import org.apache.beam.sdk.metrics.MetricsSink;
 
@@ -31,34 +27,23 @@ import org.apache.beam.sdk.metrics.MetricsSink;
  */
 public class TestMetricsSink implements MetricsSink {
 
-  private static MetricQueryResults metricQueryResults;
-  private static final String SYSTEM_METRIC_PREFIX = "metric:";
+  private static long counterValue;
 
   public TestMetricsSink(MetricsOptions pipelineOptions) {}
 
-  public static long getCounterValue(String counterName) {
-    for (MetricResult<Long> metricResult : metricQueryResults.getCounters()) {
-      if (metricResult.getName().getName().equals(counterName)) {
-        return metricResult.getAttempted();
-      }
-    }
-    return 0L;
-  }
-
-  public static List<MetricResult<Long>> getSystemCounters() {
-    List<MetricResult<Long>> counters =
-        StreamSupport.stream(metricQueryResults.getCounters().spliterator(), false)
-            .filter(result -> result.getKey().metricName().getName().contains(SYSTEM_METRIC_PREFIX))
-            .collect(Collectors.toList());
-    return counters;
+  public static long getCounterValue() {
+    return counterValue;
   }
 
   public static void clear() {
-    metricQueryResults = null;
+    counterValue = 0L;
   }
 
   @Override
-  public void writeMetrics(MetricQueryResults metricQueryResult) throws Exception {
-    metricQueryResults = metricQueryResult;
+  public void writeMetrics(MetricQueryResults metricQueryResults) throws Exception {
+    counterValue =
+        metricQueryResults.getCounters().iterator().hasNext()
+            ? metricQueryResults.getCounters().iterator().next().getAttempted()
+            : 0L;
   }
 }

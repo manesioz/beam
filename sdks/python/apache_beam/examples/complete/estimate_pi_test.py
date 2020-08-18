@@ -17,8 +17,6 @@
 
 """Test for the estimate_pi example."""
 
-# pytype: skip-file
-
 from __future__ import absolute_import
 
 import logging
@@ -36,11 +34,11 @@ def in_between(lower, upper):
     if estimate < lower or estimate > upper:
       raise BeamAssertException(
           'Failed assert: %f not in [%f, %f]' % (estimate, lower, upper))
-
   return _in_between
 
 
 class EstimatePiTest(unittest.TestCase):
+
   def test_basics(self):
     with TestPipeline() as p:
       result = p | 'Estimate' >> estimate_pi.EstimatePiTransform(5000)

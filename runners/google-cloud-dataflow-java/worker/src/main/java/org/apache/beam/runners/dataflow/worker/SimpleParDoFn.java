@@ -25,6 +25,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import javax.annotation.Nullable;
 import org.apache.beam.runners.core.DoFnRunner;
 import org.apache.beam.runners.core.DoFnRunners.OutputManager;
 import org.apache.beam.runners.core.SideInputReader;
@@ -58,7 +59,6 @@ import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.WindowingStrategy;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.annotations.VisibleForTesting;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -97,13 +97,13 @@ public class SimpleParDoFn<InputT, OutputT> implements ParDoFn {
   private final Map<String, PCollectionView<?>> sideInputMapping;
 
   // Various DoFn helpers, null between bundles
-  private @Nullable DoFnRunner<InputT, OutputT> fnRunner;
+  @Nullable private DoFnRunner<InputT, OutputT> fnRunner;
   @Nullable DoFnInfo<InputT, OutputT> fnInfo;
-  private Receiver @Nullable [] receivers;
+  @Nullable private Receiver[] receivers;
 
   // This may additionally be null if it is not a real DoFn but an OldDoFn or
   // GroupAlsoByWindowViaWindowSetDoFn
-  private @Nullable DoFnSignature fnSignature;
+  @Nullable private DoFnSignature fnSignature;
 
   /** Creates a {@link SimpleParDoFn} using basic information about the step being executed. */
   SimpleParDoFn(
@@ -243,7 +243,8 @@ public class SimpleParDoFn<InputT, OutputT> implements ParDoFn {
         new OutputManager() {
           final Map<TupleTag<?>, OutputReceiver> undeclaredOutputs = new HashMap<>();
 
-          private @Nullable Receiver getReceiverOrNull(TupleTag<?> tag) {
+          @Nullable
+          private Receiver getReceiverOrNull(TupleTag<?> tag) {
             Integer receiverIndex = outputTupleTagsToReceiverIndices.get(tag);
             if (receiverIndex != null) {
               return receivers[receiverIndex];
@@ -354,17 +355,9 @@ public class SimpleParDoFn<InputT, OutputT> implements ParDoFn {
   }
 
   private void processUserTimer(TimerData timer) throws Exception {
-    if (fnSignature.timerDeclarations().containsKey(timer.getTimerId())
-        || fnSignature.timerFamilyDeclarations().containsKey(timer.getTimerFamilyId())) {
+    if (fnSignature.timerDeclarations().containsKey(timer.getTimerId())) {
       BoundedWindow window = ((WindowNamespace) timer.getNamespace()).getWindow();
-      fnRunner.onTimer(
-          timer.getTimerId(),
-          timer.getTimerFamilyId(),
-          this.stepContext.stateInternals().getKey(),
-          window,
-          timer.getTimestamp(),
-          timer.getOutputTimestamp(),
-          timer.getDomain());
+      fnRunner.onTimer(timer.getTimerId(), window, timer.getTimestamp(), timer.getDomain());
     }
   }
 
@@ -395,9 +388,6 @@ public class SimpleParDoFn<InputT, OutputT> implements ParDoFn {
           this,
           window,
           targetTime);
-
-      fnRunner.onWindowExpiration(
-          window, timer.getOutputTimestamp(), this.stepContext.stateInternals().getKey());
 
       // This is for a timer for a window that is expired, so clean it up.
       for (StateDeclaration stateDecl : fnSignature.stateDeclarations().values()) {
@@ -487,13 +477,11 @@ public class SimpleParDoFn<InputT, OutputT> implements ParDoFn {
       // The stepContext is the thing that know if it is batch or streaming, hence
       // whether state needs to be cleaned up or will simply be discarded so the
       // timer can be ignored
-
-      Instant cleanupTime = earliestAllowableCleanupTime(window, windowingStrategy);
-      // if DoFn has OnWindowExpiration then set holds for system timer.
-      Instant cleanupOutputTimestamp =
-          fnSignature.onWindowExpiration() == null ? cleanupTime : cleanupTime.minus(1L);
       stepContext.setStateCleanupTimer(
-          CLEANUP_TIMER_ID, window, windowCoder, cleanupTime, cleanupOutputTimestamp);
+          CLEANUP_TIMER_ID,
+          window,
+          windowCoder,
+          earliestAllowableCleanupTime(window, windowingStrategy));
     }
   }
 

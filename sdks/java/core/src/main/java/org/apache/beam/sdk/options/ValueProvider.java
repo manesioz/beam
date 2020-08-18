@@ -37,14 +37,13 @@ import java.io.Serializable;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
-import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Internal;
 import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.transforms.SerializableFunction;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.MoreObjects;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * A {@link ValueProvider} abstracts the notion of fetching a value that may or may not be currently
@@ -76,7 +75,7 @@ public interface ValueProvider<T> extends Serializable {
    * static value to be provided.
    */
   class StaticValueProvider<T> implements ValueProvider<T>, Serializable {
-    private final @Nullable T value;
+    @Nullable private final T value;
 
     StaticValueProvider(@Nullable T value) {
       this.value = value;
@@ -100,17 +99,6 @@ public interface ValueProvider<T> extends Serializable {
     @Override
     public String toString() {
       return String.valueOf(value);
-    }
-
-    @Override
-    public boolean equals(@Nullable Object other) {
-      return other instanceof StaticValueProvider
-          && Objects.equals(value, ((StaticValueProvider) other).value);
-    }
-
-    @Override
-    public int hashCode() {
-      return Objects.hashCode(value);
     }
   }
 
@@ -171,18 +159,6 @@ public interface ValueProvider<T> extends Serializable {
           .add("translator", translator.getClass().getSimpleName())
           .toString();
     }
-
-    @Override
-    public boolean equals(@Nullable Object other) {
-      return other instanceof NestedValueProvider
-          && Objects.equals(value, ((NestedValueProvider) other).value)
-          && Objects.equals(translator, ((NestedValueProvider) other).translator);
-    }
-
-    @Override
-    public int hashCode() {
-      return Objects.hash(value, translator);
-    }
   }
 
   /**
@@ -199,7 +175,7 @@ public interface ValueProvider<T> extends Serializable {
     private final Class<? extends PipelineOptions> klass;
     private final String methodName;
     private final String propertyName;
-    private final @Nullable T defaultValue;
+    @Nullable private final T defaultValue;
     private final Long optionsId;
 
     /**
@@ -288,21 +264,6 @@ public interface ValueProvider<T> extends Serializable {
           .add("propertyName", propertyName)
           .add("default", defaultValue)
           .toString();
-    }
-
-    @Override
-    public boolean equals(@Nullable Object other) {
-      return other instanceof RuntimeValueProvider
-          && Objects.equals(klass, ((RuntimeValueProvider) other).klass)
-          && Objects.equals(methodName, ((RuntimeValueProvider) other).methodName)
-          && Objects.equals(propertyName, ((RuntimeValueProvider) other).propertyName)
-          && Objects.equals(defaultValue, ((RuntimeValueProvider) other).defaultValue)
-          && Objects.equals(optionsId, ((RuntimeValueProvider) other).optionsId);
-    }
-
-    @Override
-    public int hashCode() {
-      return Objects.hash(klass, methodName, propertyName, defaultValue, optionsId);
     }
   }
 

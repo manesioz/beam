@@ -23,7 +23,6 @@ import java.util.Objects;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.transforms.display.DisplayData;
 import org.apache.beam.sdk.values.TypeDescriptor;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Duration;
 
 /**
@@ -108,7 +107,7 @@ public class Sessions extends WindowFn<Object, IntervalWindow> {
   }
 
   @Override
-  public boolean equals(@Nullable Object object) {
+  public boolean equals(Object object) {
     if (!(object instanceof Sessions)) {
       return false;
     }

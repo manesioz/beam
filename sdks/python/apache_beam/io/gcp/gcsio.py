@@ -14,14 +14,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-
 """Google Cloud Storage client.
 
 This library evolved from the Google App Engine GCS client available at
 https://github.com/GoogleCloudPlatform/appengine-gcs-client.
 """
-
-# pytype: skip-file
 
 from __future__ import absolute_import
 
@@ -46,7 +43,6 @@ from apache_beam.utils import retry
 
 __all__ = ['GcsIO']
 
-_LOGGER = logging.getLogger(__name__)
 
 # Issue a friendlier error message if the storage library is not available.
 # TODO(silviuc): Remove this guard when storage is available everywhere.
@@ -86,6 +82,7 @@ DEFAULT_READ_SEGMENT_TIMEOUT_SECONDS = 60
 # This is the size of chunks used when writing to GCS.
 WRITE_CHUNK_SIZE = 8 * 1024 * 1024
 
+
 # Maximum number of operations permitted in GcsIO.copy_batch() and
 # GcsIO.delete_batch().
 MAX_BATCH_OPERATION_SIZE = 100
@@ -110,36 +107,6 @@ def parse_gcs_path(gcs_path, object_optional=False):
   return match.group(1), match.group(2)
 
 
-def default_gcs_bucket_name(project, region):
-  from hashlib import md5
-  return 'dataflow-staging-%s-%s' % (
-      region, md5(project.encode('utf8')).hexdigest())
-
-
-def get_or_create_default_gcs_bucket(options):
-  """Create a default GCS bucket for this project."""
-  if getattr(options, 'dataflow_kms_key', None):
-    _LOGGER.warning(
-        'Cannot create a default bucket when --dataflow_kms_key is set.')
-    return None
-
-  project = getattr(options, 'project', None)
-  region = getattr(options, 'region', None)
-  if not project or not region:
-    return None
-
-  bucket_name = default_gcs_bucket_name(project, region)
-  bucket = GcsIO().get_bucket(bucket_name)
-  if bucket:
-    return bucket
-  else:
-    _LOGGER.warning(
-        'Creating default GCS bucket for project %s: gs://%s',
-        project,
-        bucket_name)
-    return GcsIO().create_bucket(bucket_name, project, location=region)
-
-
 class GcsIOError(IOError, retry.PermanentException):
   """GCS IO error that should not be retried."""
   pass
@@ -147,6 +114,7 @@ class GcsIOError(IOError, retry.PermanentException):
 
 class GcsIO(object):
   """Google Cloud Storage I/O client."""
+
   def __init__(self, storage_client=None):
     if storage_client is None:
       storage_client = storage.StorageV1(
@@ -165,36 +133,11 @@ class GcsIO(object):
     """
     self._rewrite_cb = callback
 
-  def get_bucket(self, bucket_name):
-    """Returns an object bucket from its name, or None if it does not exist."""
-    try:
-      request = storage.StorageBucketsGetRequest(bucket=bucket_name)
-      return self.client.buckets.Get(request)
-    except HttpError:
-      return None
-
-  def create_bucket(self, bucket_name, project, kms_key=None, location=None):
-    """Create and return a GCS bucket in a specific project."""
-    encryption = None
-    if kms_key:
-      encryption = storage.Bucket.EncryptionValue(kms_key)
-
-    request = storage.StorageBucketsInsertRequest(
-        bucket=storage.Bucket(
-            name=bucket_name, location=location, encryption=encryption),
-        project=project,
-    )
-    try:
-      return self.client.buckets.Insert(request)
-    except HttpError:
-      return None
-
-  def open(
-      self,
-      filename,
-      mode='r',
-      read_buffer_size=DEFAULT_READ_BUFFER_SIZE,
-      mime_type='application/octet-stream'):
+  def open(self,
+           filename,
+           mode='r',
+           read_buffer_size=DEFAULT_READ_BUFFER_SIZE,
+           mime_type='application/octet-stream'):
     """Open a GCS file path for reading or writing.
 
     Args:
@@ -207,19 +150,17 @@ class GcsIO(object):
       GCS file object.
 
     Raises:
-      ValueError: Invalid open file mode.
+      ~exceptions.ValueError: Invalid open file mode.
     """
     if mode == 'r' or mode == 'rb':
-      downloader = GcsDownloader(
-          self.client, filename, buffer_size=read_buffer_size)
-      return io.BufferedReader(
-          DownloaderStream(
-              downloader, read_buffer_size=read_buffer_size, mode=mode),
-          buffer_size=read_buffer_size)
+      downloader = GcsDownloader(self.client, filename,
+                                 buffer_size=read_buffer_size)
+      return io.BufferedReader(DownloaderStream(downloader, read_buffer_size=read_buffer_size, mode=mode),
+                               buffer_size=read_buffer_size)
     elif mode == 'w' or mode == 'wb':
       uploader = GcsUploader(self.client, filename, mime_type)
-      return io.BufferedWriter(
-          UploaderStream(uploader, mode=mode), buffer_size=128 * 1024)
+      return io.BufferedWriter(UploaderStream(uploader, mode=mode),
+                               buffer_size=128 * 1024)
     else:
       raise ValueError('Invalid file open mode: %s.' % mode)
 
@@ -266,7 +207,7 @@ class GcsIO(object):
       request = storage.StorageObjectsDeleteRequest(
           bucket=bucket, object=object_path)
       batch_request.Add(self.client.objects, 'Delete', request)
-    api_calls = batch_request.Execute(self.client._http)  # pylint: disable=protected-access
+    api_calls = batch_request.Execute(self.client._http) # pylint: disable=protected-access
     result_statuses = []
     for i, api_call in enumerate(api_calls):
       path = paths[i]
@@ -281,12 +222,8 @@ class GcsIO(object):
 
   @retry.with_exponential_backoff(
       retry_filter=retry.retry_on_server_errors_and_timeout_filter)
-  def copy(
-      self,
-      src,
-      dest,
-      dest_kms_key_name=None,
-      max_bytes_rewritten_per_call=None):
+  def copy(self, src, dest, dest_kms_key_name=None,
+           max_bytes_rewritten_per_call=None):
     """Copies the given GCS object from src to dest.
 
     Args:
@@ -300,7 +237,7 @@ class GcsIO(object):
         Used for testing.
 
     Raises:
-      TimeoutError: on timeout.
+      TimeoutError on timeout.
     """
     src_bucket, src_path = parse_gcs_path(src)
     dest_bucket, dest_path = parse_gcs_path(dest)
@@ -313,26 +250,20 @@ class GcsIO(object):
         maxBytesRewrittenPerCall=max_bytes_rewritten_per_call)
     response = self.client.objects.Rewrite(request)
     while not response.done:
-      _LOGGER.debug(
+      logging.debug(
           'Rewrite progress: %d of %d bytes, %s to %s',
-          response.totalBytesRewritten,
-          response.objectSize,
-          src,
-          dest)
+          response.totalBytesRewritten, response.objectSize, src, dest)
       request.rewriteToken = response.rewriteToken
       response = self.client.objects.Rewrite(request)
       if self._rewrite_cb is not None:
         self._rewrite_cb(response)
 
-    _LOGGER.debug('Rewrite done: %s to %s', src, dest)
+    logging.debug('Rewrite done: %s to %s', src, dest)
 
   # We intentionally do not decorate this method with a retry, as retrying is
   # handled in BatchApiRequest.Execute().
-  def copy_batch(
-      self,
-      src_dest_pairs,
-      dest_kms_key_name=None,
-      max_bytes_rewritten_per_call=None):
+  def copy_batch(self, src_dest_pairs, dest_kms_key_name=None,
+                 max_bytes_rewritten_per_call=None):
     """Copies the given GCS object from src to dest.
 
     Args:
@@ -389,15 +320,12 @@ class GcsIO(object):
                 GcsIOError(errno.ENOENT, 'Source file not found: %s' % src))
           pair_to_status[pair] = exception
         elif not response.done:
-          _LOGGER.debug(
+          logging.debug(
               'Rewrite progress: %d of %d bytes, %s to %s',
-              response.totalBytesRewritten,
-              response.objectSize,
-              src,
-              dest)
+              response.totalBytesRewritten, response.objectSize, src, dest)
           pair_to_request[pair].rewriteToken = response.rewriteToken
         else:
-          _LOGGER.debug('Rewrite done: %s to %s', src, dest)
+          logging.debug('Rewrite done: %s to %s', src, dest)
           pair_to_status[pair] = None
 
     return [(pair[0], pair[1], pair_to_status[pair]) for pair in src_dest_pairs]
@@ -511,9 +439,8 @@ class GcsIO(object):
     request = storage.StorageObjectsGetRequest(
         bucket=bucket, object=object_path)
     datetime = self.client.objects.Get(request).updated
-    return (
-        time.mktime(datetime.timetuple()) - time.timezone +
-        datetime.microsecond / 1000000.0)
+    return (time.mktime(datetime.timetuple()) - time.timezone
+            + datetime.microsecond / 1000000.0)
 
   @retry.with_exponential_backoff(
       retry_filter=retry.retry_on_server_errors_and_timeout_filter)
@@ -531,7 +458,7 @@ class GcsIO(object):
     file_sizes = {}
     counter = 0
     start_time = time.time()
-    _LOGGER.info("Starting the size estimation of the input")
+    logging.info("Starting the size estimation of the input")
     while True:
       response = self.client.objects.List(request)
       for item in response.items:
@@ -539,15 +466,13 @@ class GcsIO(object):
         file_sizes[file_name] = item.size
         counter += 1
         if counter % 10000 == 0:
-          _LOGGER.info("Finished computing size of: %s files", len(file_sizes))
+          logging.info("Finished computing size of: %s files", len(file_sizes))
       if response.nextPageToken:
         request.pageToken = response.nextPageToken
       else:
         break
-    _LOGGER.info(
-        "Finished listing %s files in %s seconds.",
-        counter,
-        time.time() - start_time)
+    logging.info("Finished listing %s files in %s seconds.",
+                 counter, time.time() - start_time)
     return file_sizes
 
 
@@ -559,17 +484,16 @@ class GcsDownloader(Downloader):
     self._buffer_size = buffer_size
 
     # Get object state.
-    self._get_request = (
-        storage.StorageObjectsGetRequest(
-            bucket=self._bucket, object=self._name))
+    self._get_request = (storage.StorageObjectsGetRequest(
+        bucket=self._bucket, object=self._name))
     try:
       metadata = self._get_object_metadata(self._get_request)
     except HttpError as http_error:
       if http_error.status_code == 404:
         raise IOError(errno.ENOENT, 'Not found: %s' % self._path)
       else:
-        _LOGGER.error(
-            'HTTP error while requesting file %s: %s', self._path, http_error)
+        logging.error('HTTP error while requesting file %s: %s', self._path,
+                      http_error)
         raise
     self._size = metadata.size
 
@@ -579,9 +503,7 @@ class GcsDownloader(Downloader):
     # Initialize read buffer state.
     self._download_stream = io.BytesIO()
     self._downloader = transfer.Download(
-        self._download_stream,
-        auto_transfer=False,
-        chunksize=self._buffer_size,
+        self._download_stream, auto_transfer=False, chunksize=self._buffer_size,
         num_retries=20)
     self._client.objects.Get(self._get_request, download=self._downloader)
 
@@ -614,9 +536,8 @@ class GcsUploader(Uploader):
     self._conn = parent_conn
 
     # Set up uploader.
-    self._insert_request = (
-        storage.StorageObjectsInsertRequest(
-            bucket=self._bucket, name=self._name))
+    self._insert_request = (storage.StorageObjectsInsertRequest(
+        bucket=self._bucket, name=self._name))
     self._upload = transfer.Upload(
         PipeStream(self._child_conn),
         self._mime_type,
@@ -643,10 +564,8 @@ class GcsUploader(Uploader):
     try:
       self._client.objects.Insert(self._insert_request, upload=self._upload)
     except Exception as e:  # pylint: disable=broad-except
-      _LOGGER.error(
-          'Error in _start_upload while inserting file %s: %s',
-          self._path,
-          traceback.format_exc())
+      logging.error('Error in _start_upload while inserting file %s: %s',
+                    self._path, traceback.format_exc())
       self._upload_thread.last_error = e
     finally:
       self._child_conn.close()
@@ -656,7 +575,7 @@ class GcsUploader(Uploader):
       self._conn.send_bytes(data.tobytes())
     except EOFError:
       if self._upload_thread.last_error is not None:
-        raise self._upload_thread.last_error  # pylint: disable=raising-bad-type
+        raise self._upload_thread.last_error # pylint: disable=raising-bad-type
       raise
 
   def finish(self):

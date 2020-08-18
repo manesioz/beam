@@ -34,8 +34,8 @@ import (
 	"github.com/apache/beam/sdks/go/pkg/beam/core/runtime/harness/session"
 	"github.com/apache/beam/sdks/go/pkg/beam/internal/errors"
 	"github.com/apache/beam/sdks/go/pkg/beam/log"
-	fnpb "github.com/apache/beam/sdks/go/pkg/beam/model/fnexecution_v1"
-	pipepb "github.com/apache/beam/sdks/go/pkg/beam/model/pipeline_v1"
+	fnapi_pb "github.com/apache/beam/sdks/go/pkg/beam/model/fnexecution_v1"
+	rapi_pb "github.com/apache/beam/sdks/go/pkg/beam/model/pipeline_v1"
 	"github.com/golang/protobuf/proto"
 	"google.golang.org/grpc"
 )
@@ -56,13 +56,13 @@ var sessionFile = flag.String("session_file", "", "Session file for the runner")
 type controlServer struct {
 	filename   string
 	wg         *sync.WaitGroup // used to signal when the session is completed
-	ctrlStream fnpb.BeamFnControl_ControlServer
+	ctrlStream fnapi_pb.BeamFnControl_ControlServer
 	dataServer *grpc.Server
-	dataStream fnpb.BeamFnData_DataServer
+	dataStream fnapi_pb.BeamFnData_DataServer
 	dwg        *sync.WaitGroup
 }
 
-func (c *controlServer) Control(stream fnpb.BeamFnControl_ControlServer) error {
+func (c *controlServer) Control(stream fnapi_pb.BeamFnControl_ControlServer) error {
 	fmt.Println("Go SDK connected")
 	c.ctrlStream = stream
 	// We have a connected worker. Start reading the session file and issuing
@@ -72,10 +72,6 @@ func (c *controlServer) Control(stream fnpb.BeamFnControl_ControlServer) error {
 	c.wg.Done()
 	fmt.Println("session replay complete")
 	return nil
-}
-
-func (c *controlServer) GetProcessBundleDescriptor(ctx context.Context, r *fnpb.GetProcessBundleDescriptorRequest) (*fnpb.ProcessBundleDescriptor, error) {
-	return nil, nil
 }
 
 func (c *controlServer) establishDataChannel(beamPort, tcpPort string) {
@@ -91,7 +87,7 @@ func (c *controlServer) establishDataChannel(beamPort, tcpPort string) {
 	// the data server is listening on.
 
 	c.dataServer = grpc.NewServer()
-	fnpb.RegisterBeamFnDataServer(c.dataServer, &dataServer{ctrl: c})
+	fnapi_pb.RegisterBeamFnDataServer(c.dataServer, &dataServer{ctrl: c})
 	dp, err := net.Listen("tcp", tcpPort)
 	if err != nil {
 		panic(err)
@@ -101,7 +97,7 @@ func (c *controlServer) establishDataChannel(beamPort, tcpPort string) {
 	go c.dataServer.Serve(dp)
 }
 
-func (c *controlServer) registerStream(stream fnpb.BeamFnData_DataServer) {
+func (c *controlServer) registerStream(stream fnapi_pb.BeamFnData_DataServer) {
 	c.dataStream = stream
 	c.dwg.Done()
 }
@@ -184,11 +180,11 @@ func (c *controlServer) handleEntry(msg *session.Entry) {
 			for _, desc := range rr.GetProcessBundleDescriptor() {
 				for beamPort, t := range desc.GetTransforms() {
 					s := t.GetSpec()
-					if s.GetUrn() == "beam:runner:source:v1" {
+					if s.GetUrn() == "beam:source:runner:0.1" {
 						tcpPort := extractPortSpec(s)
 						c.establishDataChannel(beamPort, tcpPort)
 					}
-					if s.GetUrn() == "beam:runner:sink:v1" {
+					if s.GetUrn() == "beam:sink:runner:0.1" {
 						tcpPort := extractPortSpec(s)
 						c.establishDataChannel(beamPort, tcpPort)
 					}
@@ -198,8 +194,8 @@ func (c *controlServer) handleEntry(msg *session.Entry) {
 	}
 }
 
-func extractPortSpec(spec *pipepb.FunctionSpec) string {
-	var port fnpb.RemoteGrpcPort
+func extractPortSpec(spec *rapi_pb.FunctionSpec) string {
+	var port fnapi_pb.RemoteGrpcPort
 	if err := proto.Unmarshal(spec.GetPayload(), &port); err != nil {
 		panic(err)
 	}
@@ -217,7 +213,7 @@ type dataServer struct {
 	ctrl *controlServer
 }
 
-func (d *dataServer) Data(stream fnpb.BeamFnData_DataServer) error {
+func (d *dataServer) Data(stream fnapi_pb.BeamFnData_DataServer) error {
 	// This goroutine is only used for reading data. The stream object
 	// is passed to the control server so that all data is sent from
 	// a single goroutine to ensure proper ordering.
@@ -243,7 +239,7 @@ func (d *dataServer) Data(stream fnpb.BeamFnData_DataServer) error {
 // loggingServer manages the FnAPI logging channel.
 type loggingServer struct{} // no data content
 
-func (l *loggingServer) Logging(stream fnpb.BeamFnLogging_LoggingServer) error {
+func (l *loggingServer) Logging(stream fnapi_pb.BeamFnLogging_LoggingServer) error {
 	// This stream object is only used here. The stream is used for receiving, and
 	// no sends happen on it.
 	for {
@@ -273,7 +269,7 @@ func Execute(ctx context.Context, p *beam.Pipeline) error {
 
 	// Start up the grpc logging service.
 	ls := grpc.NewServer()
-	fnpb.RegisterBeamFnLoggingServer(ls, &loggingServer{})
+	fnapi_pb.RegisterBeamFnLoggingServer(ls, &loggingServer{})
 	logPort, err := net.Listen("tcp", ":0")
 	if err != nil {
 		panic("No logging port")
@@ -286,7 +282,7 @@ func Execute(ctx context.Context, p *beam.Pipeline) error {
 	wg.Add(1)
 
 	cs := grpc.NewServer()
-	fnpb.RegisterBeamFnControlServer(cs, &controlServer{
+	fnapi_pb.RegisterBeamFnControlServer(cs, &controlServer{
 		filename: *sessionFile,
 		wg:       &wg,
 	})

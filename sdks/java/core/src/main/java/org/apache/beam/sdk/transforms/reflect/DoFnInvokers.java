@@ -17,11 +17,9 @@
  */
 package org.apache.beam.sdk.transforms.reflect;
 
-import org.apache.beam.sdk.annotations.Internal;
 import org.apache.beam.sdk.transforms.DoFn;
 
 /** Static utilities for working with {@link DoFnInvoker}. */
-@Internal
 public class DoFnInvokers {
 
   /**

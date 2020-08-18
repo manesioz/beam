@@ -27,6 +27,7 @@ import java.text.DecimalFormat;
 import java.util.Arrays;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.coders.AtomicCoder;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.CoderException;
@@ -46,7 +47,6 @@ import org.apache.beam.sdk.transforms.windowing.PaneInfo.Timing;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.annotations.VisibleForTesting;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.MoreObjects;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Objects;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * A default {@link FilenamePolicy} for windowed and unwindowed files. This policy is constructed
@@ -83,7 +83,7 @@ public final class DefaultFilenamePolicy extends FilenamePolicy {
    * objects to be dynamically generated.
    */
   public static class Params implements Serializable {
-    private final @Nullable ValueProvider<ResourceId> baseFilename;
+    @Nullable private final ValueProvider<ResourceId> baseFilename;
     private final String shardTemplate;
     private final boolean explicitTemplate;
     private final String suffix;
@@ -148,7 +148,7 @@ public final class DefaultFilenamePolicy extends FilenamePolicy {
     }
 
     @Override
-    public boolean equals(@Nullable Object o) {
+    public boolean equals(Object o) {
       if (!(o instanceof Params)) {
         return false;
       }
@@ -310,7 +310,8 @@ public final class DefaultFilenamePolicy extends FilenamePolicy {
   }
 
   @Override
-  public @Nullable ResourceId unwindowedFilename(
+  @Nullable
+  public ResourceId unwindowedFilename(
       int shardNumber, int numShards, OutputFileHints outputFileHints) {
     return constructName(
         params.baseFilename.get(),

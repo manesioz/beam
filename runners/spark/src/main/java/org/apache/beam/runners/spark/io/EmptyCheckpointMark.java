@@ -20,7 +20,6 @@ package org.apache.beam.runners.spark.io;
 import java.io.IOException;
 import java.io.Serializable;
 import org.apache.beam.sdk.io.UnboundedSource;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Passing null values to Spark's Java API may cause problems because of Guava preconditions. See:
@@ -40,7 +39,7 @@ public class EmptyCheckpointMark implements UnboundedSource.CheckpointMark, Seri
   public void finalizeCheckpoint() throws IOException {}
 
   @Override
-  public boolean equals(@Nullable Object obj) {
+  public boolean equals(Object obj) {
     return obj instanceof EmptyCheckpointMark;
   }
 

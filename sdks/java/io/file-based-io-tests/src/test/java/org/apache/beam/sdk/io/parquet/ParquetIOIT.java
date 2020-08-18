@@ -18,6 +18,7 @@
 package org.apache.beam.sdk.io.parquet;
 
 import static org.apache.beam.sdk.io.common.FileBasedIOITHelper.appendTimestampSuffix;
+import static org.apache.beam.sdk.io.common.FileBasedIOITHelper.getExpectedHashForLineCount;
 import static org.apache.beam.sdk.io.common.FileBasedIOITHelper.readFileBasedIOITPipelineOptions;
 import static org.apache.beam.sdk.values.TypeDescriptors.strings;
 
@@ -42,7 +43,6 @@ import org.apache.beam.sdk.testutils.NamedTestResult;
 import org.apache.beam.sdk.testutils.metrics.IOITMetrics;
 import org.apache.beam.sdk.testutils.metrics.MetricsReader;
 import org.apache.beam.sdk.testutils.metrics.TimeMonitor;
-import org.apache.beam.sdk.testutils.publishing.InfluxDBSettings;
 import org.apache.beam.sdk.transforms.Combine;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.MapElements;
@@ -66,8 +66,6 @@ import org.junit.runners.JUnit4;
  *  ./gradlew integrationTest -p sdks/java/io/file-based-io-tests
  *  -DintegrationTestPipelineOptions='[
  *  "--numberOfRecords=100000",
- *  "--datasetSize=12345",
- *  "--expectedHash=99f23ab",
  *  "--filenamePrefix=output_file_path",
  *  ]'
  *  --tests org.apache.beam.sdk.io.parquet.ParquetIOIT
@@ -93,12 +91,9 @@ public class ParquetIOIT {
                   + "}");
 
   private static String filenamePrefix;
+  private static Integer numberOfRecords;
   private static String bigQueryDataset;
   private static String bigQueryTable;
-  private static Integer numberOfTextLines;
-  private static Integer datasetSize;
-  private static String expectedHash;
-  private static InfluxDBSettings settings;
 
   @Rule public TestPipeline pipeline = TestPipeline.create();
   private static final String PARQUET_NAMESPACE = ParquetIOIT.class.getName();
@@ -106,25 +101,18 @@ public class ParquetIOIT {
   @BeforeClass
   public static void setup() {
     FileBasedIOTestPipelineOptions options = readFileBasedIOITPipelineOptions();
-    numberOfTextLines = options.getNumberOfRecords();
-    datasetSize = options.getDatasetSize();
-    expectedHash = options.getExpectedHash();
+
+    numberOfRecords = options.getNumberOfRecords();
     filenamePrefix = appendTimestampSuffix(options.getFilenamePrefix());
     bigQueryDataset = options.getBigQueryDataset();
     bigQueryTable = options.getBigQueryTable();
-    settings =
-        InfluxDBSettings.builder()
-            .withHost(options.getInfluxHost())
-            .withDatabase(options.getInfluxDatabase())
-            .withMeasurement(options.getInfluxMeasurement())
-            .get();
   }
 
   @Test
   public void writeThenReadAll() {
     PCollection<String> testFiles =
         pipeline
-            .apply("Generate sequence", GenerateSequence.from(0).to(numberOfTextLines))
+            .apply("Generate sequence", GenerateSequence.from(0).to(numberOfRecords))
             .apply(
                 "Produce text lines",
                 ParDo.of(new FileBasedIOITHelper.DeterministicallyConstructTestTextLineFn()))
@@ -160,6 +148,7 @@ public class ParquetIOIT {
                             record -> String.valueOf(record.get("row"))))
             .apply("Calculate hashcode", Combine.globally(new HashingFn()));
 
+    String expectedHash = getExpectedHashForLineCount(numberOfRecords);
     PAssert.thatSingleton(consolidatedHashcode).isEqualTo(expectedHash);
 
     testFiles.apply(
@@ -177,10 +166,8 @@ public class ParquetIOIT {
     String timestamp = Timestamp.now().toString();
     Set<Function<MetricsReader, NamedTestResult>> metricSuppliers =
         fillMetricSuppliers(uuid, timestamp);
-    final IOITMetrics metrics =
-        new IOITMetrics(metricSuppliers, result, PARQUET_NAMESPACE, uuid, timestamp);
-    metrics.publish(bigQueryDataset, bigQueryTable);
-    metrics.publishToInflux(settings);
+    new IOITMetrics(metricSuppliers, result, PARQUET_NAMESPACE, uuid, timestamp)
+        .publish(bigQueryDataset, bigQueryTable);
   }
 
   private Set<Function<MetricsReader, NamedTestResult>> fillMetricSuppliers(
@@ -209,10 +196,7 @@ public class ParquetIOIT {
           double runTime = (readEnd - writeStart) / 1e3;
           return NamedTestResult.create(uuid, timestamp, "run_time", runTime);
         });
-    if (datasetSize != null) {
-      metricSuppliers.add(
-          (ignored) -> NamedTestResult.create(uuid, timestamp, "dataset_size", datasetSize));
-    }
+
     return metricSuppliers;
   }
 

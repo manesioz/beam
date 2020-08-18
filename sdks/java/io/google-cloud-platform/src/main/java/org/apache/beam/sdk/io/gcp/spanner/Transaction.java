@@ -20,13 +20,14 @@ package org.apache.beam.sdk.io.gcp.spanner;
 import com.google.auto.value.AutoValue;
 import com.google.cloud.spanner.BatchTransactionId;
 import java.io.Serializable;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import javax.annotation.Nullable;
 
 /** A transaction object. */
 @AutoValue
 public abstract class Transaction implements Serializable {
 
-  public abstract @Nullable BatchTransactionId transactionId();
+  @Nullable
+  public abstract BatchTransactionId transactionId();
 
   public static Transaction create(BatchTransactionId txId) {
     return new AutoValue_Transaction(txId);

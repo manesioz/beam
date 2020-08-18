@@ -65,7 +65,6 @@ public class DataflowViewTest {
     DataflowPipelineOptions options = PipelineOptionsFactory.as(DataflowPipelineOptions.class);
     options.setRunner(DataflowRunner.class);
     options.setProject("someproject");
-    options.setRegion("some-region1");
     options.setGcpTempLocation("gs://staging");
     options.setPathValidatorClass(NoopPathValidator.class);
     options.setDataflowClient(dataflow);
@@ -77,7 +76,6 @@ public class DataflowViewTest {
     options.setRunner(DataflowRunner.class);
     options.setStreaming(true);
     options.setProject("someproject");
-    options.setRegion("some-region1");
     options.setGcpTempLocation("gs://staging");
     options.setPathValidatorClass(NoopPathValidator.class);
     options.setDataflowClient(dataflow);

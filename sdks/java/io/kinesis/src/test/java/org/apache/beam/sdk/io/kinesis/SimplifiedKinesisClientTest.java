@@ -116,13 +116,13 @@ public class SimplifiedKinesisClientTest {
   @Test
   public void shouldHandleLimitExceededExceptionForGetShardIterator() {
     shouldHandleGetShardIteratorError(
-        new LimitExceededException(""), KinesisClientThrottledException.class);
+        new LimitExceededException(""), TransientKinesisException.class);
   }
 
   @Test
   public void shouldHandleProvisionedThroughputExceededExceptionForGetShardIterator() {
     shouldHandleGetShardIteratorError(
-        new ProvisionedThroughputExceededException(""), KinesisClientThrottledException.class);
+        new ProvisionedThroughputExceededException(""), TransientKinesisException.class);
   }
 
   @Test
@@ -190,14 +190,13 @@ public class SimplifiedKinesisClientTest {
 
   @Test
   public void shouldHandleLimitExceededExceptionForShardListing() {
-    shouldHandleShardListingError(
-        new LimitExceededException(""), KinesisClientThrottledException.class);
+    shouldHandleShardListingError(new LimitExceededException(""), TransientKinesisException.class);
   }
 
   @Test
   public void shouldHandleProvisionedThroughputExceededExceptionForShardListing() {
     shouldHandleShardListingError(
-        new ProvisionedThroughputExceededException(""), KinesisClientThrottledException.class);
+        new ProvisionedThroughputExceededException(""), TransientKinesisException.class);
   }
 
   @Test
@@ -282,13 +281,13 @@ public class SimplifiedKinesisClientTest {
   @Test
   public void shouldHandleLimitExceededExceptionForGetBacklogBytes() {
     shouldHandleGetBacklogBytesError(
-        new LimitExceededException(""), KinesisClientThrottledException.class);
+        new LimitExceededException(""), TransientKinesisException.class);
   }
 
   @Test
   public void shouldHandleProvisionedThroughputExceededExceptionForGetBacklogBytes() {
     shouldHandleGetBacklogBytesError(
-        new ProvisionedThroughputExceededException(""), KinesisClientThrottledException.class);
+        new ProvisionedThroughputExceededException(""), TransientKinesisException.class);
   }
 
   @Test

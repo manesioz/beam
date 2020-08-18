@@ -17,7 +17,6 @@
  */
 package org.apache.beam.runners.core.construction.graph;
 
-import static org.apache.beam.runners.core.construction.graph.ExecutableStage.DEFAULT_WIRE_CODER_SETTINGS;
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
@@ -34,9 +33,10 @@ import org.apache.beam.model.pipeline.v1.RunnerApi.FunctionSpec;
 import org.apache.beam.model.pipeline.v1.RunnerApi.PCollection;
 import org.apache.beam.model.pipeline.v1.RunnerApi.PTransform;
 import org.apache.beam.model.pipeline.v1.RunnerApi.ParDoPayload;
+import org.apache.beam.model.pipeline.v1.RunnerApi.SdkFunctionSpec;
 import org.apache.beam.model.pipeline.v1.RunnerApi.SideInput;
 import org.apache.beam.model.pipeline.v1.RunnerApi.StateSpec;
-import org.apache.beam.model.pipeline.v1.RunnerApi.TimerFamilySpec;
+import org.apache.beam.model.pipeline.v1.RunnerApi.TimerSpec;
 import org.apache.beam.model.pipeline.v1.RunnerApi.WindowIntoPayload;
 import org.apache.beam.runners.core.construction.Environments;
 import org.apache.beam.runners.core.construction.PTransformTranslation;
@@ -65,13 +65,12 @@ public class ExecutableStageTest {
                     .setUrn(PTransformTranslation.PAR_DO_TRANSFORM_URN)
                     .setPayload(
                         ParDoPayload.newBuilder()
-                            .setDoFn(FunctionSpec.newBuilder())
+                            .setDoFn(SdkFunctionSpec.newBuilder().setEnvironmentId("foo"))
                             .putSideInputs("side_input", SideInput.getDefaultInstance())
                             .putStateSpecs("user_state", StateSpec.getDefaultInstance())
-                            .putTimerFamilySpecs("timer", TimerFamilySpec.getDefaultInstance())
+                            .putTimerSpecs("timer", TimerSpec.getDefaultInstance())
                             .build()
                             .toByteString()))
-            .setEnvironmentId("foo")
             .build();
     PCollection input = PCollection.newBuilder().setUniqueName("input.out").build();
     PCollection sideInput = PCollection.newBuilder().setUniqueName("sideInput.in").build();
@@ -105,8 +104,7 @@ public class ExecutableStageTest {
             Collections.singleton(userStateRef),
             Collections.singleton(timerRef),
             Collections.singleton(PipelineNode.pTransform("pt", pt)),
-            Collections.singleton(PipelineNode.pCollection("output.out", output)),
-            DEFAULT_WIRE_CODER_SETTINGS);
+            Collections.singleton(PipelineNode.pCollection("output.out", output)));
 
     PTransform stagePTransform = stage.toPTransform("foo");
     assertThat(stagePTransform.getOutputsMap(), hasValue("output.out"));
@@ -132,10 +130,9 @@ public class ExecutableStageTest {
                     .setUrn(PTransformTranslation.PAR_DO_TRANSFORM_URN)
                     .setPayload(
                         ParDoPayload.newBuilder()
-                            .setDoFn(FunctionSpec.newBuilder())
+                            .setDoFn(SdkFunctionSpec.newBuilder().setEnvironmentId("common"))
                             .build()
                             .toByteString()))
-            .setEnvironmentId("common")
             .build();
     PTransform windowTransform =
         PTransform.newBuilder()
@@ -146,10 +143,9 @@ public class ExecutableStageTest {
                     .setUrn(PTransformTranslation.ASSIGN_WINDOWS_TRANSFORM_URN)
                     .setPayload(
                         WindowIntoPayload.newBuilder()
-                            .setWindowFn(FunctionSpec.newBuilder())
+                            .setWindowFn(SdkFunctionSpec.newBuilder().setEnvironmentId("common"))
                             .build()
                             .toByteString()))
-            .setEnvironmentId("common")
             .build();
 
     Components components =

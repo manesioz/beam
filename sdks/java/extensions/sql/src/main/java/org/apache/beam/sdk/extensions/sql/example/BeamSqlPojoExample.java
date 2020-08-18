@@ -101,13 +101,13 @@ class BeamSqlPojoExample {
     pipeline.run().waitUntilFinish();
   }
 
-  private static MapElements<Row, Void> logRecords(String suffix) {
+  private static MapElements<Row, Row> logRecords(String suffix) {
     return MapElements.via(
-        new SimpleFunction<Row, Void>() {
+        new SimpleFunction<Row, Row>() {
           @Override
-          public Void apply(Row input) {
+          public Row apply(Row input) {
             System.out.println(input.getValues() + suffix);
-            return null;
+            return input;
           }
         });
   }

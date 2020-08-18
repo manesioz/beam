@@ -29,8 +29,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
-import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.ListCoder;
 import org.apache.beam.sdk.coders.MapCoder;
@@ -55,7 +55,6 @@ import org.apache.beam.sdk.values.TypeDescriptor;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.annotations.VisibleForTesting;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableSet;
 import org.apache.http.HttpStatus;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -124,7 +123,7 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
  *       writeRequest>
  * </ul>
  */
-@Experimental(Kind.SOURCE_SINK)
+@Experimental(Experimental.Kind.SOURCE_SINK)
 public final class DynamoDBIO {
   public static <T> Read<T> read() {
     return new AutoValue_DynamoDBIO_Read.Builder().build();
@@ -137,16 +136,20 @@ public final class DynamoDBIO {
   /** Read data from DynamoDB and return ScanResult. */
   @AutoValue
   public abstract static class Read<T> extends PTransform<PBegin, PCollection<T>> {
+    @Nullable
+    abstract DynamoDbClientProvider getDynamoDbClientProvider();
 
-    abstract @Nullable DynamoDbClientProvider getDynamoDbClientProvider();
+    @Nullable
+    abstract SerializableFunction<Void, ScanRequest> getScanRequestFn();
 
-    abstract @Nullable SerializableFunction<Void, ScanRequest> getScanRequestFn();
+    @Nullable
+    abstract Integer getSegmentId();
 
-    abstract @Nullable Integer getSegmentId();
+    @Nullable
+    abstract SerializableFunction<ScanResponse, T> getScanResponseMapperFn();
 
-    abstract @Nullable SerializableFunction<ScanResponse, T> getScanResponseMapperFn();
-
-    abstract @Nullable Coder<T> getCoder();
+    @Nullable
+    abstract Coder<T> getCoder();
 
     abstract Builder<T> toBuilder();
 
@@ -336,11 +339,14 @@ public final class DynamoDBIO {
   @AutoValue
   public abstract static class Write<T> extends PTransform<PCollection<T>, PCollection<Void>> {
 
-    abstract @Nullable DynamoDbClientProvider getDynamoDbClientProvider();
+    @Nullable
+    abstract DynamoDbClientProvider getDynamoDbClientProvider();
 
-    abstract @Nullable RetryConfiguration getRetryConfiguration();
+    @Nullable
+    abstract RetryConfiguration getRetryConfiguration();
 
-    abstract @Nullable SerializableFunction<T, KV<String, WriteRequest>> getWriteItemMapperFn();
+    @Nullable
+    abstract SerializableFunction<T, KV<String, WriteRequest>> getWriteItemMapperFn();
 
     abstract Builder<T> toBuilder();
 

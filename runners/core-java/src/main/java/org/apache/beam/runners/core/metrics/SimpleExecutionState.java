@@ -69,11 +69,6 @@ public class SimpleExecutionState extends ExecutionState {
     }
   }
 
-  /** Reset the totalMillis spent in the state. */
-  public void reset() {
-    this.totalMillis = 0;
-  }
-
   public String getUrn() {
     return this.urn;
   }
@@ -97,7 +92,7 @@ public class SimpleExecutionState extends ExecutionState {
     String userStepName =
         this.labelsMetadata.getOrDefault(MonitoringInfoConstants.Labels.PTRANSFORM, null);
     StringBuilder message = new StringBuilder();
-    message.append("Operation ongoing");
+    message.append("Processing stuck");
     if (userStepName != null) {
       message.append(" in step ").append(userStepName);
     }

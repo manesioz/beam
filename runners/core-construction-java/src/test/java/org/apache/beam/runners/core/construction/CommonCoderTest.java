@@ -20,7 +20,6 @@ package org.apache.beam.runners.core.construction;
 import static org.apache.beam.runners.core.construction.BeamUrns.getUrn;
 import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.MoreObjects.firstNonNull;
 import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions.checkNotNull;
-import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList.toImmutableList;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.instanceOf;
@@ -42,14 +41,13 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import javax.annotation.Nullable;
 import org.apache.beam.model.pipeline.v1.RunnerApi.StandardCoders;
-import org.apache.beam.model.pipeline.v1.SchemaApi;
-import org.apache.beam.runners.core.construction.CoderTranslation.TranslationContext;
 import org.apache.beam.sdk.coders.BooleanCoder;
+import org.apache.beam.sdk.coders.ByteArrayCoder;
 import org.apache.beam.sdk.coders.ByteCoder;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.Coder.Context;
@@ -57,11 +55,8 @@ import org.apache.beam.sdk.coders.CoderException;
 import org.apache.beam.sdk.coders.DoubleCoder;
 import org.apache.beam.sdk.coders.IterableCoder;
 import org.apache.beam.sdk.coders.KvCoder;
-import org.apache.beam.sdk.coders.RowCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.coders.VarLongCoder;
-import org.apache.beam.sdk.schemas.Schema;
-import org.apache.beam.sdk.schemas.SchemaTranslation;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.GlobalWindow;
 import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
@@ -70,14 +65,11 @@ import org.apache.beam.sdk.transforms.windowing.PaneInfo;
 import org.apache.beam.sdk.util.CoderUtils;
 import org.apache.beam.sdk.util.WindowedValue;
 import org.apache.beam.sdk.values.KV;
-import org.apache.beam.sdk.values.Row;
-import org.apache.beam.vendor.grpc.v1p26p0.com.google.protobuf.InvalidProtocolBufferException;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.MoreObjects;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Splitter;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableMap;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.io.CharStreams;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.junit.Test;
@@ -107,10 +99,6 @@ public class CommonCoderTest {
           .put(
               getUrn(StandardCoders.Enum.WINDOWED_VALUE),
               WindowedValue.FullWindowedValueCoder.class)
-          .put(
-              getUrn(StandardCoders.Enum.PARAM_WINDOWED_VALUE),
-              WindowedValue.ParamWindowedValueCoder.class)
-          .put(getUrn(StandardCoders.Enum.ROW), RowCoder.class)
           .build();
 
   @AutoValue
@@ -119,21 +107,16 @@ public class CommonCoderTest {
 
     abstract List<CommonCoder> getComponents();
 
-    @SuppressWarnings("mutable")
-    abstract byte[] getPayload();
-
     abstract Boolean getNonDeterministic();
 
     @JsonCreator
     static CommonCoder create(
         @JsonProperty("urn") String urn,
         @JsonProperty("components") @Nullable List<CommonCoder> components,
-        @JsonProperty("payload") @Nullable String payload,
         @JsonProperty("non_deterministic") @Nullable Boolean nonDeterministic) {
       return new AutoValue_CommonCoderTest_CommonCoder(
           checkNotNull(urn, "urn"),
           firstNonNull(components, Collections.emptyList()),
-          firstNonNull(payload, "").getBytes(StandardCharsets.ISO_8859_1),
           firstNonNull(nonDeterministic, Boolean.FALSE));
     }
   }
@@ -256,34 +239,10 @@ public class CommonCoderTest {
       return ((Number) value).longValue();
     } else if (s.equals(getUrn(StandardCoders.Enum.TIMER))) {
       Map<String, Object> kvMap = (Map<String, Object>) value;
-      Coder<?> keyCoder = ((Timer.Coder) coder).getValueCoder();
-      Coder<? extends BoundedWindow> windowCoder = ((Timer.Coder) coder).getWindowCoder();
-      List<BoundedWindow> windows = new ArrayList<>();
-      for (Object window : (List<Object>) kvMap.get("windows")) {
-        windows.add(
-            (BoundedWindow) convertValue(window, coderSpec.getComponents().get(1), windowCoder));
-      }
-      if ((boolean) kvMap.get("clearBit")) {
-        return Timer.cleared(
-            convertValue(kvMap.get("userKey"), coderSpec.getComponents().get(0), keyCoder),
-            (String) kvMap.get("dynamicTimerTag"),
-            windows);
-      }
-      Map<String, Object> paneInfoMap = (Map<String, Object>) kvMap.get("pane");
-      PaneInfo paneInfo =
-          PaneInfo.createPane(
-              (boolean) paneInfoMap.get("is_first"),
-              (boolean) paneInfoMap.get("is_last"),
-              PaneInfo.Timing.valueOf((String) paneInfoMap.get("timing")),
-              (int) paneInfoMap.get("index"),
-              (int) paneInfoMap.get("on_time_index"));
+      Coder<?> payloadCoder = (Coder) coder.getCoderArguments().get(0);
       return Timer.of(
-          convertValue(kvMap.get("userKey"), coderSpec.getComponents().get(0), keyCoder),
-          (String) kvMap.get("dynamicTimerTag"),
-          windows,
-          new Instant(((Number) kvMap.get("fireTimestamp")).longValue()),
-          new Instant(((Number) kvMap.get("holdTimestamp")).longValue()),
-          paneInfo);
+          new Instant(((Number) kvMap.get("timestamp")).longValue()),
+          convertValue(kvMap.get("payload"), coderSpec.getComponents().get(0), payloadCoder));
     } else if (s.equals(getUrn(StandardCoders.Enum.INTERVAL_WINDOW))) {
       Map<String, Object> kvMap = (Map<String, Object>) value;
       Instant end = new Instant(((Number) kvMap.get("end")).longValue());
@@ -300,8 +259,7 @@ public class CommonCoderTest {
       return convertedElements;
     } else if (s.equals(getUrn(StandardCoders.Enum.GLOBAL_WINDOW))) {
       return GlobalWindow.INSTANCE;
-    } else if (s.equals(getUrn(StandardCoders.Enum.WINDOWED_VALUE))
-        || s.equals(getUrn(StandardCoders.Enum.PARAM_WINDOWED_VALUE))) {
+    } else if (s.equals(getUrn(StandardCoders.Enum.WINDOWED_VALUE))) {
       Map<String, Object> kvMap = (Map<String, Object>) value;
       Coder valueCoder = ((WindowedValue.FullWindowedValueCoder) coder).getValueCoder();
       Coder windowCoder = ((WindowedValue.FullWindowedValueCoder) coder).getWindowCoder();
@@ -324,82 +282,8 @@ public class CommonCoderTest {
       return WindowedValue.of(windowValue, timestamp, windows, paneInfo);
     } else if (s.equals(getUrn(StandardCoders.Enum.DOUBLE))) {
       return Double.parseDouble((String) value);
-    } else if (s.equals(getUrn(StandardCoders.Enum.ROW))) {
-      Schema schema;
-      try {
-        schema =
-            SchemaTranslation.schemaFromProto(SchemaApi.Schema.parseFrom(coderSpec.getPayload()));
-      } catch (InvalidProtocolBufferException e) {
-        throw new RuntimeException("Failed to parse schema payload for row coder", e);
-      }
-
-      return parseField(value, Schema.FieldType.row(schema));
     } else {
       throw new IllegalStateException("Unknown coder URN: " + coderSpec.getUrn());
-    }
-  }
-
-  private static Object parseField(Object value, Schema.FieldType fieldType) {
-    if (value == null) {
-      return null;
-    }
-
-    switch (fieldType.getTypeName()) {
-      case BYTE:
-        return ((Number) value).byteValue();
-      case INT16:
-        return ((Number) value).shortValue();
-      case INT32:
-        return ((Number) value).intValue();
-      case INT64:
-        return ((Number) value).longValue();
-      case FLOAT:
-        return Float.parseFloat((String) value);
-      case DOUBLE:
-        return Double.parseDouble((String) value);
-      case STRING:
-        return (String) value;
-      case BOOLEAN:
-        return (Boolean) value;
-      case BYTES:
-        // extract String as byte[]
-        return ((String) value).getBytes(StandardCharsets.ISO_8859_1);
-      case ARRAY:
-        return ((List<Object>) value)
-            .stream()
-                .map((element) -> parseField(element, fieldType.getCollectionElementType()))
-                .collect(toImmutableList());
-      case MAP:
-        Map<Object, Object> kvMap = new HashMap<>();
-        ((Map<Object, Object>) value)
-            .entrySet().stream()
-                .forEach(
-                    (entry) ->
-                        kvMap.put(
-                            parseField(entry.getKey(), fieldType.getMapKeyType()),
-                            parseField(entry.getValue(), fieldType.getMapValueType())));
-        return kvMap;
-      case ROW:
-        // Clone map so we don't mutate the underlying value
-        Map<String, Object> rowMap = new HashMap<>((Map<String, Object>) value);
-        Schema schema = fieldType.getRowSchema();
-        Row.Builder row = Row.withSchema(schema);
-        for (Schema.Field field : schema.getFields()) {
-          Object element = rowMap.remove(field.getName());
-          if (element != null) {
-            element = parseField(element, field.getType());
-          }
-          row.addValue(element);
-        }
-
-        if (!rowMap.isEmpty()) {
-          throw new IllegalArgumentException(
-              "Value contains keys that are not in the schema: " + rowMap.keySet());
-        }
-
-        return row.build();
-      default: // DECIMAL, DATETIME, LOGICAL_TYPE
-        throw new IllegalArgumentException("Unsupported type name: " + fieldType.getTypeName());
     }
   }
 
@@ -408,15 +292,33 @@ public class CommonCoderTest {
     for (CommonCoder innerCoder : coder.getComponents()) {
       components.add(instantiateCoder(innerCoder));
     }
-    Class<? extends Coder> coderType =
-        ModelCoderRegistrar.BEAM_MODEL_CODER_URNS.inverse().get(coder.getUrn());
-    checkNotNull(coderType, "Unknown coder URN: " + coder.getUrn());
-
-    CoderTranslator<?> translator = ModelCoderRegistrar.BEAM_MODEL_CODERS.get(coderType);
-    checkNotNull(
-        translator, "No translator found for common coder class: " + coderType.getSimpleName());
-
-    return translator.fromComponents(components, coder.getPayload(), new TranslationContext() {});
+    String s = coder.getUrn();
+    if (s.equals(getUrn(StandardCoders.Enum.BYTES))) {
+      return ByteArrayCoder.of();
+    } else if (s.equals(getUrn(StandardCoders.Enum.BOOL))) {
+      return BooleanCoder.of();
+    } else if (s.equals(getUrn(StandardCoders.Enum.STRING_UTF8))) {
+      return StringUtf8Coder.of();
+    } else if (s.equals(getUrn(StandardCoders.Enum.KV))) {
+      return KvCoder.of(components.get(0), components.get(1));
+    } else if (s.equals(getUrn(StandardCoders.Enum.VARINT))) {
+      return VarLongCoder.of();
+    } else if (s.equals(getUrn(StandardCoders.Enum.INTERVAL_WINDOW))) {
+      return IntervalWindowCoder.of();
+    } else if (s.equals(getUrn(StandardCoders.Enum.ITERABLE))) {
+      return IterableCoder.of(components.get(0));
+    } else if (s.equals(getUrn(StandardCoders.Enum.TIMER))) {
+      return Timer.Coder.of(components.get(0));
+    } else if (s.equals(getUrn(StandardCoders.Enum.GLOBAL_WINDOW))) {
+      return GlobalWindow.Coder.INSTANCE;
+    } else if (s.equals(getUrn(StandardCoders.Enum.WINDOWED_VALUE))) {
+      return WindowedValue.FullWindowedValueCoder.of(
+          components.get(0), (Coder<BoundedWindow>) components.get(1));
+    } else if (s.equals(getUrn(StandardCoders.Enum.DOUBLE))) {
+      return DoubleCoder.of();
+    } else {
+      throw new IllegalStateException("Unknown coder URN: " + coder.getUrn());
+    }
   }
 
   @Test
@@ -467,7 +369,8 @@ public class CommonCoderTest {
       assertFalse(expectedValueIterator.hasNext());
 
     } else if (s.equals(getUrn(StandardCoders.Enum.TIMER))) {
-      assertEquals((Timer) expectedValue, (Timer) actualValue);
+      assertEquals(((Timer) expectedValue).getTimestamp(), ((Timer) actualValue).getTimestamp());
+      assertThat(((Timer) expectedValue).getPayload(), equalTo(((Timer) actualValue).getPayload()));
 
     } else if (s.equals(getUrn(StandardCoders.Enum.GLOBAL_WINDOW))) {
       assertEquals(expectedValue, actualValue);
@@ -475,13 +378,8 @@ public class CommonCoderTest {
     } else if (s.equals(getUrn(StandardCoders.Enum.WINDOWED_VALUE))) {
       assertEquals(expectedValue, actualValue);
 
-    } else if (s.equals(getUrn(StandardCoders.Enum.PARAM_WINDOWED_VALUE))) {
-      assertEquals(expectedValue, actualValue);
-
     } else if (s.equals(getUrn(StandardCoders.Enum.DOUBLE))) {
 
-      assertEquals(expectedValue, actualValue);
-    } else if (s.equals(getUrn(StandardCoders.Enum.ROW))) {
       assertEquals(expectedValue, actualValue);
     } else {
       throw new IllegalStateException("Unknown coder URN: " + coder.getUrn());

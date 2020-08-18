@@ -36,7 +36,6 @@ import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.reflect.DoFnInvokers;
 import org.apache.beam.sdk.transforms.splittabledofn.OffsetRangeTracker;
 import org.apache.beam.sdk.transforms.splittabledofn.RestrictionTracker;
-import org.apache.beam.sdk.transforms.splittabledofn.WatermarkEstimator;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.GlobalWindow;
 import org.apache.beam.sdk.transforms.windowing.PaneInfo;
@@ -86,25 +85,24 @@ public class OutputAndTimeBoundedSplittableProcessElementInvokerTest {
     }
 
     @GetInitialRestriction
-    public OffsetRange getInitialRestriction(@Element Void element) {
+    public OffsetRange getInitialRestriction(Void element) {
       throw new UnsupportedOperationException("Should not be called in this test");
     }
   }
 
-  private SplittableProcessElementInvoker<Void, String, OffsetRange, Long, Void>.Result runTest(
+  private SplittableProcessElementInvoker<Void, String, OffsetRange, Long>.Result runTest(
       int totalNumOutputs,
       Duration sleepBeforeFirstClaim,
       int numOutputsPerProcessCall,
-      Duration sleepBeforeEachOutput)
-      throws Exception {
+      Duration sleepBeforeEachOutput) {
     SomeFn fn = new SomeFn(sleepBeforeFirstClaim, numOutputsPerProcessCall, sleepBeforeEachOutput);
     OffsetRange initialRestriction = new OffsetRange(0, totalNumOutputs);
     return runTest(fn, initialRestriction);
   }
 
-  private SplittableProcessElementInvoker<Void, String, OffsetRange, Long, Void>.Result runTest(
-      DoFn<Void, String> fn, OffsetRange initialRestriction) throws Exception {
-    SplittableProcessElementInvoker<Void, String, OffsetRange, Long, Void> invoker =
+  private SplittableProcessElementInvoker<Void, String, OffsetRange, Long>.Result runTest(
+      DoFn<Void, String> fn, OffsetRange initialRestriction) {
+    SplittableProcessElementInvoker<Void, String, OffsetRange, Long> invoker =
         new OutputAndTimeBoundedSplittableProcessElementInvoker<>(
             fn,
             PipelineOptionsFactory.create(),
@@ -127,33 +125,17 @@ public class OutputAndTimeBoundedSplittableProcessElementInvokerTest {
             NullSideInputReader.empty(),
             Executors.newSingleThreadScheduledExecutor(),
             1000,
-            Duration.standardSeconds(3),
-            () -> {
-              throw new UnsupportedOperationException("BundleFinalizer not configured for test.");
-            });
+            Duration.standardSeconds(3));
 
-    SplittableProcessElementInvoker.Result rval =
-        invoker.invokeProcessElement(
-            DoFnInvokers.invokerFor(fn),
-            WindowedValue.of(null, Instant.now(), GlobalWindow.INSTANCE, PaneInfo.NO_FIRING),
-            new OffsetRangeTracker(initialRestriction),
-            new WatermarkEstimator<Void>() {
-              @Override
-              public Instant currentWatermark() {
-                return GlobalWindow.TIMESTAMP_MIN_VALUE;
-              }
-
-              @Override
-              public Void getState() {
-                return null;
-              }
-            });
-    return rval;
+    return invoker.invokeProcessElement(
+        DoFnInvokers.invokerFor(fn),
+        WindowedValue.of(null, Instant.now(), GlobalWindow.INSTANCE, PaneInfo.NO_FIRING),
+        new OffsetRangeTracker(initialRestriction));
   }
 
   @Test
   public void testInvokeProcessElementOutputBounded() throws Exception {
-    SplittableProcessElementInvoker<Void, String, OffsetRange, Long, Void>.Result res =
+    SplittableProcessElementInvoker<Void, String, OffsetRange, Long>.Result res =
         runTest(10000, Duration.ZERO, Integer.MAX_VALUE, Duration.ZERO);
     assertFalse(res.getContinuation().shouldResume());
     OffsetRange residualRange = res.getResidualRestriction();
@@ -164,7 +146,7 @@ public class OutputAndTimeBoundedSplittableProcessElementInvokerTest {
 
   @Test
   public void testInvokeProcessElementTimeBounded() throws Exception {
-    SplittableProcessElementInvoker<Void, String, OffsetRange, Long, Void>.Result res =
+    SplittableProcessElementInvoker<Void, String, OffsetRange, Long>.Result res =
         runTest(10000, Duration.ZERO, Integer.MAX_VALUE, Duration.millis(100));
     assertFalse(res.getContinuation().shouldResume());
     OffsetRange residualRange = res.getResidualRestriction();
@@ -177,7 +159,7 @@ public class OutputAndTimeBoundedSplittableProcessElementInvokerTest {
 
   @Test
   public void testInvokeProcessElementTimeBoundedWithStartupDelay() throws Exception {
-    SplittableProcessElementInvoker<Void, String, OffsetRange, Long, Void>.Result res =
+    SplittableProcessElementInvoker<Void, String, OffsetRange, Long>.Result res =
         runTest(10000, Duration.standardSeconds(3), Integer.MAX_VALUE, Duration.millis(100));
     assertFalse(res.getContinuation().shouldResume());
     OffsetRange residualRange = res.getResidualRestriction();
@@ -189,7 +171,7 @@ public class OutputAndTimeBoundedSplittableProcessElementInvokerTest {
 
   @Test
   public void testInvokeProcessElementVoluntaryReturnStop() throws Exception {
-    SplittableProcessElementInvoker<Void, String, OffsetRange, Long, Void>.Result res =
+    SplittableProcessElementInvoker<Void, String, OffsetRange, Long>.Result res =
         runTest(5, Duration.ZERO, Integer.MAX_VALUE, Duration.millis(100));
     assertFalse(res.getContinuation().shouldResume());
     assertNull(res.getResidualRestriction());
@@ -197,7 +179,7 @@ public class OutputAndTimeBoundedSplittableProcessElementInvokerTest {
 
   @Test
   public void testInvokeProcessElementVoluntaryReturnResume() throws Exception {
-    SplittableProcessElementInvoker<Void, String, OffsetRange, Long, Void>.Result res =
+    SplittableProcessElementInvoker<Void, String, OffsetRange, Long>.Result res =
         runTest(10, Duration.ZERO, 5, Duration.millis(100));
     assertTrue(res.getContinuation().shouldResume());
     assertEquals(new OffsetRange(5, 10), res.getResidualRestriction());
@@ -213,7 +195,7 @@ public class OutputAndTimeBoundedSplittableProcessElementInvokerTest {
           }
 
           @GetInitialRestriction
-          public OffsetRange getInitialRestriction(@Element Void element) {
+          public OffsetRange getInitialRestriction(Void element) {
             throw new UnsupportedOperationException("Should not be called in this test");
           }
         };
@@ -232,7 +214,7 @@ public class OutputAndTimeBoundedSplittableProcessElementInvokerTest {
           }
 
           @GetInitialRestriction
-          public OffsetRange getInitialRestriction(@Element Void element) {
+          public OffsetRange getInitialRestriction(Void element) {
             throw new UnsupportedOperationException("Should not be called in this test");
           }
         };

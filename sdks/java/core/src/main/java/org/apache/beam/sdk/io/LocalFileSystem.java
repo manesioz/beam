@@ -47,7 +47,6 @@ import org.apache.beam.sdk.io.fs.CreateOptions;
 import org.apache.beam.sdk.io.fs.MatchResult;
 import org.apache.beam.sdk.io.fs.MatchResult.Metadata;
 import org.apache.beam.sdk.io.fs.MatchResult.Status;
-import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.annotations.VisibleForTesting;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Predicates;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Lists;
@@ -91,14 +90,9 @@ class LocalFileSystem extends FileSystem<LocalResourceId> {
 
   @Override
   protected List<MatchResult> match(List<String> specs) throws IOException {
-    return match(new File(".").getAbsolutePath(), specs);
-  }
-
-  @VisibleForTesting
-  List<MatchResult> match(String baseDir, List<String> specs) throws IOException {
     ImmutableList.Builder<MatchResult> ret = ImmutableList.builder();
     for (String spec : specs) {
-      ret.add(matchOne(baseDir, spec));
+      ret.add(matchOne(spec));
     }
     return ret.build();
   }
@@ -211,7 +205,7 @@ class LocalFileSystem extends FileSystem<LocalResourceId> {
     return "file";
   }
 
-  private MatchResult matchOne(String baseDir, String spec) {
+  private MatchResult matchOne(String spec) throws IOException {
     if (spec.toLowerCase().startsWith("file:")) {
       spec = spec.substring("file:".length());
     }
@@ -229,22 +223,12 @@ class LocalFileSystem extends FileSystem<LocalResourceId> {
     // it considers it an invalid file system pattern. We should use
     // new File(spec) to avoid such validation.
     // See https://bugs.openjdk.java.net/browse/JDK-8197918
-    // However, new File(parent, child) resolves absolute `child` in a system-dependent
-    // way that is generally incorrect, for example new File($PWD, "/tmp/foo") resolves
-    // to $PWD/tmp/foo on many systems, unlike Paths.get($PWD).resolve("/tmp/foo") which
-    // correctly resolves to "/tmp/foo". We add just this one piece of logic here, without
-    // switching to Paths which could require a rewrite of this module to support
-    // both Windows and correct file resolution.
-    // The root cause is that globs are not files but we are using file manipulation libraries
-    // to work with them.
-    final File specAsFile = new File(spec);
-    final File absoluteFile = specAsFile.isAbsolute() ? specAsFile : new File(baseDir, spec);
-
-    if (absoluteFile.exists()) {
-      return MatchResult.create(Status.OK, ImmutableList.of(toMetadata(absoluteFile)));
+    final File file = new File(spec);
+    if (file.exists()) {
+      return MatchResult.create(Status.OK, ImmutableList.of(toMetadata(file)));
     }
 
-    File parent = getSpecNonGlobPrefixParentFile(absoluteFile.getAbsolutePath());
+    File parent = getSpecNonGlobPrefixParentFile(spec);
     if (!parent.exists()) {
       return MatchResult.create(Status.NOT_FOUND, Collections.emptyList());
     }
@@ -257,8 +241,7 @@ class LocalFileSystem extends FileSystem<LocalResourceId> {
     // backslash as a part of the filename, because Globs.toRegexPattern will
     // eat one backslash.
     String pathToMatch =
-        absoluteFile
-            .getAbsolutePath()
+        file.getAbsolutePath()
             .replaceAll(Matcher.quoteReplacement("\\"), Matcher.quoteReplacement("\\\\"));
 
     final PathMatcher matcher =
@@ -283,8 +266,7 @@ class LocalFileSystem extends FileSystem<LocalResourceId> {
       // TODO: consider to return Status.OK for globs.
       return MatchResult.create(
           Status.NOT_FOUND,
-          new FileNotFoundException(
-              String.format("No files found for spec: %s in working directory %s", spec, baseDir)));
+          new FileNotFoundException(String.format("No files found for spec: %s.", spec)));
     } else {
       return MatchResult.create(Status.OK, result);
     }
@@ -294,7 +276,7 @@ class LocalFileSystem extends FileSystem<LocalResourceId> {
     String specNonWildcardPrefix = getNonWildcardPrefix(spec);
     File file = new File(specNonWildcardPrefix);
     return specNonWildcardPrefix.endsWith(File.separator)
-        ? file.getAbsoluteFile()
+        ? file
         : file.getAbsoluteFile().getParentFile();
   }
 

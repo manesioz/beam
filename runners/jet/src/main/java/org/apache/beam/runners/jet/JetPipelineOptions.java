@@ -28,9 +28,9 @@ public interface JetPipelineOptions extends PipelineOptions {
   @Description("Name of Jet group")
   @Validation.Required
   @Default.String("jet")
-  String getClusterName();
+  String getJetGroupName();
 
-  void setClusterName(String clusterName);
+  void setJetGroupName(String jetGroupName);
 
   @Description("Specifies the addresses of the Jet cluster; needed only with external clusters")
   @Validation.Required

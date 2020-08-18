@@ -20,11 +20,6 @@ package org.apache.beam.sdk.extensions.euphoria.core.client.operator.hint;
 import java.io.Serializable;
 import org.apache.beam.sdk.extensions.euphoria.core.annotation.audience.Audience;
 
-/**
- * Specify hints about runtime data characteristics.
- *
- * @deprecated Hints unsupported for now
- */
+/** Specify hints about runtime data characteristics. */
 @Audience(Audience.Type.INTERNAL)
-@Deprecated
 public interface OutputHint extends Serializable {}

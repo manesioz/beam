@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/apache/beam/sdks/go/pkg/beam/internal/errors"
-	jobpb "github.com/apache/beam/sdks/go/pkg/beam/model/jobmanagement_v1"
+	pb "github.com/apache/beam/sdks/go/pkg/beam/model/jobmanagement_v1"
 	"github.com/apache/beam/sdks/go/pkg/beam/util/grpcx"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -42,8 +42,8 @@ func startServer(t *testing.T) *grpc.ClientConn {
 	real := &server{m: make(map[string]*manifest)}
 
 	gs := grpc.NewServer()
-	jobpb.RegisterLegacyArtifactStagingServiceServer(gs, real)
-	jobpb.RegisterLegacyArtifactRetrievalServiceServer(gs, real)
+	pb.RegisterArtifactStagingServiceServer(gs, real)
+	pb.RegisterArtifactRetrievalServiceServer(gs, real)
 	go gs.Serve(listener)
 
 	t.Logf("server listening on %v", endpoint)
@@ -56,12 +56,12 @@ func startServer(t *testing.T) *grpc.ClientConn {
 }
 
 type data struct {
-	md     *jobpb.ArtifactMetadata
+	md     *pb.ArtifactMetadata
 	chunks [][]byte
 }
 
 type manifest struct {
-	md *jobpb.Manifest
+	md *pb.Manifest
 	m  map[string]*data // key -> data
 	mu sync.Mutex
 }
@@ -72,7 +72,7 @@ type server struct {
 	mu sync.Mutex
 }
 
-func (s *server) PutArtifact(ps jobpb.LegacyArtifactStagingService_PutArtifactServer) error {
+func (s *server) PutArtifact(ps pb.ArtifactStagingService_PutArtifactServer) error {
 	// Read header
 
 	header, err := ps.Recv()
@@ -118,10 +118,10 @@ func (s *server) PutArtifact(ps jobpb.LegacyArtifactStagingService_PutArtifactSe
 	m.m[key] = &data{chunks: chunks}
 	m.mu.Unlock()
 
-	return ps.SendAndClose(&jobpb.PutArtifactResponse{})
+	return ps.SendAndClose(&pb.PutArtifactResponse{})
 }
 
-func (s *server) CommitManifest(ctx context.Context, req *jobpb.CommitManifestRequest) (*jobpb.CommitManifestResponse, error) {
+func (s *server) CommitManifest(ctx context.Context, req *pb.CommitManifestRequest) (*pb.CommitManifestResponse, error) {
 	token := req.GetStagingSessionToken()
 	if token == "" {
 		return nil, errors.New("missing staging session token")
@@ -147,10 +147,10 @@ func (s *server) CommitManifest(ctx context.Context, req *jobpb.CommitManifestRe
 	}
 	m.md = req.GetManifest()
 
-	return &jobpb.CommitManifestResponse{RetrievalToken: token}, nil
+	return &pb.CommitManifestResponse{RetrievalToken: token}, nil
 }
 
-func (s *server) GetManifest(ctx context.Context, req *jobpb.GetManifestRequest) (*jobpb.GetManifestResponse, error) {
+func (s *server) GetManifest(ctx context.Context, req *pb.GetManifestRequest) (*pb.GetManifestResponse, error) {
 	token := req.GetRetrievalToken()
 	if token == "" {
 		return nil, errors.New("missing retrieval token")
@@ -163,10 +163,10 @@ func (s *server) GetManifest(ctx context.Context, req *jobpb.GetManifestRequest)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	return &jobpb.GetManifestResponse{Manifest: m.md}, nil
+	return &pb.GetManifestResponse{Manifest: m.md}, nil
 }
 
-func (s *server) GetArtifact(req *jobpb.LegacyGetArtifactRequest, stream jobpb.LegacyArtifactRetrievalService_GetArtifactServer) error {
+func (s *server) GetArtifact(req *pb.GetArtifactRequest, stream pb.ArtifactRetrievalService_GetArtifactServer) error {
 	token := req.GetRetrievalToken()
 	if token == "" {
 		return errors.New("missing retrieval token")
@@ -192,7 +192,7 @@ func (s *server) GetArtifact(req *jobpb.LegacyGetArtifactRequest, stream jobpb.L
 	// Send chunks exactly as we received them.
 
 	for _, chunk := range chunks {
-		if err := stream.Send(&jobpb.ArtifactChunk{Data: chunk}); err != nil {
+		if err := stream.Send(&pb.ArtifactChunk{Data: chunk}); err != nil {
 			return err
 		}
 	}

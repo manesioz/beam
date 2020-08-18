@@ -22,7 +22,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.Objects;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Duration;
 
 /**
@@ -206,7 +205,14 @@ public class NexmarkConfiguration implements Serializable {
       debug = options.getDebug();
     }
     if (options.getQuery() != null) {
-      query = NexmarkQueryName.fromId(options.getQuery());
+      try {
+        query = NexmarkQueryName.valueOf(options.getQuery());
+      } catch (IllegalArgumentException exc) {
+        query = NexmarkQueryName.fromNumber(Integer.parseInt(options.getQuery()));
+      }
+      if (query == null) {
+        throw new IllegalArgumentException("Unknown query: " + query);
+      }
     }
     if (options.getSourceType() != null) {
       sourceType = options.getSourceType();
@@ -553,7 +559,7 @@ public class NexmarkConfiguration implements Serializable {
   }
 
   @Override
-  public boolean equals(@Nullable Object obj) {
+  public boolean equals(Object obj) {
     if (this == obj) {
       return true;
     }

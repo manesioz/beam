@@ -52,11 +52,12 @@ class Docker {
   }
 
   private void push(String imageName, String imageTag) {
+    String image = "${repositoryRoot}/${imageName}"
     String targetImage = getFullImageName(imageName, imageTag)
 
     job.steps {
       shell("echo \"Tagging image\"...")
-      shell("docker tag ${targetImage} ${targetImage}")
+      shell("docker tag ${image} ${targetImage}")
       shell("echo \"Pushing image\"...")
       shell("docker push ${targetImage}")
     }

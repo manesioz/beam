@@ -17,6 +17,7 @@
  */
 package org.apache.beam.runners.core.triggers;
 
+import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.state.TimeDomain;
 
 /**
@@ -24,6 +25,7 @@ import org.apache.beam.sdk.state.TimeDomain;
  * {@link RepeatedlyStateMachine#forever} and {@link AfterWatermarkStateMachine#pastEndOfWindow} for
  * more details.
  */
+@Experimental(Experimental.Kind.TRIGGER)
 public class DefaultTriggerStateMachine extends TriggerStateMachine {
 
   private DefaultTriggerStateMachine() {

@@ -19,12 +19,10 @@ package org.apache.beam.sdk.util;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import org.apache.beam.sdk.annotations.Internal;
 
 /**
  * {@link ByteArrayInputStream} that allows accessing the entire internal buffer without copying.
  */
-@Internal
 public class ExposedByteArrayInputStream extends ByteArrayInputStream {
 
   public ExposedByteArrayInputStream(byte[] buf) {

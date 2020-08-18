@@ -30,6 +30,7 @@ import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import javax.annotation.Nullable;
 import org.apache.beam.runners.dataflow.util.RandomAccessData;
 import org.apache.beam.sdk.coders.AtomicCoder;
 import org.apache.beam.sdk.coders.ByteArrayCoder;
@@ -46,7 +47,6 @@ import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.hash.HashFunction;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.hash.Hashing;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * An Ism file is a prefix encoded composite key value file broken into shards. Each composite key
@@ -117,10 +117,12 @@ public class IsmFormat {
   public abstract static class IsmRecord<V> {
     abstract List<?> keyComponents();
 
-    abstract @Nullable V value();
+    @Nullable
+    abstract V value();
 
     @SuppressWarnings("mutable")
-    abstract byte @Nullable [] metadata();
+    @Nullable
+    abstract byte[] metadata();
 
     IsmRecord() {} // Prevent public constructor
 
@@ -401,7 +403,7 @@ public class IsmFormat {
     }
 
     @Override
-    public boolean equals(@Nullable Object other) {
+    public boolean equals(Object other) {
       if (other == this) {
         return true;
       }
@@ -456,7 +458,7 @@ public class IsmFormat {
         }
 
         @Override
-        public boolean equals(@Nullable Object obj) {
+        public boolean equals(Object obj) {
           return this == obj;
         }
 

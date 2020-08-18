@@ -19,6 +19,8 @@ package org.apache.beam.sdk.io.elasticsearch;
 
 import static org.apache.beam.sdk.io.elasticsearch.ElasticsearchIO.ConnectionConfiguration;
 import static org.apache.beam.sdk.io.elasticsearch.ElasticsearchIOTestCommon.ES_TYPE;
+import static org.apache.beam.sdk.io.elasticsearch.ElasticsearchIOTestCommon.UPDATE_INDEX;
+import static org.apache.beam.sdk.io.elasticsearch.ElasticsearchIOTestCommon.UPDATE_TYPE;
 import static org.apache.beam.sdk.io.elasticsearch.ElasticsearchIOTestCommon.getEsIndex;
 import static org.elasticsearch.test.ESIntegTestCase.Scope.SUITE;
 
@@ -93,7 +95,7 @@ public class ElasticsearchIOTest extends ESIntegTestCase implements Serializable
     if (connectionConfiguration == null) {
       connectionConfiguration =
           ConnectionConfiguration.create(fillAddresses(), getEsIndex(), ES_TYPE)
-              .withSocketTimeout(120000)
+              .withSocketAndRetryTimeout(120000)
               .withConnectTimeout(5000);
       elasticsearchIOTestCommon =
           new ElasticsearchIOTestCommon(connectionConfiguration, getRestClient(), false);
@@ -191,6 +193,17 @@ public class ElasticsearchIOTest extends ESIntegTestCase implements Serializable
   public void testWritePartialUpdate() throws Exception {
     elasticsearchIOTestCommon.setPipeline(pipeline);
     elasticsearchIOTestCommon.testWritePartialUpdate();
+  }
+
+  @Test
+  public void testWritePartialUpdateWithErrors() throws Exception {
+    // cannot share elasticsearchIOTestCommon because tests run in parallel.
+    ConnectionConfiguration connectionConfiguration =
+        ConnectionConfiguration.create(fillAddresses(), UPDATE_INDEX, UPDATE_TYPE);
+    ElasticsearchIOTestCommon elasticsearchIOTestCommonWithErrors =
+        new ElasticsearchIOTestCommon(connectionConfiguration, getRestClient(), false);
+    elasticsearchIOTestCommonWithErrors.setPipeline(pipeline);
+    elasticsearchIOTestCommonWithErrors.testWritePartialUpdateWithErrors();
   }
 
   @Test

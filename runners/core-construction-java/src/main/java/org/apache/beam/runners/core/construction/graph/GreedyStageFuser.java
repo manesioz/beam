@@ -17,7 +17,6 @@
  */
 package org.apache.beam.runners.core.construction.graph;
 
-import static org.apache.beam.runners.core.construction.graph.ExecutableStage.DEFAULT_WIRE_CODER_SETTINGS;
 import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions.checkArgument;
 
 import java.util.ArrayDeque;
@@ -139,8 +138,7 @@ public class GreedyStageFuser {
         userStates,
         timers,
         fusedTransforms.build(),
-        materializedPCollections,
-        DEFAULT_WIRE_CODER_SETTINGS);
+        materializedPCollections);
   }
 
   private static Environment getStageEnvironment(

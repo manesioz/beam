@@ -24,14 +24,13 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
-import org.apache.beam.sdk.annotations.Experimental.Kind;
+import org.apache.beam.sdk.schemas.LogicalTypes;
 import org.apache.beam.sdk.schemas.Schema;
-import org.apache.beam.sdk.schemas.logicaltypes.FixedBytes;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /** A descriptor for ClickHouse table schema. */
-@Experimental(Kind.SOURCE_SINK)
+@Experimental(Experimental.Kind.SOURCE_SINK)
 @AutoValue
 public abstract class TableSchema implements Serializable {
 
@@ -77,7 +76,7 @@ public abstract class TableSchema implements Serializable {
 
       case FIXEDSTRING:
         int size = columnType.fixedStringSize(); // non-null for fixed strings
-        return Schema.FieldType.logicalType(FixedBytes.of(size));
+        return Schema.FieldType.logicalType(LogicalTypes.FixedBytes.of(size));
 
       case FLOAT32:
         return Schema.FieldType.FLOAT;
@@ -122,9 +121,11 @@ public abstract class TableSchema implements Serializable {
 
     public abstract ColumnType columnType();
 
-    public abstract @Nullable DefaultType defaultType();
+    @Nullable
+    public abstract DefaultType defaultType();
 
-    public abstract @Nullable Object defaultValue();
+    @Nullable
+    public abstract Object defaultValue();
 
     public boolean materializedOrAlias() {
       return DefaultType.MATERIALIZED.equals(defaultType())
@@ -209,11 +210,14 @@ public abstract class TableSchema implements Serializable {
 
     public abstract TypeName typeName();
 
-    public abstract @Nullable Map<String, Integer> enumValues();
+    @Nullable
+    public abstract Map<String, Integer> enumValues();
 
-    public abstract @Nullable Integer fixedStringSize();
+    @Nullable
+    public abstract Integer fixedStringSize();
 
-    public abstract @Nullable ColumnType arrayElementType();
+    @Nullable
+    public abstract ColumnType arrayElementType();
 
     public ColumnType withNullable(boolean nullable) {
       return toBuilder().nullable(nullable).build();

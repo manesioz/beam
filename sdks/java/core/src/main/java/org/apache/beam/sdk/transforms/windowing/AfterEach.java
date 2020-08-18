@@ -22,7 +22,6 @@ import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Prec
 import java.util.Arrays;
 import java.util.List;
 import org.apache.beam.sdk.annotations.Experimental;
-import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Joiner;
 import org.joda.time.Instant;
 
@@ -42,7 +41,7 @@ import org.joda.time.Instant;
  *       Repeatedly.forever(a)}, since the repeated trigger never finishes.
  * </ul>
  */
-@Experimental(Kind.TRIGGER)
+@Experimental(Experimental.Kind.TRIGGER)
 public class AfterEach extends Trigger {
 
   private AfterEach(List<Trigger> subTriggers) {
@@ -66,11 +65,6 @@ public class AfterEach extends Trigger {
     // This trigger will fire at least once when the first trigger in the sequence
     // fires at least once.
     return subTriggers.get(0).getWatermarkThatGuaranteesFiring(window);
-  }
-
-  @Override
-  public boolean mayFinish() {
-    return subTriggers.stream().allMatch(trigger -> trigger.mayFinish());
   }
 
   @Override

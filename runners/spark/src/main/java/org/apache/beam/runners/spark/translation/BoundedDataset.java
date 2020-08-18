@@ -19,6 +19,7 @@ package org.apache.beam.runners.spark.translation;
 
 import java.util.List;
 import java.util.stream.Collectors;
+import javax.annotation.Nullable;
 import org.apache.beam.runners.spark.coders.CoderHelpers;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
@@ -31,7 +32,6 @@ import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaRDDLike;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.storage.StorageLevel;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Holds an RDD or values for deferred conversion to an RDD if needed. PCollections are sometimes
@@ -41,7 +41,7 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  */
 public class BoundedDataset<T> implements Dataset {
   // only set if creating an RDD from a static collection
-  private transient @Nullable JavaSparkContext jsc;
+  @Nullable private transient JavaSparkContext jsc;
 
   private Iterable<WindowedValue<T>> windowedValues;
   private Coder<T> coder;

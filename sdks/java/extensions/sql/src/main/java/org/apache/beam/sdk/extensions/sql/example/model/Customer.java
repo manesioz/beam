@@ -21,13 +21,12 @@ import java.io.Serializable;
 import java.util.Objects;
 import org.apache.beam.sdk.schemas.JavaBeanSchema;
 import org.apache.beam.sdk.schemas.annotations.DefaultSchema;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /** Describes a customer. */
 @DefaultSchema(JavaBeanSchema.class)
 public class Customer implements Serializable {
-  private int id;
   private String name;
+  private int id;
   private String countryOfResidence;
 
   public Customer(int id, String name, String countryOfResidence) {
@@ -38,24 +37,24 @@ public class Customer implements Serializable {
 
   public Customer() {}
 
-  public int getId() {
-    return id;
-  }
-
   public String getName() {
     return name;
+  }
+
+  public int getId() {
+    return id;
   }
 
   public String getCountryOfResidence() {
     return countryOfResidence;
   }
 
-  public void setId(int id) {
-    this.id = id;
-  }
-
   public void setName(String name) {
     this.name = name;
+  }
+
+  public void setId(int id) {
+    this.id = id;
   }
 
   public void setCountryOfResidence(String countryOfResidence) {
@@ -63,7 +62,7 @@ public class Customer implements Serializable {
   }
 
   @Override
-  public boolean equals(@Nullable Object o) {
+  public boolean equals(Object o) {
     if (this == o) {
       return true;
     }
@@ -78,20 +77,6 @@ public class Customer implements Serializable {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, name, countryOfResidence);
-  }
-
-  @Override
-  public String toString() {
-    return "Customer{"
-        + "id="
-        + id
-        + ", name='"
-        + name
-        + '\''
-        + ", countryOfResidence='"
-        + countryOfResidence
-        + '\''
-        + '}';
+    return Objects.hash(name, id, countryOfResidence);
   }
 }

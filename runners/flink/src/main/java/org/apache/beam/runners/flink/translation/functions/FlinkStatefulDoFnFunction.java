@@ -35,14 +35,13 @@ import org.apache.beam.runners.core.construction.SerializablePipelineOptions;
 import org.apache.beam.runners.flink.FlinkPipelineOptions;
 import org.apache.beam.runners.flink.metrics.DoFnRunnerWithMetricsUpdate;
 import org.apache.beam.runners.flink.metrics.FlinkMetricContainer;
-import org.apache.beam.runners.flink.translation.utils.Workarounds;
+import org.apache.beam.runners.flink.translation.utils.FlinkClassloading;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.io.FileSystems;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.DoFnSchemaInformation;
 import org.apache.beam.sdk.transforms.ParDo;
-import org.apache.beam.sdk.transforms.join.RawUnionValue;
 import org.apache.beam.sdk.transforms.reflect.DoFnInvoker;
 import org.apache.beam.sdk.transforms.reflect.DoFnInvokers;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
@@ -60,7 +59,7 @@ import org.joda.time.Instant;
 
 /** A {@link RichGroupReduceFunction} for stateful {@link ParDo} in Flink Batch Runner. */
 public class FlinkStatefulDoFnFunction<K, V, OutputT>
-    extends RichGroupReduceFunction<WindowedValue<KV<K, V>>, WindowedValue<RawUnionValue>> {
+    extends RichGroupReduceFunction<WindowedValue<KV<K, V>>, WindowedValue<OutputT>> {
 
   private final DoFn<KV<K, V>, OutputT> dofn;
   private String stepName;
@@ -73,9 +72,7 @@ public class FlinkStatefulDoFnFunction<K, V, OutputT>
   private final Map<TupleTag<?>, Coder<?>> outputCoderMap;
   private final DoFnSchemaInformation doFnSchemaInformation;
   private final Map<String, PCollectionView<?>> sideInputMapping;
-
   private transient DoFnInvoker doFnInvoker;
-  private transient FlinkMetricContainer metricContainer;
 
   public FlinkStatefulDoFnFunction(
       DoFn<KV<K, V>, OutputT> dofn,
@@ -105,7 +102,7 @@ public class FlinkStatefulDoFnFunction<K, V, OutputT>
 
   @Override
   public void reduce(
-      Iterable<WindowedValue<KV<K, V>>> values, Collector<WindowedValue<RawUnionValue>> out)
+      Iterable<WindowedValue<KV<K, V>>> values, Collector<WindowedValue<OutputT>> out)
       throws Exception {
     RuntimeContext runtimeContext = getRuntimeContext();
 
@@ -114,7 +111,7 @@ public class FlinkStatefulDoFnFunction<K, V, OutputT>
       outputManager = new FlinkDoFnFunction.DoFnOutputManager(out);
     } else {
       // it has some additional Outputs
-      outputManager = new FlinkDoFnFunction.MultiDoFnOutputManager(out, outputMap);
+      outputManager = new FlinkDoFnFunction.MultiDoFnOutputManager((Collector) out, outputMap);
     }
 
     final Iterator<WindowedValue<KV<K, V>>> iterator = values.iterator();
@@ -160,9 +157,10 @@ public class FlinkStatefulDoFnFunction<K, V, OutputT>
             doFnSchemaInformation,
             sideInputMapping);
 
-    FlinkPipelineOptions pipelineOptions = serializedOptions.get().as(FlinkPipelineOptions.class);
-    if (!pipelineOptions.getDisableMetrics()) {
-      doFnRunner = new DoFnRunnerWithMetricsUpdate<>(stepName, doFnRunner, metricContainer);
+    if ((serializedOptions.get().as(FlinkPipelineOptions.class)).getEnableMetrics()) {
+      doFnRunner =
+          new DoFnRunnerWithMetricsUpdate<>(
+              stepName, doFnRunner, new FlinkMetricContainer(getRuntimeContext()));
     }
 
     doFnRunner.startBundle();
@@ -180,13 +178,13 @@ public class FlinkStatefulDoFnFunction<K, V, OutputT>
     timerInternals.advanceProcessingTime(BoundedWindow.TIMESTAMP_MAX_VALUE);
     timerInternals.advanceSynchronizedProcessingTime(BoundedWindow.TIMESTAMP_MAX_VALUE);
 
-    fireEligibleTimers(key, timerInternals, doFnRunner);
+    fireEligibleTimers(timerInternals, doFnRunner);
 
     doFnRunner.finishBundle();
   }
 
   private void fireEligibleTimers(
-      final K key, InMemoryTimerInternals timerInternals, DoFnRunner<KV<K, V>, OutputT> runner)
+      InMemoryTimerInternals timerInternals, DoFnRunner<KV<K, V>, OutputT> runner)
       throws Exception {
 
     while (true) {
@@ -196,15 +194,15 @@ public class FlinkStatefulDoFnFunction<K, V, OutputT>
 
       while ((timer = timerInternals.removeNextEventTimer()) != null) {
         hasFired = true;
-        fireTimer(key, timer, runner);
+        fireTimer(timer, runner);
       }
       while ((timer = timerInternals.removeNextProcessingTimer()) != null) {
         hasFired = true;
-        fireTimer(key, timer, runner);
+        fireTimer(timer, runner);
       }
       while ((timer = timerInternals.removeNextSynchronizedProcessingTimer()) != null) {
         hasFired = true;
-        fireTimer(key, timer, runner);
+        fireTimer(timer, runner);
       }
       if (!hasFired) {
         break;
@@ -212,19 +210,11 @@ public class FlinkStatefulDoFnFunction<K, V, OutputT>
     }
   }
 
-  private void fireTimer(
-      final K key, TimerInternals.TimerData timer, DoFnRunner<KV<K, V>, OutputT> doFnRunner) {
+  private void fireTimer(TimerInternals.TimerData timer, DoFnRunner<KV<K, V>, OutputT> doFnRunner) {
     StateNamespace namespace = timer.getNamespace();
     checkArgument(namespace instanceof StateNamespaces.WindowNamespace);
     BoundedWindow window = ((StateNamespaces.WindowNamespace) namespace).getWindow();
-    doFnRunner.onTimer(
-        timer.getTimerId(),
-        timer.getTimerFamilyId(),
-        key,
-        window,
-        timer.getTimestamp(),
-        timer.getOutputTimestamp(),
-        timer.getDomain());
+    doFnRunner.onTimer(timer.getTimerId(), window, timer.getTimestamp(), timer.getDomain());
   }
 
   @Override
@@ -233,17 +223,15 @@ public class FlinkStatefulDoFnFunction<K, V, OutputT>
     // deserialization method. However, this is a hack, and we want to properly initialize the
     // options where they are needed.
     FileSystems.setDefaultPipelineOptions(serializedOptions.get());
-    metricContainer = new FlinkMetricContainer(getRuntimeContext());
     doFnInvoker = DoFnInvokers.tryInvokeSetupFor(dofn);
   }
 
   @Override
   public void close() throws Exception {
     try {
-      metricContainer.registerMetricsForPipelineResult();
       Optional.ofNullable(doFnInvoker).ifPresent(DoFnInvoker::invokeTeardown);
     } finally {
-      Workarounds.deleteStaticCaches();
+      FlinkClassloading.deleteStaticCaches();
     }
   }
 }

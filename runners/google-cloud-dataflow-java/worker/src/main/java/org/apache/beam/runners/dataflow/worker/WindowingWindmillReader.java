@@ -17,13 +17,14 @@
  */
 package org.apache.beam.runners.dataflow.worker;
 
-import static org.apache.beam.sdk.util.Preconditions.checkArgumentNotNull;
+import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions.checkArgument;
 
 import com.google.auto.service.AutoService;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import javax.annotation.Nullable;
 import org.apache.beam.runners.core.KeyedWorkItem;
 import org.apache.beam.runners.dataflow.util.CloudObject;
 import org.apache.beam.runners.dataflow.worker.util.ValueInEmptyWindows;
@@ -36,7 +37,6 @@ import org.apache.beam.sdk.util.WindowedValue;
 import org.apache.beam.sdk.util.WindowedValue.FullWindowedValueCoder;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableMap;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterables;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * A Reader that receives input data from a Windmill server, and returns a singleton iterable
@@ -82,15 +82,19 @@ class WindowingWindmillReader<K, T> extends NativeReader<WindowedValue<KeyedWork
   }
 
   static class Factory implements ReaderFactory {
+    // Findbugs does not correctly understand inheritance + nullability.
+    //
+    // coder may be null due to parent class signature, and must be checked,
+    // despite not being nullable here
     @Override
     public NativeReader<?> create(
         CloudObject spec,
-        @Nullable Coder<?> coder,
+        Coder<?> coder,
         @Nullable PipelineOptions options,
         @Nullable DataflowExecutionContext context,
         DataflowOperationContext operationContext)
         throws Exception {
-      coder = checkArgumentNotNull(coder);
+      checkArgument(coder != null, "coder must not be null");
       @SuppressWarnings({"rawtypes", "unchecked"})
       Coder<WindowedValue<KeyedWorkItem<Object, Object>>> typedCoder =
           (Coder<WindowedValue<KeyedWorkItem<Object, Object>>>) coder;

@@ -33,7 +33,6 @@ import org.apache.beam.sdk.nexmark.NexmarkUtils;
 import org.apache.beam.sdk.schemas.JavaFieldSchema;
 import org.apache.beam.sdk.schemas.annotations.DefaultSchema;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Objects;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Instant;
 
 /** A person either creating an auction or making a bid. */
@@ -186,7 +185,7 @@ public class Person implements KnownSize, Serializable {
   }
 
   @Override
-  public boolean equals(@Nullable Object o) {
+  public boolean equals(Object o) {
     if (this == o) {
       return true;
     }

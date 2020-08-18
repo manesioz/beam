@@ -40,6 +40,38 @@ BEAM_REPO_URL=https://github.com/apache/beam.git
 RELEASE_BRANCH=release-${RELEASE_VER}
 WORKING_BRANCH=postcommit_validation_pr
 
+JOB_TRIGGER_PHRASES=(
+  # To verify Gradle release build
+  "**Run Release Gradle Build**"
+  # To run all PostCommit jobs
+  "Run Go PostCommit"
+  "Run Java PostCommit"
+  "Run Java PostCommit"
+  "Run Java PortabilityApi PostCommit"
+  "Run Java Flink PortableValidatesRunner Batch"
+  "Run Java Flink PortableValidatesRunner Streaming"
+  "Run Apex ValidatesRunner"
+  "Run Dataflow ValidatesRunner"
+  "Run Flink ValidatesRunner"
+  "Run Gearpump ValidatesRunner"
+  "Run Dataflow PortabilityApi ValidatesRunner"
+  "Run Samza ValidatesRunner"
+  "Run Spark ValidatesRunner"
+  "Run Python Dataflow ValidatesContainer"
+  "Run Python Dataflow ValidatesRunner"
+  "Run Python Flink ValidatesRunner"
+  "Run Python PostCommit"
+  "Run SQL PostCommit"
+  "Run Go PreCommit"
+  "Run Java PreCommit"
+  "Run Java_Examples_Dataflow PreCommit"
+  "Run JavaPortabilityApi PreCommit"
+  "Run Portable_Python PreCommit"
+  "Run PythonLint PreCommit"
+  "Run Python PreCommit"
+)
+
+
 function clean_up(){
   echo ""
   echo "==================== Final Cleanup ===================="
@@ -120,19 +152,17 @@ echo "After PR created, you need to comment phrases listed in description in the
 
 if [[ ! -z `which hub` ]]; then
   git checkout -b ${WORKING_BRANCH} origin/${RELEASE_BRANCH} --quiet
-  # The version change is needed for Dataflow python batch tests.
-  # Without changing to dev version, the dataflow pipeline will fail because of non-existed worker containers.
-  # Note that dataflow worker containers should be built after RC has been built.
-  sed -i -e "s/${RELEASE_VER}/${RELEASE_VER}.dev/g" sdks/python/apache_beam/version.py
-  sed -i -e "s/sdk_version=${RELEASE_VER}/sdk_version=${RELEASE_VER}.dev/g" gradle.properties
-  git add sdks/python/apache_beam/version.py
-  git add gradle.properties
-  git commit -m "Changed version.py and gradle.properties to python dev version to create a test PR" --quiet
+  touch empty_file.txt
+  git add .
+  git commit -m "Add empty file in order to create a test PR" --quiet
   git push -f ${GITHUB_USERNAME} --quiet
 
+  trigger_phrases=$(IFS=$'\n'; echo "${JOB_TRIGGER_PHRASES[*]}")
   hub pull-request -b apache:${RELEASE_BRANCH} -h ${GITHUB_USERNAME}:${WORKING_BRANCH} -F- <<<"[DO NOT MERGE] Run all PostCommit and PreCommit Tests against Release Branch
 
-  You can run many tests automatically using release/src/main/scripts/mass_comment.py."
+  Please comment as instructions below, one phrase per comment:
+
+  ${trigger_phrases}"
 
   echo ""
   echo "[NOTE]: Please make sure all test targets have been invoked."

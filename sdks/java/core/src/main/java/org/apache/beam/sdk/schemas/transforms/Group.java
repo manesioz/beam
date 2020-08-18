@@ -17,19 +17,16 @@
  */
 package org.apache.beam.sdk.schemas.transforms;
 
-import com.google.auto.value.AutoValue;
 import java.util.List;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.coders.KvCoder;
 import org.apache.beam.sdk.schemas.FieldAccessDescriptor;
 import org.apache.beam.sdk.schemas.Schema;
 import org.apache.beam.sdk.schemas.Schema.Field;
-import org.apache.beam.sdk.schemas.Schema.FieldType;
 import org.apache.beam.sdk.schemas.SchemaCoder;
-import org.apache.beam.sdk.schemas.utils.RowSelector;
 import org.apache.beam.sdk.schemas.utils.SelectHelpers;
-import org.apache.beam.sdk.schemas.utils.SelectHelpers.RowSelectorContainer;
 import org.apache.beam.sdk.transforms.Combine;
 import org.apache.beam.sdk.transforms.Combine.CombineFn;
 import org.apache.beam.sdk.transforms.DoFn;
@@ -41,8 +38,6 @@ import org.apache.beam.sdk.transforms.WithKeys;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.Row;
-import org.apache.beam.sdk.values.TypeDescriptors;
-import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Lists;
 
 /**
  * A generic grouping transform for schema {@link PCollection}s.
@@ -65,7 +60,8 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Lists;
  * <p>You can group all purchases by user and country as follows:
  *
  * <pre>{@code @DefaultSchema(JavaFieldSchema.class)
- * PCollection<Row> byUser = purchases.apply(Group.byFieldNames("userId', "country"));
+ * PCollection<KV<Row, Iterable<UserPurchase>> byUser =
+ *   purchases.apply(Group.byFieldNames("userId', "country"));
  * }</pre>
  *
  * <p>However often an aggregation of some form is desired. The builder methods inside the Group
@@ -73,7 +69,7 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Lists;
  * schema, and generating an output schema based on these aggregations. For example:
  *
  * <pre>{@code
- * PCollection<Row> aggregated = purchases
+ * PCollection<KV<Row, Row>> aggregated = purchases
  *      .apply(Group.byFieldNames("userId', "country")
  *          .aggregateField("cost", Sum.ofLongs(), "total_cost")
  *          .aggregateField("cost", Top.<Long>largestLongsFn(10), "top_purchases")
@@ -83,8 +79,7 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Lists;
  *
  * <p>The result will be a new row schema containing the fields total_cost, top_purchases, and
  * transactionDurations, containing the sum of all purchases costs (for that user and country), the
- * top ten purchases, and a histogram of transaction durations. The schema will also contain a key
- * field, which will be a row containing userId and country.
+ * top ten purchases, and a histogram of transaction durations.
  *
  * <p>Note that usually the field type can be automatically inferred from the {@link CombineFn}
  * passed in. However sometimes it cannot be inferred, due to Java type erasure, in which case a
@@ -108,39 +103,37 @@ public class Group {
    * methods to control how the grouping is done.
    */
   public static <T> ByFields<T> byFieldNames(String... fieldNames) {
-    return ByFields.of(FieldAccessDescriptor.withFieldNames(fieldNames));
+    return new ByFields<>(FieldAccessDescriptor.withFieldNames(fieldNames));
   }
 
   /** Same as {@link #byFieldNames(String...)}. */
   public static <T> ByFields<T> byFieldNames(Iterable<String> fieldNames) {
-    return ByFields.of(FieldAccessDescriptor.withFieldNames(fieldNames));
+    return new ByFields<>(FieldAccessDescriptor.withFieldNames(fieldNames));
   }
 
   /**
    * Returns a transform that groups all elements in the input {@link PCollection} keyed by the list
-   * of fields specified. The output of this transform will have a key field of type {@link Row}
-   * containing the specified extracted fields. It will also have a value field of type {@link Row}
+   * of fields specified. The output of this transform will be a {@link KV} keyed by a {@link Row}
    * containing the specified extracted fields. The returned transform contains further builder
    * methods to control how the grouping is done.
    */
   public static <T> ByFields<T> byFieldIds(Integer... fieldIds) {
-    return ByFields.of(FieldAccessDescriptor.withFieldIds(fieldIds));
+    return new ByFields<>(FieldAccessDescriptor.withFieldIds(fieldIds));
   }
 
   /** Same as {@link #byFieldIds(Integer...)}. */
   public static <T> ByFields<T> byFieldIds(Iterable<Integer> fieldIds) {
-    return ByFields.of(FieldAccessDescriptor.withFieldIds(fieldIds));
+    return new ByFields<>(FieldAccessDescriptor.withFieldIds(fieldIds));
   }
 
   /**
    * Returns a transform that groups all elements in the input {@link PCollection} keyed by the
-   * fields specified. The output of this transform will have a key field of type {@link Row}
-   * containing the specified extracted fields. It will also have a value field of type {@link Row}
+   * fields specified. The output of this transform will be a {@link KV} keyed by a {@link Row}
    * containing the specified extracted fields. The returned transform contains further builder
    * methods to control how the grouping is done.
    */
   public static <T> ByFields<T> byFieldAccessDescriptor(FieldAccessDescriptor fieldAccess) {
-    return ByFields.of(fieldAccess);
+    return new ByFields<>(fieldAccess);
   }
 
   /** A {@link PTransform} for doing global aggregations on schema PCollections. */
@@ -166,23 +159,9 @@ public class Group {
         CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
         String outputFieldName) {
       return new CombineFieldsGlobally<>(
-          SchemaAggregateFn.create()
+          SchemaAggregateFn.<InputT>create()
               .aggregateFields(
-                  FieldAccessDescriptor.withFieldNames(inputFieldName),
-                  false,
-                  fn,
-                  outputFieldName));
-    }
-
-    public <CombineInputT, AccumT, CombineOutputT>
-        CombineFieldsGlobally<InputT> aggregateFieldBaseValue(
-            String inputFieldName,
-            CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
-            String outputFieldName) {
-      return new CombineFieldsGlobally<>(
-          SchemaAggregateFn.create()
-              .aggregateFields(
-                  FieldAccessDescriptor.withFieldNames(inputFieldName), true, fn, outputFieldName));
+                  FieldAccessDescriptor.withFieldNames(inputFieldName), fn, outputFieldName));
     }
 
     /** The same as {@link #aggregateField} but using field id. */
@@ -191,20 +170,9 @@ public class Group {
         CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
         String outputFieldName) {
       return new CombineFieldsGlobally<>(
-          SchemaAggregateFn.create()
+          SchemaAggregateFn.<InputT>create()
               .aggregateFields(
-                  FieldAccessDescriptor.withFieldIds(inputFieldId), false, fn, outputFieldName));
-    }
-
-    public <CombineInputT, AccumT, CombineOutputT>
-        CombineFieldsGlobally<InputT> aggregateFieldBaseValue(
-            int inputFieldId,
-            CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
-            String outputFieldName) {
-      return new CombineFieldsGlobally<>(
-          SchemaAggregateFn.create()
-              .aggregateFields(
-                  FieldAccessDescriptor.withFieldIds(inputFieldId), true, fn, outputFieldName));
+                  FieldAccessDescriptor.withFieldIds(inputFieldId), fn, outputFieldName));
     }
 
     /**
@@ -218,40 +186,17 @@ public class Group {
         CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
         Field outputField) {
       return new CombineFieldsGlobally<>(
-          SchemaAggregateFn.create()
+          SchemaAggregateFn.<InputT>create()
               .aggregateFields(
-                  FieldAccessDescriptor.withFieldNames(inputFieldName), false, fn, outputField));
-    }
-
-    public <CombineInputT, AccumT, CombineOutputT>
-        CombineFieldsGlobally<InputT> aggregateFieldBaseValue(
-            String inputFieldName,
-            CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
-            Field outputField) {
-      return new CombineFieldsGlobally<>(
-          SchemaAggregateFn.create()
-              .aggregateFields(
-                  FieldAccessDescriptor.withFieldNames(inputFieldName), true, fn, outputField));
+                  FieldAccessDescriptor.withFieldNames(inputFieldName), fn, outputField));
     }
 
     /** The same as {@link #aggregateField} but using field id. */
     public <CombineInputT, AccumT, CombineOutputT> CombineFieldsGlobally<InputT> aggregateField(
         int inputFielId, CombineFn<CombineInputT, AccumT, CombineOutputT> fn, Field outputField) {
       return new CombineFieldsGlobally<>(
-          SchemaAggregateFn.create()
-              .aggregateFields(
-                  FieldAccessDescriptor.withFieldIds(inputFielId), false, fn, outputField));
-    }
-
-    public <CombineInputT, AccumT, CombineOutputT>
-        CombineFieldsGlobally<InputT> aggregateFieldBaseValue(
-            int inputFielId,
-            CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
-            Field outputField) {
-      return new CombineFieldsGlobally<>(
-          SchemaAggregateFn.create()
-              .aggregateFields(
-                  FieldAccessDescriptor.withFieldIds(inputFielId), true, fn, outputField));
+          SchemaAggregateFn.<InputT>create()
+              .aggregateFields(FieldAccessDescriptor.withFieldIds(inputFielId), fn, outputField));
     }
 
     /**
@@ -297,8 +242,8 @@ public class Group {
         CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
         String outputFieldName) {
       return new CombineFieldsGlobally<>(
-          SchemaAggregateFn.create()
-              .aggregateFields(fieldsToAggregate, false, fn, outputFieldName));
+          SchemaAggregateFn.<InputT>create()
+              .aggregateFields(fieldsToAggregate, fn, outputFieldName));
     }
 
     /**
@@ -334,15 +279,15 @@ public class Group {
         CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
         Field outputField) {
       return new CombineFieldsGlobally<>(
-          SchemaAggregateFn.create().aggregateFields(fieldsToAggregate, false, fn, outputField));
+          SchemaAggregateFn.<InputT>create().aggregateFields(fieldsToAggregate, fn, outputField));
     }
 
     @Override
     public PCollection<Iterable<InputT>> expand(PCollection<InputT> input) {
       return input
-          .apply("addNullKey", WithKeys.of((Void) null))
-          .apply("group", GroupByKey.create())
-          .apply("extractValues", Values.create());
+          .apply(WithKeys.of((Void) null))
+          .apply(GroupByKey.create())
+          .apply(Values.create());
     }
   }
 
@@ -357,7 +302,7 @@ public class Group {
 
     @Override
     public PCollection<OutputT> expand(PCollection<InputT> input) {
-      return input.apply("globalCombine", Combine.globally(combineFn));
+      return input.apply(Combine.globally(combineFn));
     }
   }
 
@@ -368,9 +313,9 @@ public class Group {
    */
   public static class CombineFieldsGlobally<InputT>
       extends PTransform<PCollection<InputT>, PCollection<Row>> {
-    private final SchemaAggregateFn.Inner schemaAggregateFn;
+    private final SchemaAggregateFn.Inner<InputT> schemaAggregateFn;
 
-    CombineFieldsGlobally(SchemaAggregateFn.Inner schemaAggregateFn) {
+    CombineFieldsGlobally(SchemaAggregateFn.Inner<InputT> schemaAggregateFn) {
       this.schemaAggregateFn = schemaAggregateFn;
     }
 
@@ -390,17 +335,7 @@ public class Group {
         String outputFieldName) {
       return new CombineFieldsGlobally<>(
           schemaAggregateFn.aggregateFields(
-              FieldAccessDescriptor.withFieldNames(inputFieldName), false, fn, outputFieldName));
-    }
-
-    public <CombineInputT, AccumT, CombineOutputT>
-        CombineFieldsGlobally<InputT> aggregateFieldBaseValue(
-            String inputFieldName,
-            CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
-            String outputFieldName) {
-      return new CombineFieldsGlobally<>(
-          schemaAggregateFn.aggregateFields(
-              FieldAccessDescriptor.withFieldNames(inputFieldName), true, fn, outputFieldName));
+              FieldAccessDescriptor.withFieldNames(inputFieldName), fn, outputFieldName));
     }
 
     public <CombineInputT, AccumT, CombineOutputT> CombineFieldsGlobally<InputT> aggregateField(
@@ -409,17 +344,7 @@ public class Group {
         String outputFieldName) {
       return new CombineFieldsGlobally<>(
           schemaAggregateFn.aggregateFields(
-              FieldAccessDescriptor.withFieldIds(inputFieldId), false, fn, outputFieldName));
-    }
-
-    public <CombineInputT, AccumT, CombineOutputT>
-        CombineFieldsGlobally<InputT> aggregateFieldBaseValue(
-            int inputFieldId,
-            CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
-            String outputFieldName) {
-      return new CombineFieldsGlobally<>(
-          schemaAggregateFn.aggregateFields(
-              FieldAccessDescriptor.withFieldIds(inputFieldId), true, fn, outputFieldName));
+              FieldAccessDescriptor.withFieldIds(inputFieldId), fn, outputFieldName));
     }
 
     /**
@@ -434,34 +359,14 @@ public class Group {
         Field outputField) {
       return new CombineFieldsGlobally<>(
           schemaAggregateFn.aggregateFields(
-              FieldAccessDescriptor.withFieldNames(inputFieldName), false, fn, outputField));
-    }
-
-    public <CombineInputT, AccumT, CombineOutputT>
-        CombineFieldsGlobally<InputT> aggregateFieldBaseValue(
-            String inputFieldName,
-            CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
-            Field outputField) {
-      return new CombineFieldsGlobally<>(
-          schemaAggregateFn.aggregateFields(
-              FieldAccessDescriptor.withFieldNames(inputFieldName), true, fn, outputField));
+              FieldAccessDescriptor.withFieldNames(inputFieldName), fn, outputField));
     }
 
     public <CombineInputT, AccumT, CombineOutputT> CombineFieldsGlobally<InputT> aggregateField(
         int inputFieldId, CombineFn<CombineInputT, AccumT, CombineOutputT> fn, Field outputField) {
       return new CombineFieldsGlobally<>(
           schemaAggregateFn.aggregateFields(
-              FieldAccessDescriptor.withFieldIds(inputFieldId), false, fn, outputField));
-    }
-
-    public <CombineInputT, AccumT, CombineOutputT>
-        CombineFieldsGlobally<InputT> aggregateFieldBaseValue(
-            int inputFieldId,
-            CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
-            Field outputField) {
-      return new CombineFieldsGlobally<>(
-          schemaAggregateFn.aggregateFields(
-              FieldAccessDescriptor.withFieldIds(inputFieldId), true, fn, outputField));
+              FieldAccessDescriptor.withFieldIds(inputFieldId), fn, outputField));
     }
 
     /**
@@ -506,7 +411,7 @@ public class Group {
         CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
         String outputFieldName) {
       return new CombineFieldsGlobally<>(
-          schemaAggregateFn.aggregateFields(fieldAccessDescriptor, false, fn, outputFieldName));
+          schemaAggregateFn.aggregateFields(fieldAccessDescriptor, fn, outputFieldName));
     }
 
     /**
@@ -542,87 +447,43 @@ public class Group {
         CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
         Field outputField) {
       return new CombineFieldsGlobally<>(
-          schemaAggregateFn.aggregateFields(fieldAccessDescriptor, false, fn, outputField));
+          schemaAggregateFn.aggregateFields(fieldAccessDescriptor, fn, outputField));
     }
 
     @Override
     public PCollection<Row> expand(PCollection<InputT> input) {
-      SchemaAggregateFn.Inner fn = schemaAggregateFn.withSchema(input.getSchema());
-      return input
-          .apply("toRows", Convert.toRows())
-          .apply("Global Combine", Combine.globally(fn))
-          .setRowSchema(fn.getOutputSchema());
+      SchemaAggregateFn.Inner<InputT> fn =
+          schemaAggregateFn.withSchema(input.getSchema(), input.getToRowFunction());
+      return input.apply(Combine.globally(fn)).setRowSchema(fn.getOutputSchema());
     }
   }
 
   /**
    * a {@link PTransform} that groups schema elements based on the given fields.
    *
-   * <p>The output of this transform will have a key field of type {@link Row} containing the
-   * specified extracted fields. It will also have a value field of type {@link Row} containing the
-   * specified extracted fields.
+   * <p>The output of this transform is a {@link KV} where the key type is a {@link Row} containing
+   * the extracted fields.
    */
-  @AutoValue
-  public abstract static class ByFields<InputT>
-      extends PTransform<PCollection<InputT>, PCollection<Row>> {
-    abstract FieldAccessDescriptor getFieldAccessDescriptor();
+  public static class ByFields<InputT>
+      extends PTransform<PCollection<InputT>, PCollection<KV<Row, Iterable<InputT>>>> {
+    private final FieldAccessDescriptor fieldAccessDescriptor;
+    @Nullable private Schema keySchema = null;
 
-    abstract String getKeyField();
-
-    abstract String getValueField();
-
-    abstract Builder<InputT> toBuilder();
-
-    @AutoValue.Builder
-    abstract static class Builder<InputT> {
-      abstract Builder<InputT> setFieldAccessDescriptor(
-          FieldAccessDescriptor fieldAccessDescriptor);
-
-      abstract Builder<InputT> setKeyField(String keyField);
-
-      abstract Builder<InputT> setValueField(String valueField);
-
-      abstract ByFields<InputT> build();
+    private ByFields(FieldAccessDescriptor fieldAccessDescriptor) {
+      this.fieldAccessDescriptor = fieldAccessDescriptor;
     }
 
-    class ToKv extends PTransform<PCollection<InputT>, PCollection<KV<Row, Iterable<Row>>>> {
-      private RowSelector rowSelector;
-
-      @Override
-      public PCollection<KV<Row, Iterable<Row>>> expand(PCollection<InputT> input) {
-        Schema schema = input.getSchema();
-        FieldAccessDescriptor resolved = getFieldAccessDescriptor().resolve(schema);
-        rowSelector = new RowSelectorContainer(schema, resolved, true);
-        Schema keySchema = getKeySchema(schema);
-
-        return input
-            .apply("toRow", Convert.toRows())
-            .apply(
-                "selectKeys",
-                WithKeys.of((Row e) -> rowSelector.select(e)).withKeyType(TypeDescriptors.rows()))
-            .setCoder(KvCoder.of(SchemaCoder.of(keySchema), SchemaCoder.of(schema)))
-            .apply("GroupByKey", GroupByKey.create());
-      }
+    Schema getKeySchema() {
+      return keySchema;
     }
 
-    public ToKv getToKvs() {
-      return new ToKv();
-    }
-
-    private static <InputT> ByFields<InputT> of(FieldAccessDescriptor fieldAccessDescriptor) {
-      return new AutoValue_Group_ByFields.Builder<InputT>()
-          .setFieldAccessDescriptor(fieldAccessDescriptor)
-          .setKeyField("key")
-          .setValueField("value")
-          .build();
-    }
-
-    public ByFields<InputT> withKeyField(String keyField) {
-      return toBuilder().setKeyField(keyField).build();
-    }
-
-    public ByFields<InputT> withValueField(String valueField) {
-      return toBuilder().setValueField(valueField).build();
+    /**
+     * Aggregate the grouped data using the specified {@link CombineFn}. The resulting {@link
+     * PCollection} will have type {@code PCollection<KV<Row, OutputT>>}.
+     */
+    public <OutputT> CombineByFields<InputT, OutputT> aggregate(
+        CombineFn<InputT, ?, OutputT> combineFn) {
+      return new CombineByFields<>(this, combineFn);
     }
 
     /**
@@ -639,54 +500,22 @@ public class Group {
         String inputFieldName,
         CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
         String outputFieldName) {
-      return CombineFieldsByFields.of(
+      return new CombineFieldsByFields<>(
           this,
-          SchemaAggregateFn.create()
+          SchemaAggregateFn.<InputT>create()
               .aggregateFields(
-                  FieldAccessDescriptor.withFieldNames(inputFieldName), false, fn, outputFieldName),
-          getKeyField(),
-          getValueField());
-    }
-
-    public <CombineInputT, AccumT, CombineOutputT>
-        CombineFieldsByFields<InputT> aggregateFieldBaseValue(
-            String inputFieldName,
-            CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
-            String outputFieldName) {
-      return CombineFieldsByFields.of(
-          this,
-          SchemaAggregateFn.create()
-              .aggregateFields(
-                  FieldAccessDescriptor.withFieldNames(inputFieldName), true, fn, outputFieldName),
-          getKeyField(),
-          getValueField());
+                  FieldAccessDescriptor.withFieldNames(inputFieldName), fn, outputFieldName));
     }
 
     public <CombineInputT, AccumT, CombineOutputT> CombineFieldsByFields<InputT> aggregateField(
         int inputFieldId,
         CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
         String outputFieldName) {
-      return CombineFieldsByFields.of(
+      return new CombineFieldsByFields<>(
           this,
-          SchemaAggregateFn.create()
+          SchemaAggregateFn.<InputT>create()
               .aggregateFields(
-                  FieldAccessDescriptor.withFieldIds(inputFieldId), false, fn, outputFieldName),
-          getKeyField(),
-          getValueField());
-    }
-
-    public <CombineInputT, AccumT, CombineOutputT>
-        CombineFieldsByFields<InputT> aggregateFieldBaseValue(
-            int inputFieldId,
-            CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
-            String outputFieldName) {
-      return CombineFieldsByFields.of(
-          this,
-          SchemaAggregateFn.create()
-              .aggregateFields(
-                  FieldAccessDescriptor.withFieldIds(inputFieldId), true, fn, outputFieldName),
-          getKeyField(),
-          getValueField());
+                  FieldAccessDescriptor.withFieldIds(inputFieldId), fn, outputFieldName));
     }
 
     /**
@@ -699,52 +528,19 @@ public class Group {
         String inputFieldName,
         CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
         Field outputField) {
-      return CombineFieldsByFields.of(
+      return new CombineFieldsByFields<>(
           this,
-          SchemaAggregateFn.create()
+          SchemaAggregateFn.<InputT>create()
               .aggregateFields(
-                  FieldAccessDescriptor.withFieldNames(inputFieldName), false, fn, outputField),
-          getKeyField(),
-          getValueField());
-    }
-
-    public <CombineInputT, AccumT, CombineOutputT>
-        CombineFieldsByFields<InputT> aggregateFieldBaseValue(
-            String inputFieldName,
-            CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
-            Field outputField) {
-      return CombineFieldsByFields.of(
-          this,
-          SchemaAggregateFn.create()
-              .aggregateFields(
-                  FieldAccessDescriptor.withFieldNames(inputFieldName), true, fn, outputField),
-          getKeyField(),
-          getValueField());
+                  FieldAccessDescriptor.withFieldNames(inputFieldName), fn, outputField));
     }
 
     public <CombineInputT, AccumT, CombineOutputT> CombineFieldsByFields<InputT> aggregateField(
         int inputFieldId, CombineFn<CombineInputT, AccumT, CombineOutputT> fn, Field outputField) {
-      return CombineFieldsByFields.of(
+      return new CombineFieldsByFields<>(
           this,
-          SchemaAggregateFn.create()
-              .aggregateFields(
-                  FieldAccessDescriptor.withFieldIds(inputFieldId), false, fn, outputField),
-          getKeyField(),
-          getValueField());
-    }
-
-    public <CombineInputT, AccumT, CombineOutputT>
-        CombineFieldsByFields<InputT> aggregateFieldBaseValue(
-            int inputFieldId,
-            CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
-            Field outputField) {
-      return CombineFieldsByFields.of(
-          this,
-          SchemaAggregateFn.create()
-              .aggregateFields(
-                  FieldAccessDescriptor.withFieldIds(inputFieldId), true, fn, outputField),
-          getKeyField(),
-          getValueField());
+          SchemaAggregateFn.<InputT>create()
+              .aggregateFields(FieldAccessDescriptor.withFieldIds(inputFieldId), fn, outputField));
     }
 
     /**
@@ -788,11 +584,10 @@ public class Group {
         FieldAccessDescriptor fieldsToAggregate,
         CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
         String outputFieldName) {
-      return CombineFieldsByFields.of(
+      return new CombineFieldsByFields<>(
           this,
-          SchemaAggregateFn.create().aggregateFields(fieldsToAggregate, false, fn, outputFieldName),
-          getKeyField(),
-          getValueField());
+          SchemaAggregateFn.<InputT>create()
+              .aggregateFields(fieldsToAggregate, fn, outputFieldName));
     }
 
     /**
@@ -827,42 +622,55 @@ public class Group {
         FieldAccessDescriptor fieldsToAggregate,
         CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
         Field outputField) {
-      return CombineFieldsByFields.of(
+      return new CombineFieldsByFields<>(
           this,
-          SchemaAggregateFn.create().aggregateFields(fieldsToAggregate, false, fn, outputField),
-          getKeyField(),
-          getValueField());
-    }
-
-    Schema getKeySchema(Schema inputSchema) {
-      FieldAccessDescriptor resolved = getFieldAccessDescriptor().resolve(inputSchema);
-      return SelectHelpers.getOutputSchema(inputSchema, resolved);
+          SchemaAggregateFn.<InputT>create().aggregateFields(fieldsToAggregate, fn, outputField));
     }
 
     @Override
-    public PCollection<Row> expand(PCollection<InputT> input) {
+    public PCollection<KV<Row, Iterable<InputT>>> expand(PCollection<InputT> input) {
       Schema schema = input.getSchema();
-      Schema keySchema = getKeySchema(schema);
-      Schema outputSchema =
-          Schema.builder()
-              .addRowField(getKeyField(), keySchema)
-              .addIterableField(getValueField(), FieldType.row(schema))
-              .build();
-
+      FieldAccessDescriptor resolved = fieldAccessDescriptor.resolve(schema);
+      keySchema = SelectHelpers.getOutputSchema(schema, resolved);
       return input
-          .apply("ToKvs", getToKvs())
           .apply(
-              "ToRow",
+              "Group by fields",
               ParDo.of(
-                  new DoFn<KV<Row, Iterable<Row>>, Row>() {
+                  new DoFn<InputT, KV<Row, InputT>>() {
                     @ProcessElement
-                    public void process(@Element KV<Row, Iterable<Row>> e, OutputReceiver<Row> o) {
+                    public void process(
+                        @Element InputT element,
+                        @Element Row row,
+                        OutputReceiver<KV<Row, InputT>> o) {
                       o.output(
-                          Row.withSchema(outputSchema)
-                              .attachValues(Lists.newArrayList(e.getKey(), e.getValue())));
+                          KV.of(
+                              SelectHelpers.selectRow(row, resolved, schema, keySchema), element));
                     }
                   }))
-          .setRowSchema(outputSchema);
+          .setCoder(KvCoder.of(SchemaCoder.of(keySchema), input.getCoder()))
+          .apply(GroupByKey.create());
+    }
+  }
+
+  /**
+   * a {@link PTransform} that does a per0-key combine using a specified {@link CombineFn}.
+   *
+   * <p>The output of this transform is a {@code <KV<Row, OutputT>>} where the key type is a {@link
+   * Row} containing the extracted fields.
+   */
+  public static class CombineByFields<InputT, OutputT>
+      extends PTransform<PCollection<InputT>, PCollection<KV<Row, OutputT>>> {
+    private final ByFields<InputT> byFields;
+    private final CombineFn<InputT, ?, OutputT> combineFn;
+
+    CombineByFields(ByFields<InputT> byFields, CombineFn<InputT, ?, OutputT> combineFn) {
+      this.byFields = byFields;
+      this.combineFn = combineFn;
+    }
+
+    @Override
+    public PCollection<KV<Row, OutputT>> expand(PCollection<InputT> input) {
+      return input.apply(byFields).apply(Combine.groupedValues(combineFn));
     }
   }
 
@@ -871,53 +679,15 @@ public class Group {
    * aggregateField and aggregateFields. The output of this transform will have a schema that is
    * determined by the output types of all the composed combiners.
    */
-  @AutoValue
-  public abstract static class CombineFieldsByFields<InputT>
-      extends PTransform<PCollection<InputT>, PCollection<Row>> {
-    abstract ByFields<InputT> getByFields();
+  public static class CombineFieldsByFields<InputT>
+      extends PTransform<PCollection<InputT>, PCollection<KV<Row, Row>>> {
+    private final ByFields<InputT> byFields;
+    private final SchemaAggregateFn.Inner<InputT> schemaAggregateFn;
 
-    abstract SchemaAggregateFn.Inner getSchemaAggregateFn();
-
-    abstract String getKeyField();
-
-    abstract String getValueField();
-
-    abstract Builder<InputT> toBuilder();
-
-    @AutoValue.Builder
-    abstract static class Builder<InputT> {
-      abstract Builder<InputT> setByFields(ByFields<InputT> byFields);
-
-      abstract Builder<InputT> setSchemaAggregateFn(SchemaAggregateFn.Inner schemaAggregateFn);
-
-      abstract Builder<InputT> setKeyField(String keyField);
-
-      abstract Builder<InputT> setValueField(String valueField);
-
-      abstract CombineFieldsByFields<InputT> build();
-    }
-
-    static <InputT> CombineFieldsByFields<InputT> of(
-        ByFields<InputT> byFields,
-        SchemaAggregateFn.Inner schemaAggregateFn,
-        String keyField,
-        String valueField) {
-      return new AutoValue_Group_CombineFieldsByFields.Builder<InputT>()
-          .setByFields(byFields)
-          .setSchemaAggregateFn(schemaAggregateFn)
-          .setKeyField(keyField)
-          .setValueField(valueField)
-          .build();
-    }
-
-    /** Set the name of the key field in the resulting schema. */
-    public CombineFieldsByFields<InputT> withKeyField(String keyField) {
-      return toBuilder().setKeyField(keyField).build();
-    }
-
-    /** Set the name of the value field in the resulting schema. */
-    public CombineFieldsByFields<InputT> witValueField(String valueField) {
-      return toBuilder().setValueField(valueField).build();
+    CombineFieldsByFields(
+        ByFields<InputT> byFields, SchemaAggregateFn.Inner<InputT> schemaAggregateFn) {
+      this.byFields = byFields;
+      this.schemaAggregateFn = schemaAggregateFn;
     }
 
     /**
@@ -934,56 +704,20 @@ public class Group {
         String inputFieldName,
         CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
         String outputFieldName) {
-      return toBuilder()
-          .setSchemaAggregateFn(
-              getSchemaAggregateFn()
-                  .aggregateFields(
-                      FieldAccessDescriptor.withFieldNames(inputFieldName),
-                      false,
-                      fn,
-                      outputFieldName))
-          .build();
-    }
-
-    public <CombineInputT, AccumT, CombineOutputT>
-        CombineFieldsByFields<InputT> aggregateFieldBaseValue(
-            String inputFieldName,
-            CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
-            String outputFieldName) {
-      return toBuilder()
-          .setSchemaAggregateFn(
-              getSchemaAggregateFn()
-                  .aggregateFields(
-                      FieldAccessDescriptor.withFieldNames(inputFieldName),
-                      true,
-                      fn,
-                      outputFieldName))
-          .build();
+      return new CombineFieldsByFields<>(
+          byFields,
+          schemaAggregateFn.aggregateFields(
+              FieldAccessDescriptor.withFieldNames(inputFieldName), fn, outputFieldName));
     }
 
     public <CombineInputT, AccumT, CombineOutputT> CombineFieldsByFields<InputT> aggregateField(
         int inputFieldId,
         CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
         String outputFieldName) {
-      return toBuilder()
-          .setSchemaAggregateFn(
-              getSchemaAggregateFn()
-                  .aggregateFields(
-                      FieldAccessDescriptor.withFieldIds(inputFieldId), false, fn, outputFieldName))
-          .build();
-    }
-
-    public <CombineInputT, AccumT, CombineOutputT>
-        CombineFieldsByFields<InputT> aggregateFieldBaseValue(
-            int inputFieldId,
-            CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
-            String outputFieldName) {
-      return toBuilder()
-          .setSchemaAggregateFn(
-              getSchemaAggregateFn()
-                  .aggregateFields(
-                      FieldAccessDescriptor.withFieldIds(inputFieldId), true, fn, outputFieldName))
-          .build();
+      return new CombineFieldsByFields<>(
+          byFields,
+          schemaAggregateFn.aggregateFields(
+              FieldAccessDescriptor.withFieldIds(inputFieldId), fn, outputFieldName));
     }
 
     /**
@@ -996,48 +730,18 @@ public class Group {
         String inputFieldName,
         CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
         Field outputField) {
-      return toBuilder()
-          .setSchemaAggregateFn(
-              getSchemaAggregateFn()
-                  .aggregateFields(
-                      FieldAccessDescriptor.withFieldNames(inputFieldName), false, fn, outputField))
-          .build();
-    }
-
-    public <CombineInputT, AccumT, CombineOutputT>
-        CombineFieldsByFields<InputT> aggregateFieldBaseValue(
-            String inputFieldName,
-            CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
-            Field outputField) {
-      return toBuilder()
-          .setSchemaAggregateFn(
-              getSchemaAggregateFn()
-                  .aggregateFields(
-                      FieldAccessDescriptor.withFieldNames(inputFieldName), true, fn, outputField))
-          .build();
+      return new CombineFieldsByFields<>(
+          byFields,
+          schemaAggregateFn.aggregateFields(
+              FieldAccessDescriptor.withFieldNames(inputFieldName), fn, outputField));
     }
 
     public <CombineInputT, AccumT, CombineOutputT> CombineFieldsByFields<InputT> aggregateField(
         int inputFieldId, CombineFn<CombineInputT, AccumT, CombineOutputT> fn, Field outputField) {
-      return toBuilder()
-          .setSchemaAggregateFn(
-              getSchemaAggregateFn()
-                  .aggregateFields(
-                      FieldAccessDescriptor.withFieldIds(inputFieldId), false, fn, outputField))
-          .build();
-    }
-
-    public <CombineInputT, AccumT, CombineOutputT>
-        CombineFieldsByFields<InputT> aggregateFieldBaseValue(
-            int inputFieldId,
-            CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
-            Field outputField) {
-      return toBuilder()
-          .setSchemaAggregateFn(
-              getSchemaAggregateFn()
-                  .aggregateFields(
-                      FieldAccessDescriptor.withFieldIds(inputFieldId), true, fn, outputField))
-          .build();
+      return new CombineFieldsByFields<>(
+          byFields,
+          schemaAggregateFn.aggregateFields(
+              FieldAccessDescriptor.withFieldIds(inputFieldId), fn, outputField));
     }
 
     /**
@@ -1072,10 +776,8 @@ public class Group {
         FieldAccessDescriptor fieldsToAggregate,
         CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
         String outputFieldName) {
-      return toBuilder()
-          .setSchemaAggregateFn(
-              getSchemaAggregateFn().aggregateFields(fieldsToAggregate, false, fn, outputFieldName))
-          .build();
+      return new CombineFieldsByFields<>(
+          byFields, schemaAggregateFn.aggregateFields(fieldsToAggregate, fn, outputFieldName));
     }
 
     /**
@@ -1110,39 +812,15 @@ public class Group {
         FieldAccessDescriptor fieldsToAggregate,
         CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
         Field outputField) {
-      return toBuilder()
-          .setSchemaAggregateFn(
-              getSchemaAggregateFn().aggregateFields(fieldsToAggregate, false, fn, outputField))
-          .build();
+      return new CombineFieldsByFields<>(
+          byFields, schemaAggregateFn.aggregateFields(fieldsToAggregate, fn, outputField));
     }
 
     @Override
-    public PCollection<Row> expand(PCollection<InputT> input) {
-      SchemaAggregateFn.Inner fn = getSchemaAggregateFn().withSchema(input.getSchema());
-
-      Schema keySchema = getByFields().getKeySchema(input.getSchema());
-      Schema outputSchema =
-          Schema.builder()
-              .addRowField(getKeyField(), keySchema)
-              .addRowField(getValueField(), getSchemaAggregateFn().getOutputSchema())
-              .build();
-
-      return input
-          .apply("ToKvs", getByFields().getToKvs())
-          .apply("Combine", Combine.groupedValues(fn))
-          .apply(
-              "ToRow",
-              ParDo.of(
-                  new DoFn<KV<Row, Row>, Row>() {
-                    @ProcessElement
-                    public void process(@Element KV<Row, Row> element, OutputReceiver<Row> o) {
-                      o.output(
-                          Row.withSchema(outputSchema)
-                              .attachValues(
-                                  Lists.newArrayList(element.getKey(), element.getValue())));
-                    }
-                  }))
-          .setRowSchema(outputSchema);
+    public PCollection<KV<Row, Row>> expand(PCollection<InputT> input) {
+      SchemaAggregateFn.Inner<InputT> fn =
+          schemaAggregateFn.withSchema(input.getSchema(), input.getToRowFunction());
+      return input.apply(byFields).apply(Combine.groupedValues(fn));
     }
   }
 }

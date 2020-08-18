@@ -17,8 +17,6 @@
 
 """Python Dataflow error classes."""
 
-# pytype: skip-file
-
 from __future__ import absolute_import
 
 

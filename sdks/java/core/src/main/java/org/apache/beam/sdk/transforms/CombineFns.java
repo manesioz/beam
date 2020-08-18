@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.stream.Collectors;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.coders.CannotProvideCoderException;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.CoderException;
@@ -47,7 +48,6 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Immutabl
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableMap;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Lists;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Maps;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /** Static utility methods that create combine function instances. */
 public class CombineFns {
@@ -192,7 +192,8 @@ public class CombineFns {
      * <p>It is an error to request a non-exist tuple tag from the {@link CoCombineResult}.
      */
     @SuppressWarnings("unchecked")
-    public @Nullable <V> V get(TupleTag<V> tag) {
+    @Nullable
+    public <V> V get(TupleTag<V> tag) {
       checkArgument(
           valuesMap.keySet().contains(tag), "TupleTag " + tag + " is not in the CoCombineResult");
       Object value = valuesMap.get(tag);
@@ -204,7 +205,7 @@ public class CombineFns {
     }
 
     @Override
-    public boolean equals(@Nullable Object o) {
+    public boolean equals(Object o) {
       if (this == o) {
         return true;
       }

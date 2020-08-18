@@ -46,12 +46,13 @@ import org.apache.beam.sdk.coders.KvCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.coders.VarIntCoder;
 import org.apache.beam.sdk.coders.VoidCoder;
+import org.apache.beam.sdk.io.GenerateSequence;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.runners.AppliedPTransform;
 import org.apache.beam.sdk.state.BagState;
 import org.apache.beam.sdk.state.TimeDomain;
 import org.apache.beam.sdk.testing.TestPipeline;
-import org.apache.beam.sdk.transforms.Impulse;
+import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.transforms.View;
 import org.apache.beam.sdk.transforms.WithKeys;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
@@ -78,10 +79,10 @@ import org.junit.runners.JUnit4;
 public class EvaluationContextTest {
   private EvaluationContext context;
 
-  private PCollection<byte[]> impulse;
-  private PCollection<KV<String, byte[]>> downstream;
-  private PCollectionView<Iterable<byte[]>> view;
-  private PCollection<byte[]> unbounded;
+  private PCollection<Integer> created;
+  private PCollection<KV<String, Integer>> downstream;
+  private PCollectionView<Iterable<Integer>> view;
+  private PCollection<Long> unbounded;
 
   private DirectGraph graph;
 
@@ -96,10 +97,10 @@ public class EvaluationContextTest {
   public void setup() {
     DirectRunner runner = DirectRunner.fromOptions(PipelineOptionsFactory.create());
 
-    impulse = p.apply(Impulse.create());
-    downstream = impulse.apply(WithKeys.of("foo"));
-    view = impulse.apply(View.asIterable());
-    unbounded = p.apply(Impulse.create()).setIsBoundedInternal(IsBounded.UNBOUNDED);
+    created = p.apply(Create.of(1, 2, 3));
+    downstream = created.apply(WithKeys.of("foo"));
+    view = created.apply(View.asIterable());
+    unbounded = p.apply(GenerateSequence.from(0));
 
     p.replaceAll(runner.defaultTransformOverrides());
 
@@ -117,7 +118,7 @@ public class EvaluationContextTest {
             keyedPValueTrackingVisitor.getKeyedPValues(),
             Executors.newSingleThreadExecutor());
 
-    createdProducer = graph.getProducer(impulse);
+    createdProducer = graph.getProducer(created);
     downstreamProducer = graph.getProducer(downstream);
     viewProducer = graph.getProducer(view);
     unboundedProducer = graph.getProducer(unbounded);
@@ -125,7 +126,7 @@ public class EvaluationContextTest {
 
   @Test
   public void writeToViewWriterThenReadReads() {
-    PCollectionViewWriter<?, Iterable<byte[]>> viewWriter =
+    PCollectionViewWriter<?, Iterable<Integer>> viewWriter =
         context.createPCollectionViewWriter(
             PCollection.createPrimitiveOutputInternal(
                 p,
@@ -136,14 +137,12 @@ public class EvaluationContextTest {
     BoundedWindow window = new TestBoundedWindow(new Instant(1024L));
     BoundedWindow second = new TestBoundedWindow(new Instant(899999L));
     ImmutableList.Builder<WindowedValue<?>> valuesBuilder = ImmutableList.builder();
-    for (Object materializedValue :
-        materializeValuesFor(view.getPipeline().getOptions(), View.asIterable(), 1)) {
+    for (Object materializedValue : materializeValuesFor(View.asIterable(), 1)) {
       valuesBuilder.add(
           WindowedValue.of(
               materializedValue, new Instant(1222), window, PaneInfo.ON_TIME_AND_ONLY_FIRING));
     }
-    for (Object materializedValue :
-        materializeValuesFor(view.getPipeline().getOptions(), View.asIterable(), 2)) {
+    for (Object materializedValue : materializeValuesFor(View.asIterable(), 2)) {
       valuesBuilder.add(
           WindowedValue.of(
               materializedValue,
@@ -158,8 +157,7 @@ public class EvaluationContextTest {
     assertThat(reader.get(view, second), containsInAnyOrder(2));
 
     ImmutableList.Builder<WindowedValue<?>> overwrittenValuesBuilder = ImmutableList.builder();
-    for (Object materializedValue :
-        materializeValuesFor(view.getPipeline().getOptions(), View.asIterable(), 4444)) {
+    for (Object materializedValue : materializeValuesFor(View.asIterable(), 4444)) {
       overwrittenValuesBuilder.add(
           WindowedValue.of(
               materializedValue,
@@ -186,7 +184,7 @@ public class EvaluationContextTest {
 
     context.handleResult(
         ImmutableListBundleFactory.create()
-            .createKeyedBundle(StructuralKey.of("foo", StringUtf8Coder.of()), impulse)
+            .createKeyedBundle(StructuralKey.of("foo", StringUtf8Coder.of()), created)
             .commit(Instant.now()),
         ImmutableList.of(),
         StepTransformResult.withoutHold(createdProducer)
@@ -261,7 +259,7 @@ public class EvaluationContextTest {
         StepTransformResult.withoutHold(downstreamProducer).withState(state).build();
 
     context.handleResult(
-        context.createKeyedBundle(myKey, impulse).commit(Instant.now()),
+        context.createKeyedBundle(myKey, created).commit(Instant.now()),
         ImmutableList.of(),
         stateResult);
 
@@ -318,8 +316,7 @@ public class EvaluationContextTest {
 
     StructuralKey<?> key = StructuralKey.of("foo".length(), VarIntCoder.of());
     TimerData toFire =
-        TimerData.of(
-            StateNamespaces.global(), new Instant(100L), new Instant(100L), TimeDomain.EVENT_TIME);
+        TimerData.of(StateNamespaces.global(), new Instant(100L), TimeDomain.EVENT_TIME);
     TransformResult<?> timerResult =
         StepTransformResult.withoutHold(downstreamProducer)
             .withState(CopyOnAccessInMemoryStateInternals.withUnderlying(key, null))
@@ -329,7 +326,7 @@ public class EvaluationContextTest {
     // haven't added any timers, must be empty
     assertThat(context.extractFiredTimers(), emptyIterable());
     context.handleResult(
-        context.createKeyedBundle(key, impulse).commit(Instant.now()),
+        context.createKeyedBundle(key, created).commit(Instant.now()),
         ImmutableList.of(),
         timerResult);
 
@@ -354,7 +351,7 @@ public class EvaluationContextTest {
   @Test
   public void createKeyedBundleKeyed() {
     StructuralKey<String> key = StructuralKey.of("foo", StringUtf8Coder.of());
-    CommittedBundle<KV<String, byte[]>> keyedBundle =
+    CommittedBundle<KV<String, Integer>> keyedBundle =
         context.createKeyedBundle(key, downstream).commit(Instant.now());
     assertThat(keyedBundle.getKey(), equalTo(key));
   }
@@ -373,8 +370,8 @@ public class EvaluationContextTest {
   public void isDoneWithPartiallyDone() {
     assertThat(context.isDone(), is(false));
 
-    UncommittedBundle<byte[]> rootBundle = context.createBundle(impulse);
-    rootBundle.add(WindowedValue.valueInGlobalWindow(new byte[0]));
+    UncommittedBundle<Integer> rootBundle = context.createBundle(created);
+    rootBundle.add(WindowedValue.valueInGlobalWindow(1));
     CommittedResult handleResult =
         context.handleResult(
             null,
@@ -389,7 +386,7 @@ public class EvaluationContextTest {
         null, ImmutableList.of(), StepTransformResult.withoutHold(unboundedProducer).build());
     assertThat(context.isDone(), is(false));
 
-    for (AppliedPTransform<?, ?, ?> consumers : graph.getPerElementConsumers(impulse)) {
+    for (AppliedPTransform<?, ?, ?> consumers : graph.getPerElementConsumers(created)) {
       context.handleResult(
           committedBundle, ImmutableList.of(), StepTransformResult.withoutHold(consumers).build());
     }

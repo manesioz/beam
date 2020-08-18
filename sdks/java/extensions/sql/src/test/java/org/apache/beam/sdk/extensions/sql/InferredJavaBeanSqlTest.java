@@ -30,7 +30,6 @@ import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.Row;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.junit.Rule;
 import org.junit.Test;
 
@@ -69,7 +68,7 @@ public class InferredJavaBeanSqlTest {
     }
 
     @Override
-    public boolean equals(@Nullable Object o) {
+    public boolean equals(Object o) {
       if (this == o) {
         return true;
       }
@@ -116,7 +115,7 @@ public class InferredJavaBeanSqlTest {
     }
 
     @Override
-    public boolean equals(@Nullable Object o) {
+    public boolean equals(Object o) {
       if (this == o) {
         return true;
       }

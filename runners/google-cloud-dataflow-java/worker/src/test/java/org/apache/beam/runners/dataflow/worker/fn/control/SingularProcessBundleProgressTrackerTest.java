@@ -29,7 +29,6 @@ import org.apache.beam.runners.dataflow.worker.fn.control.BeamFnMapTaskExecutor.
 import org.apache.beam.runners.dataflow.worker.fn.data.RemoteGrpcPortWriteOperation;
 import org.apache.beam.runners.dataflow.worker.util.common.worker.NativeReader.Progress;
 import org.apache.beam.runners.dataflow.worker.util.common.worker.ReadOperation;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -47,7 +46,7 @@ public class SingularProcessBundleProgressTrackerTest {
     }
 
     @Override
-    public boolean equals(@Nullable Object o) {
+    public boolean equals(Object o) {
       return o instanceof TestProgress && this.name.equals(((TestProgress) o).name);
     }
 
@@ -84,8 +83,8 @@ public class SingularProcessBundleProgressTrackerTest {
             CompletableFuture.completedFuture(
                 BeamFnApi.ProcessBundleProgressResponse.getDefaultInstance()));
 
-    when(process.getInputElementsConsumed(any(Iterable.class)))
-        .thenReturn(1L, 4L, 10L)
+    when(process.getInputElementsConsumed(any(BeamFnApi.Metrics.class)))
+        .thenReturn(1.0, 4.0, 10.0)
         .thenThrow(new RuntimeException());
 
     // Initially no progress is known.

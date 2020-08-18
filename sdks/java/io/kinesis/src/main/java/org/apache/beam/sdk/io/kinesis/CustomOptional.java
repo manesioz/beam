@@ -19,7 +19,6 @@ package org.apache.beam.sdk.io.kinesis;
 
 import java.util.NoSuchElementException;
 import java.util.Objects;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Similar to Guava {@code Optional}, but throws {@link NoSuchElementException} for missing element.
@@ -58,7 +57,7 @@ abstract class CustomOptional<T> {
     }
 
     @Override
-    public boolean equals(@Nullable Object o) {
+    public boolean equals(Object o) {
       if (!(o instanceof Present)) {
         return false;
       }
@@ -90,7 +89,7 @@ abstract class CustomOptional<T> {
     }
 
     @Override
-    public boolean equals(@Nullable Object o) {
+    public boolean equals(Object o) {
       return o instanceof Absent;
     }
 

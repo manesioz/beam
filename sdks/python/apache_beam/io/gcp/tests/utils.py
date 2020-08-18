@@ -15,9 +15,8 @@
 # limitations under the License.
 #
 
-"""Utility methods for testing on GCP."""
 
-# pytype: skip-file
+"""Utility methods for testing on GCP."""
 
 from __future__ import absolute_import
 
@@ -37,8 +36,6 @@ except ImportError:
   gexc = None
   bigquery = None
 
-_LOGGER = logging.getLogger(__name__)
-
 
 class GcpTestIOError(retry.PermanentException):
   """Basic GCP IO error for testing. Function that raises this error should
@@ -47,7 +44,8 @@ class GcpTestIOError(retry.PermanentException):
 
 
 @retry.with_exponential_backoff(
-    num_retries=3, retry_filter=retry.retry_on_server_errors_filter)
+    num_retries=3,
+    retry_filter=retry.retry_on_server_errors_filter)
 def create_bq_dataset(project, dataset_base_name):
   """Creates an empty BigQuery dataset.
 
@@ -60,8 +58,9 @@ def create_bq_dataset(project, dataset_base_name):
     new dataset.
   """
   client = bigquery.Client(project=project)
-  unique_dataset_name = '%s%s%d' % (
-      dataset_base_name, str(int(time.time())), random.randint(0, 10000))
+  unique_dataset_name = '%s%s%d' % (dataset_base_name,
+                                    str(int(time.time())),
+                                    random.randint(0, 10000))
   dataset_ref = client.dataset(unique_dataset_name, project=project)
   dataset = bigquery.Dataset(dataset_ref)
   client.create_dataset(dataset)
@@ -69,7 +68,8 @@ def create_bq_dataset(project, dataset_base_name):
 
 
 @retry.with_exponential_backoff(
-    num_retries=3, retry_filter=retry.retry_on_server_errors_filter)
+    num_retries=3,
+    retry_filter=retry.retry_on_server_errors_filter)
 def delete_bq_dataset(project, dataset_ref):
   """Deletes a BigQuery dataset and its contents.
 
@@ -83,7 +83,8 @@ def delete_bq_dataset(project, dataset_ref):
 
 
 @retry.with_exponential_backoff(
-    num_retries=3, retry_filter=retry.retry_on_server_errors_filter)
+    num_retries=3,
+    retry_filter=retry.retry_on_server_errors_filter)
 def delete_bq_table(project, dataset_id, table_id):
   """Delete a BiqQuery table.
 
@@ -92,12 +93,8 @@ def delete_bq_table(project, dataset_id, table_id):
     dataset_id: Name of the dataset where table is.
     table_id: Name of the table.
   """
-  _LOGGER.info(
-      'Clean up a BigQuery table with project: %s, dataset: %s, '
-      'table: %s.',
-      project,
-      dataset_id,
-      table_id)
+  logging.info('Clean up a BigQuery table with project: %s, dataset: %s, '
+               'table: %s.', project, dataset_id, table_id)
   client = bigquery.Client(project=project)
   table_ref = client.dataset(dataset_id).table(table_id)
   try:
@@ -107,7 +104,8 @@ def delete_bq_table(project, dataset_id, table_id):
 
 
 @retry.with_exponential_backoff(
-    num_retries=3, retry_filter=retry.retry_on_server_errors_filter)
+    num_retries=3,
+    retry_filter=retry.retry_on_server_errors_filter)
 def delete_directory(directory):
   """Delete a directory in a filesystem.
 
@@ -118,13 +116,12 @@ def delete_directory(directory):
   filesystems.FileSystems.delete([directory])
 
 
-def write_to_pubsub(
-    pub_client,
-    topic_path,
-    messages,
-    with_attributes=False,
-    chunk_size=100,
-    delay_between_chunks=0.1):
+def write_to_pubsub(pub_client,
+                    topic_path,
+                    messages,
+                    with_attributes=False,
+                    chunk_size=100,
+                    delay_between_chunks=0.1):
   for start in range(0, len(messages), chunk_size):
     message_chunk = messages[start:start + chunk_size]
     if with_attributes:
@@ -141,12 +138,11 @@ def write_to_pubsub(
     time.sleep(delay_between_chunks)
 
 
-def read_from_pubsub(
-    sub_client,
-    subscription_path,
-    with_attributes=False,
-    number_of_elements=None,
-    timeout=None):
+def read_from_pubsub(sub_client,
+                     subscription_path,
+                     with_attributes=False,
+                     number_of_elements=None,
+                     timeout=None):
   if number_of_elements is None and timeout is None:
     raise ValueError("Either number_of_elements or timeout must be specified.")
   messages = []

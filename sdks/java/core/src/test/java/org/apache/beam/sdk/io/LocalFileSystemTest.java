@@ -210,26 +210,6 @@ public class LocalFileSystemTest {
   }
 
   @Test
-  public void testMatchRelativeWildcardPath() throws Exception {
-    File baseFolder = temporaryFolder.newFolder("A");
-    File expectedFile1 = new File(baseFolder, "file1");
-
-    expectedFile1.createNewFile();
-
-    List<String> expected = ImmutableList.of(expectedFile1.getAbsolutePath());
-
-    // This no longer works:
-    //     System.setProperty("user.dir", temporaryFolder.getRoot().toString());
-    // There is no way to set the working directory without forking. Instead we
-    // call in to the helper method that gives just about as good test coverage.
-    List<MatchResult> matchResults =
-        localFileSystem.match(temporaryFolder.getRoot().toString(), ImmutableList.of("A/*"));
-    assertThat(
-        toFilenames(matchResults),
-        containsInAnyOrder(expected.toArray(new String[expected.size()])));
-  }
-
-  @Test
   public void testMatchExact() throws Exception {
     List<String> expected = ImmutableList.of(temporaryFolder.newFile("a").toString());
     temporaryFolder.newFile("aa");
@@ -315,11 +295,8 @@ public class LocalFileSystemTest {
     }
     String directory = expectedFile.substring(0, slashIndex);
     String relative = expectedFile.substring(slashIndex + 1);
-    // This no longer works:
-    //     System.setProperty("user.dir", directory);
-    // There is no way to set the working directory without forking. Instead we
-    // call in to the helper method that gives just about as good test coverage.
-    List<MatchResult> results = localFileSystem.match(directory, ImmutableList.of(relative));
+    System.setProperty("user.dir", directory);
+    List<MatchResult> results = localFileSystem.match(ImmutableList.of(relative));
     assertThat(
         toFilenames(results), containsInAnyOrder(expected.toArray(new String[expected.size()])));
   }

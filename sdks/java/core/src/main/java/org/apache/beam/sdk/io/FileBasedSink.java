@@ -40,6 +40,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.coders.CannotProvideCoderException;
@@ -80,7 +81,6 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterable
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Lists;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Maps;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Sets;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -140,12 +140,6 @@ public abstract class FileBasedSink<UserT, DestinationT, OutputT>
     /** @see Compression#ZSTD */
     ZSTD(Compression.ZSTD),
 
-    /** @see Compression#LZO */
-    LZO(Compression.LZO),
-
-    /** @see Compression#LZOP */
-    LZOP(Compression.LZOP),
-
     /** @see Compression#DEFLATE */
     DEFLATE(Compression.DEFLATE);
 
@@ -161,7 +155,8 @@ public abstract class FileBasedSink<UserT, DestinationT, OutputT>
     }
 
     @Override
-    public @Nullable String getMimeType() {
+    @Nullable
+    public String getMimeType() {
       return (canonical == Compression.UNCOMPRESSED) ? null : MimeTypes.BINARY;
     }
 
@@ -189,12 +184,6 @@ public abstract class FileBasedSink<UserT, DestinationT, OutputT>
 
         case ZSTD:
           return ZSTD;
-
-        case LZO:
-          return LZO;
-
-        case LZOP:
-          return LZOP;
 
         case DEFLATE:
           return DEFLATE;
@@ -249,7 +238,7 @@ public abstract class FileBasedSink<UserT, DestinationT, OutputT>
       <SideInputT> SideInputT sideInput(PCollectionView<SideInputT> view);
     }
 
-    private transient @Nullable SideInputAccessor sideInputAccessor;
+    @Nullable private transient SideInputAccessor sideInputAccessor;
 
     static class SideInputAccessorViaProcessContext implements SideInputAccessor {
       private DoFn<?, ?>.ProcessContext processContext;
@@ -313,7 +302,8 @@ public abstract class FileBasedSink<UserT, DestinationT, OutputT>
      * DestinationT} will be used as a key type in a {@link
      * org.apache.beam.sdk.transforms.GroupByKey}.
      */
-    public @Nullable Coder<DestinationT> getDestinationCoder() {
+    @Nullable
+    public Coder<DestinationT> getDestinationCoder() {
       return null;
     }
 
@@ -381,7 +371,8 @@ public abstract class FileBasedSink<UserT, DestinationT, OutputT>
      * and consistent filenames.
      */
     @Experimental(Kind.FILESYSTEM)
-    public abstract @Nullable ResourceId unwindowedFilename(
+    @Nullable
+    public abstract ResourceId unwindowedFilename(
         int shardNumber, int numShards, OutputFileHints outputFileHints);
 
     /** Populates the display data. */
@@ -882,7 +873,7 @@ public abstract class FileBasedSink<UserT, DestinationT, OutputT>
      * default but if {@link Compression#BZIP2} is set then the MIME type will be overridden to
      * {@link MimeTypes#BINARY}.
      */
-    private final @Nullable String mimeType;
+    @Nullable private final String mimeType;
 
     /** Construct a new {@link Writer} that will produce files of the given MIME type. */
     public Writer(WriteOperation<DestinationT, OutputT> writeOperation, String mimeType) {
@@ -974,9 +965,8 @@ public abstract class FileBasedSink<UserT, DestinationT, OutputT>
       } catch (Exception e) {
         LOG.error("Closing channel for {} failed.", filename, e);
         prior.addSuppressed(e);
+        throw prior;
       }
-      // We should fail here regardless of whether above channel.close() call failed or not.
-      throw prior;
     }
 
     public final void cleanup() throws Exception {

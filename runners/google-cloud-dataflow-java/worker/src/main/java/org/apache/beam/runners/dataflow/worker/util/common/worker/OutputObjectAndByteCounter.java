@@ -18,6 +18,7 @@
 package org.apache.beam.runners.dataflow.worker.util.common.worker;
 
 import java.util.Random;
+import javax.annotation.Nullable;
 import org.apache.beam.runners.core.ElementByteSizeObservable;
 import org.apache.beam.runners.dataflow.worker.counters.Counter;
 import org.apache.beam.runners.dataflow.worker.counters.CounterBackedElementByteSizeObserver;
@@ -25,7 +26,6 @@ import org.apache.beam.runners.dataflow.worker.counters.CounterFactory;
 import org.apache.beam.runners.dataflow.worker.counters.CounterFactory.CounterMean;
 import org.apache.beam.runners.dataflow.worker.counters.CounterName;
 import org.apache.beam.runners.dataflow.worker.counters.NameContext;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /** An {@link ElementCounter} that counts output objects, bytes, and mean bytes. */
 public class OutputObjectAndByteCounter implements ElementCounter {

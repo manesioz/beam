@@ -14,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-
 """Integration tests for gcsio module.
 
 Runs tests against Google Cloud Storage service.
@@ -37,8 +36,6 @@ To run these tests manually:
     -DkmsKeyName=KMS_KEY_NAME
 """
 
-# pytype: skip-file
-
 from __future__ import absolute_import
 
 import logging
@@ -53,7 +50,7 @@ from apache_beam.testing.test_pipeline import TestPipeline
 try:
   from apache_beam.io.gcp import gcsio
 except ImportError:
-  gcsio = None  # type: ignore
+  gcsio = None
 
 
 @unittest.skipIf(gcsio is None, 'GCP dependencies are not installed')
@@ -71,11 +68,11 @@ class GcsIOIntegrationTest(unittest.TestCase):
       # This test doesn't run a pipeline, so it doesn't make sense to try it on
       # different runners. Running with TestDataflowRunner makes sense since
       # it uses GoogleCloudOptions such as 'project'.
-      raise unittest.SkipTest('This test only runs with TestDataflowRunner.')
+      raise unittest.SkipTest(
+          'This test only runs with TestDataflowRunner.')
     self.project = self.test_pipeline.get_option('project')
-    self.gcs_tempdir = (
-        self.test_pipeline.get_option('temp_location') + '/gcs_it-' +
-        str(uuid.uuid4()))
+    self.gcs_tempdir = (self.test_pipeline.get_option('temp_location') +
+                        '/gcs_it-' + str(uuid.uuid4()))
     self.kms_key_name = self.test_pipeline.get_option('kms_key_name')
     self.gcsio = gcsio.GcsIO()
 
@@ -92,17 +89,12 @@ class GcsIOIntegrationTest(unittest.TestCase):
     if actual_dst_kms_key is None:
       self.assertEqual(actual_dst_kms_key, dst_kms_key_name)
     else:
-      self.assertTrue(
-          actual_dst_kms_key.startswith(dst_kms_key_name),
-          "got: %s, wanted startswith: %s" %
-          (actual_dst_kms_key, dst_kms_key_name))
+      self.assertTrue(actual_dst_kms_key.startswith(dst_kms_key_name),
+                      "got: %s, wanted startswith: %s" % (actual_dst_kms_key,
+                                                          dst_kms_key_name))
 
-  def _test_copy(
-      self,
-      name,
-      kms_key_name=None,
-      max_bytes_rewritten_per_call=None,
-      src=None):
+  def _test_copy(self, name, kms_key_name=None,
+                 max_bytes_rewritten_per_call=None, src=None):
     src = src or self.INPUT_FILE
     dst = self.gcs_tempdir + '/%s' % name
     extra_kwargs = {}
@@ -136,23 +128,18 @@ class GcsIOIntegrationTest(unittest.TestCase):
     rewrite_responses = []
     self.gcsio._set_rewrite_response_callback(
         lambda response: rewrite_responses.append(response))
-    self._test_copy(
-        "test_copy_rewrite_token",
-        kms_key_name=self.kms_key_name,
-        max_bytes_rewritten_per_call=50 * 1024 * 1024,
-        src=self.INPUT_FILE_LARGE)
+    self._test_copy("test_copy_rewrite_token", kms_key_name=self.kms_key_name,
+                    max_bytes_rewritten_per_call=50 * 1024 * 1024,
+                    src=self.INPUT_FILE_LARGE)
     # Verify that there was a multi-part rewrite.
     self.assertTrue(any([not r.done for r in rewrite_responses]))
 
-  def _test_copy_batch(
-      self,
-      name,
-      kms_key_name=None,
-      max_bytes_rewritten_per_call=None,
-      src=None):
+  def _test_copy_batch(self, name, kms_key_name=None,
+                       max_bytes_rewritten_per_call=None, src=None):
     num_copies = 10
     srcs = [src or self.INPUT_FILE] * num_copies
-    dsts = [self.gcs_tempdir + '/%s_%d' % (name, i) for i in range(num_copies)]
+    dsts = [self.gcs_tempdir + '/%s_%d' % (name, i)
+            for i in range(num_copies)]
     src_dst_pairs = list(zip(srcs, dsts))
     extra_kwargs = {}
     if max_bytes_rewritten_per_call is not None:
@@ -190,8 +177,7 @@ class GcsIOIntegrationTest(unittest.TestCase):
     self.gcsio._set_rewrite_response_callback(
         lambda response: rewrite_responses.append(response))
     self._test_copy_batch(
-        "test_copy_batch_rewrite_token",
-        kms_key_name=self.kms_key_name,
+        "test_copy_batch_rewrite_token", kms_key_name=self.kms_key_name,
         max_bytes_rewritten_per_call=50 * 1024 * 1024,
         src=self.INPUT_FILE_LARGE)
     # Verify that there was a multi-part rewrite.

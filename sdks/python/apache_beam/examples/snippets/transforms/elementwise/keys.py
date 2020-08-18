@@ -16,8 +16,6 @@
 # limitations under the License.
 #
 
-# pytype: skip-file
-
 from __future__ import absolute_import
 from __future__ import print_function
 
@@ -37,7 +35,8 @@ def keys(test=None):
             ('🥔', 'Potato'),
         ])
         | 'Keys' >> beam.Keys()
-        | beam.Map(print))
+        | beam.Map(print)
+    )
     # [END keys]
     if test:
       test(icons)

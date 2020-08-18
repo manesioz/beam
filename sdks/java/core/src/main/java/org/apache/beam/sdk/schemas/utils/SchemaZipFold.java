@@ -23,8 +23,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
-import org.apache.beam.sdk.annotations.Experimental;
-import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.schemas.Schema;
 import org.apache.beam.sdk.schemas.Schema.Field;
 import org.apache.beam.sdk.schemas.Schema.FieldType;
@@ -36,7 +34,6 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Immutabl
  *
  * <p>Values returned by `accept` are accumulated.
  */
-@Experimental(Kind.SCHEMAS)
 public abstract class SchemaZipFold<T> implements Serializable {
 
   public final T apply(Schema left, Schema right) {
@@ -85,7 +82,6 @@ public abstract class SchemaZipFold<T> implements Serializable {
 
     switch (left.getTypeName()) {
       case ARRAY:
-      case ITERABLE:
         return zipFold.accumulate(
             zipFold.accept(context, left, right),
             visit(

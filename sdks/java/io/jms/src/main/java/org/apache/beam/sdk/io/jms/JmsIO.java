@@ -28,6 +28,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import javax.annotation.Nullable;
 import javax.jms.Connection;
 import javax.jms.ConnectionFactory;
 import javax.jms.Destination;
@@ -37,7 +38,7 @@ import javax.jms.MessageProducer;
 import javax.jms.Session;
 import javax.jms.TextMessage;
 import org.apache.beam.sdk.annotations.Experimental;
-import org.apache.beam.sdk.annotations.Experimental.Kind;
+import org.apache.beam.sdk.coders.AvroCoder;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.SerializableCoder;
 import org.apache.beam.sdk.io.Read.Unbounded;
@@ -52,7 +53,7 @@ import org.apache.beam.sdk.transforms.display.DisplayData;
 import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PDone;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.annotations.VisibleForTesting;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 
@@ -110,7 +111,7 @@ import org.joda.time.Instant;
  *
  * }</pre>
  */
-@Experimental(Kind.SOURCE_SINK)
+@Experimental(Experimental.Kind.SOURCE_SINK)
 public class JmsIO {
 
   public static Read<JmsRecord> read() {
@@ -175,23 +176,31 @@ public class JmsIO {
      *
      * <p>So, a {@link ConnectionFactory} implementation is serializable.
      */
-    abstract @Nullable ConnectionFactory getConnectionFactory();
+    @Nullable
+    abstract ConnectionFactory getConnectionFactory();
 
-    abstract @Nullable String getQueue();
+    @Nullable
+    abstract String getQueue();
 
-    abstract @Nullable String getTopic();
+    @Nullable
+    abstract String getTopic();
 
-    abstract @Nullable String getUsername();
+    @Nullable
+    abstract String getUsername();
 
-    abstract @Nullable String getPassword();
+    @Nullable
+    abstract String getPassword();
 
     abstract long getMaxNumRecords();
 
-    abstract @Nullable Duration getMaxReadTime();
+    @Nullable
+    abstract Duration getMaxReadTime();
 
-    abstract @Nullable MessageMapper<T> getMessageMapper();
+    @Nullable
+    abstract MessageMapper<T> getMessageMapper();
 
-    abstract @Nullable Coder<T> getCoder();
+    @Nullable
+    abstract Coder<T> getCoder();
 
     abstract Builder<T> builder();
 
@@ -378,6 +387,7 @@ public class JmsIO {
      * Creates an {@link UnboundedSource UnboundedSource&lt;JmsRecord, ?&gt;} with the configuration
      * in {@link Read}. Primary use case is unit tests, should not be used in an application.
      */
+    @VisibleForTesting
     UnboundedSource<T, JmsCheckpointMark> createSource() {
       return new UnboundedJmsSource<T>(this);
     }
@@ -395,7 +405,8 @@ public class JmsIO {
   }
 
   /** An unbounded JMS source. */
-  static class UnboundedJmsSource<T> extends UnboundedSource<T, JmsCheckpointMark> {
+  @VisibleForTesting
+  protected static class UnboundedJmsSource<T> extends UnboundedSource<T, JmsCheckpointMark> {
 
     private final Read<T> spec;
 
@@ -408,7 +419,7 @@ public class JmsIO {
         throws Exception {
       List<UnboundedJmsSource<T>> sources = new ArrayList<>();
       if (spec.getTopic() != null) {
-        // in the case of a topic, we create a single source, so a unique subscriber, to avoid
+        // in the case of a topic, we create a single source, so an unique subscriber, to avoid
         // element duplication
         sources.add(new UnboundedJmsSource<T>(spec));
       } else {
@@ -428,7 +439,7 @@ public class JmsIO {
 
     @Override
     public Coder<JmsCheckpointMark> getCheckpointMarkCoder() {
-      return SerializableCoder.of(JmsCheckpointMark.class);
+      return AvroCoder.of(JmsCheckpointMark.class);
     }
 
     @Override
@@ -437,6 +448,7 @@ public class JmsIO {
     }
   }
 
+  @VisibleForTesting
   static class UnboundedJmsReader<T> extends UnboundedReader<T> {
 
     private UnboundedJmsSource<T> source;
@@ -504,7 +516,7 @@ public class JmsIO {
           return false;
         }
 
-        checkpointMark.add(message);
+        checkpointMark.addMessage(message);
 
         currentMessage = this.source.spec.getMessageMapper().mapMessage(message);
         currentTimestamp = new Instant(message.getJMSTimestamp());
@@ -525,7 +537,7 @@ public class JmsIO {
 
     @Override
     public Instant getWatermark() {
-      return checkpointMark.getOldestMessageTimestamp();
+      return checkpointMark.getOldestPendingTimestamp();
     }
 
     @Override
@@ -575,15 +587,20 @@ public class JmsIO {
   @AutoValue
   public abstract static class Write extends PTransform<PCollection<String>, PDone> {
 
-    abstract @Nullable ConnectionFactory getConnectionFactory();
+    @Nullable
+    abstract ConnectionFactory getConnectionFactory();
 
-    abstract @Nullable String getQueue();
+    @Nullable
+    abstract String getQueue();
 
-    abstract @Nullable String getTopic();
+    @Nullable
+    abstract String getTopic();
 
-    abstract @Nullable String getUsername();
+    @Nullable
+    abstract String getUsername();
 
-    abstract @Nullable String getPassword();
+    @Nullable
+    abstract String getPassword();
 
     abstract Builder builder();
 

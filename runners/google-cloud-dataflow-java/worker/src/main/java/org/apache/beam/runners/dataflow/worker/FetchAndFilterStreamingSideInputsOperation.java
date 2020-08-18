@@ -25,6 +25,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
+import javax.annotation.Nullable;
 import org.apache.beam.model.pipeline.v1.Endpoints.ApiServiceDescriptor;
 import org.apache.beam.model.pipeline.v1.RunnerApi;
 import org.apache.beam.runners.dataflow.worker.util.common.worker.OutputReceiver;
@@ -50,7 +51,6 @@ import org.apache.beam.sdk.values.PValue;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.WindowingStrategy;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * This {@link ReceivingOperation} is responsible for fetching any ready side inputs and also
@@ -75,7 +75,7 @@ public class FetchAndFilterStreamingSideInputsOperation<T, W extends BoundedWind
       Coder<WindowedValue<T>> inputCoder,
       WindowingStrategy<?, W> windowingStrategy,
       DataflowExecutionContext.DataflowStepContext stepContext,
-      Map<PCollectionView<?>, RunnerApi.FunctionSpec> pCollectionViewToWindowMappingFns) {
+      Map<PCollectionView<?>, RunnerApi.SdkFunctionSpec> pCollectionViewToWindowMappingFns) {
     super(receivers, context);
 
     this.sideInputFetcher =
@@ -167,9 +167,9 @@ public class FetchAndFilterStreamingSideInputsOperation<T, W extends BoundedWind
       FnDataService beamFnDataService,
       ApiServiceDescriptor dataServiceApiServiceDescriptor,
       Coder<BoundedWindow> mainInputWindowCoder,
-      Map<PCollectionView<?>, RunnerApi.FunctionSpec> pCollectionViewsToWindowMappingFns) {
+      Map<PCollectionView<?>, RunnerApi.SdkFunctionSpec> pCollectionViewsToWindowMappingFns) {
     ImmutableList.Builder<PCollectionView<?>> wrappedViews = ImmutableList.builder();
-    for (Map.Entry<PCollectionView<?>, RunnerApi.FunctionSpec> entry :
+    for (Map.Entry<PCollectionView<?>, RunnerApi.SdkFunctionSpec> entry :
         pCollectionViewsToWindowMappingFns.entrySet()) {
       WindowMappingFn windowMappingFn =
           new FnApiWindowMappingFn(

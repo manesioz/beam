@@ -27,7 +27,6 @@ import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.Partition;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableMap;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * A {@link PCollectionList PCollectionList&lt;T&gt;} is an immutable list of homogeneously typed
@@ -116,7 +115,7 @@ public class PCollectionList<T> implements PInput, POutput {
         pipeline,
         ImmutableList.<TaggedPValue>builder()
             .addAll(pcollections)
-            .add(TaggedPValue.of(new TupleTag<T>(Integer.toString(pcollections.size())), pc))
+            .add(TaggedPValue.of(new TupleTag<T>(), pc))
             .build());
   }
 
@@ -131,13 +130,11 @@ public class PCollectionList<T> implements PInput, POutput {
   public PCollectionList<T> and(Iterable<PCollection<T>> pcs) {
     ImmutableList.Builder<TaggedPValue> builder = ImmutableList.builder();
     builder.addAll(pcollections);
-    int nextIndex = pcollections.size();
     for (PCollection<T> pc : pcs) {
       if (pc.getPipeline() != pipeline) {
         throw new IllegalArgumentException("PCollections come from different Pipelines");
       }
-      builder.add(TaggedPValue.of(new TupleTag<T>(Integer.toString(nextIndex)), pc));
-      nextIndex += 1;
+      builder.add(TaggedPValue.of(new TupleTag<T>(), pc));
     }
     return new PCollectionList<>(pipeline, builder.build());
   }
@@ -241,7 +238,7 @@ public class PCollectionList<T> implements PInput, POutput {
   }
 
   @Override
-  public boolean equals(@Nullable Object other) {
+  public boolean equals(Object other) {
     if (!(other instanceof PCollectionList)) {
       return false;
     }

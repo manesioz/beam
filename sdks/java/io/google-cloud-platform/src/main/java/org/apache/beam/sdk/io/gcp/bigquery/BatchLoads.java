@@ -22,10 +22,9 @@ import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Prec
 import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions.checkState;
 
 import com.google.api.services.bigquery.model.TableRow;
-import java.util.Collections;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.IterableCoder;
@@ -37,9 +36,7 @@ import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.coders.VoidCoder;
 import org.apache.beam.sdk.extensions.gcp.util.gcsfs.GcsPath;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO.Write.CreateDisposition;
-import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO.Write.SchemaUpdateOption;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO.Write.WriteDisposition;
-import org.apache.beam.sdk.io.gcp.bigquery.BigQueryResourceNaming.JobType;
 import org.apache.beam.sdk.io.gcp.bigquery.WriteBundlesToFiles.Result;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.ValueProvider;
@@ -50,6 +47,7 @@ import org.apache.beam.sdk.transforms.GroupByKey;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.Reshuffle;
+import org.apache.beam.sdk.transforms.SerializableFunction;
 import org.apache.beam.sdk.transforms.Values;
 import org.apache.beam.sdk.transforms.View;
 import org.apache.beam.sdk.transforms.WithKeys;
@@ -72,7 +70,6 @@ import org.apache.beam.sdk.values.TypeDescriptor;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.annotations.VisibleForTesting;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Strings;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Lists;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -119,9 +116,7 @@ class BatchLoads<DestinationT, ElementT>
   private BigQueryServices bigQueryServices;
   private final WriteDisposition writeDisposition;
   private final CreateDisposition createDisposition;
-  private Set<SchemaUpdateOption> schemaUpdateOptions;
   private final boolean ignoreUnknownValues;
-  private final boolean useAvroLogicalTypes;
   // Indicates that we are writing to a constant single table. If this is the case, we will create
   // the table, even if there is no data in it.
   private final boolean singletonTable;
@@ -136,9 +131,8 @@ class BatchLoads<DestinationT, ElementT>
   private ValueProvider<String> customGcsTempLocation;
   private ValueProvider<String> loadJobProjectId;
   private final Coder<ElementT> elementCoder;
-  private final RowWriterFactory<ElementT, DestinationT> rowWriterFactory;
+  private final SerializableFunction<ElementT, TableRow> toRowFunction;
   private String kmsKey;
-  private boolean clusteringEnabled;
 
   // The maximum number of times to retry failed load or copy jobs.
   private int maxRetryJobs = DEFAULT_MAX_RETRY_JOBS;
@@ -153,10 +147,8 @@ class BatchLoads<DestinationT, ElementT>
       @Nullable ValueProvider<String> loadJobProjectId,
       boolean ignoreUnknownValues,
       Coder<ElementT> elementCoder,
-      RowWriterFactory<ElementT, DestinationT> rowWriterFactory,
-      @Nullable String kmsKey,
-      boolean clusteringEnabled,
-      boolean useAvroLogicalTypes) {
+      SerializableFunction<ElementT, TableRow> toRowFunction,
+      @Nullable String kmsKey) {
     bigQueryServices = new BigQueryServicesImpl();
     this.writeDisposition = writeDisposition;
     this.createDisposition = createDisposition;
@@ -172,16 +164,9 @@ class BatchLoads<DestinationT, ElementT>
     this.customGcsTempLocation = customGcsTempLocation;
     this.loadJobProjectId = loadJobProjectId;
     this.ignoreUnknownValues = ignoreUnknownValues;
-    this.useAvroLogicalTypes = useAvroLogicalTypes;
     this.elementCoder = elementCoder;
+    this.toRowFunction = toRowFunction;
     this.kmsKey = kmsKey;
-    this.rowWriterFactory = rowWriterFactory;
-    this.clusteringEnabled = clusteringEnabled;
-    schemaUpdateOptions = Collections.emptySet();
-  }
-
-  void setSchemaUpdateOptions(Set<SchemaUpdateOption> schemaUpdateOptions) {
-    this.schemaUpdateOptions = schemaUpdateOptions;
   }
 
   void setTestServices(BigQueryServices bigQueryServices) {
@@ -244,9 +229,7 @@ class BatchLoads<DestinationT, ElementT>
     }
     checkArgument(
         !Strings.isNullOrEmpty(tempLocation),
-        "BigQueryIO.Write needs a GCS temp location to store temp files."
-            + "This can be set by withCustomGcsTempLocation() in the Builder"
-            + "or through the fallback pipeline option --tempLocation.");
+        "BigQueryIO.Write needs a GCS temp location to store temp files.");
     if (bigQueryServices == null) {
       try {
         GcsPath.fromUri(tempLocation);
@@ -264,8 +247,7 @@ class BatchLoads<DestinationT, ElementT>
   private WriteResult expandTriggered(PCollection<KV<DestinationT, ElementT>> input) {
     checkArgument(numFileShards > 0);
     Pipeline p = input.getPipeline();
-    final PCollectionView<String> loadJobIdPrefixView = createJobIdPrefixView(p, JobType.LOAD);
-    final PCollectionView<String> copyJobIdPrefixView = createJobIdPrefixView(p, JobType.COPY);
+    final PCollectionView<String> loadJobIdPrefixView = createLoadJobIdPrefixView(p);
     final PCollectionView<String> tempFilePrefixView =
         createTempFilePrefixView(p, loadJobIdPrefixView);
     // The user-supplied triggeringDuration is often chosen to control how many BigQuery load
@@ -323,20 +305,20 @@ class BatchLoads<DestinationT, ElementT>
                             maxFilesPerPartition,
                             maxBytesPerPartition,
                             multiPartitionsTag,
-                            singlePartitionTag,
-                            rowWriterFactory))
+                            singlePartitionTag))
                     .withSideInputs(tempFilePrefixView)
                     .withOutputTags(multiPartitionsTag, TupleTagList.of(singlePartitionTag)));
     PCollection<KV<TableDestination, String>> tempTables =
         writeTempTables(partitions.get(multiPartitionsTag), loadJobIdPrefixView);
-
     tempTables
         // Now that the load job has happened, we want the rename to happen immediately.
         .apply(
             Window.<KV<TableDestination, String>>into(new GlobalWindows())
                 .triggering(Repeatedly.forever(AfterPane.elementCountAtLeast(1))))
         .apply(WithKeys.of((Void) null))
-        .setCoder(KvCoder.of(VoidCoder.of(), tempTables.getCoder()))
+        .setCoder(
+            KvCoder.of(
+                VoidCoder.of(), KvCoder.of(TableDestinationCoderV2.of(), StringUtf8Coder.of())))
         .apply(GroupByKey.create())
         .apply(Values.create())
         .apply(
@@ -344,12 +326,12 @@ class BatchLoads<DestinationT, ElementT>
             ParDo.of(
                     new WriteRename(
                         bigQueryServices,
-                        copyJobIdPrefixView,
+                        loadJobIdPrefixView,
                         writeDisposition,
                         createDisposition,
                         maxRetryJobs,
                         kmsKey))
-                .withSideInputs(copyJobIdPrefixView));
+                .withSideInputs(loadJobIdPrefixView));
     writeSinglePartition(partitions.get(singlePartitionTag), loadJobIdPrefixView);
     return writeResult(p);
   }
@@ -357,7 +339,7 @@ class BatchLoads<DestinationT, ElementT>
   // Expand the pipeline when the user has not requested periodically-triggered file writes.
   public WriteResult expandUntriggered(PCollection<KV<DestinationT, ElementT>> input) {
     Pipeline p = input.getPipeline();
-    final PCollectionView<String> loadJobIdPrefixView = createJobIdPrefixView(p, JobType.LOAD);
+    final PCollectionView<String> loadJobIdPrefixView = createLoadJobIdPrefixView(p);
     final PCollectionView<String> tempFilePrefixView =
         createTempFilePrefixView(p, loadJobIdPrefixView);
     PCollection<KV<DestinationT, ElementT>> inputInGlobalWindow =
@@ -393,8 +375,7 @@ class BatchLoads<DestinationT, ElementT>
                             maxFilesPerPartition,
                             maxBytesPerPartition,
                             multiPartitionsTag,
-                            singlePartitionTag,
-                            rowWriterFactory))
+                            singlePartitionTag))
                     .withSideInputs(tempFilePrefixView)
                     .withOutputTags(multiPartitionsTag, TupleTagList.of(singlePartitionTag)));
     PCollection<KV<TableDestination, String>> tempTables =
@@ -402,6 +383,7 @@ class BatchLoads<DestinationT, ElementT>
 
     tempTables
         .apply("ReifyRenameInput", new ReifyAsIterable<>())
+        .setCoder(IterableCoder.of(KvCoder.of(TableDestinationCoderV2.of(), StringUtf8Coder.of())))
         .apply(
             "WriteRenameUntriggered",
             ParDo.of(
@@ -418,24 +400,24 @@ class BatchLoads<DestinationT, ElementT>
   }
 
   // Generate the base job id string.
-  private PCollectionView<String> createJobIdPrefixView(Pipeline p, final JobType type) {
+  private PCollectionView<String> createLoadJobIdPrefixView(Pipeline p) {
     // Create a singleton job ID token at execution time. This will be used as the base for all
     // load jobs issued from this instance of the transform.
-    return p.apply("JobIdCreationRoot_" + type.toString(), Create.of((Void) null))
+    return p.apply("JobIdCreationRoot", Create.of((Void) null))
         .apply(
-            "CreateJobId_" + type.toString(),
+            "CreateJobId",
             ParDo.of(
                 new DoFn<Void, String>() {
                   @ProcessElement
                   public void process(ProcessContext c) {
                     c.output(
-                        BigQueryResourceNaming.createJobIdPrefix(
-                            c.getPipelineOptions().getJobName(),
-                            BigQueryHelpers.randomUUIDString(),
-                            type));
+                        String.format(
+                            "beam_load_%s_%s",
+                            c.getPipelineOptions().getJobName().replaceAll("-", ""),
+                            BigQueryHelpers.randomUUIDString()));
                   }
                 }))
-        .apply("JobIdSideInput_" + type.toString(), View.asSingleton());
+        .apply(View.asSingleton());
   }
 
   // Generate the temporary-file prefix.
@@ -484,7 +466,7 @@ class BatchLoads<DestinationT, ElementT>
                         unwrittedRecordsTag,
                         maxNumWritersPerBundle,
                         maxFileSize,
-                        rowWriterFactory))
+                        toRowFunction))
                 .withSideInputs(tempFilePrefix)
                 .withOutputTags(writtenFilesTag, TupleTagList.of(unwrittedRecordsTag)));
     PCollection<WriteBundlesToFiles.Result<DestinationT>> writtenFiles =
@@ -553,7 +535,7 @@ class BatchLoads<DestinationT, ElementT>
             "WriteGroupedRecords",
             ParDo.of(
                     new WriteGroupedRecordsToFiles<DestinationT, ElementT>(
-                        tempFilePrefix, maxFileSize, rowWriterFactory))
+                        tempFilePrefix, maxFileSize, toRowFunction))
                 .withSideInputs(tempFilePrefix))
         .setCoder(WriteBundlesToFiles.ResultCoder.of(destinationCoder));
   }
@@ -581,9 +563,6 @@ class BatchLoads<DestinationT, ElementT>
           DynamicDestinationsHelpers.matchTableDynamicDestinations(destinations, bigQueryServices);
     }
 
-    Coder<TableDestination> tableDestinationCoder =
-        clusteringEnabled ? TableDestinationCoderV3.of() : TableDestinationCoderV2.of();
-
     // If WriteBundlesToFiles produced more than DEFAULT_MAX_FILES_PER_PARTITION files or
     // DEFAULT_MAX_BYTES_PER_PARTITION bytes, then
     // the import needs to be split into multiple partitions, and those partitions will be
@@ -606,11 +585,7 @@ class BatchLoads<DestinationT, ElementT>
                 loadJobProjectId,
                 maxRetryJobs,
                 ignoreUnknownValues,
-                kmsKey,
-                rowWriterFactory.getSourceFormat(),
-                useAvroLogicalTypes,
-                schemaUpdateOptions))
-        .setCoder(KvCoder.of(tableDestinationCoder, StringUtf8Coder.of()));
+                kmsKey));
   }
 
   // In the case where the files fit into a single load job, there's no need to write temporary
@@ -643,10 +618,7 @@ class BatchLoads<DestinationT, ElementT>
                 loadJobProjectId,
                 maxRetryJobs,
                 ignoreUnknownValues,
-                kmsKey,
-                rowWriterFactory.getSourceFormat(),
-                useAvroLogicalTypes,
-                schemaUpdateOptions));
+                kmsKey));
   }
 
   private WriteResult writeResult(Pipeline p) {

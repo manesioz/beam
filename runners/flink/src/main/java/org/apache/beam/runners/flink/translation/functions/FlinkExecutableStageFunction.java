@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.util.EnumMap;
 import java.util.Locale;
 import java.util.Map;
+import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
 import org.apache.beam.model.fnexecution.v1.BeamFnApi.ProcessBundleProgressResponse;
 import org.apache.beam.model.fnexecution.v1.BeamFnApi.ProcessBundleResponse;
@@ -29,9 +30,7 @@ import org.apache.beam.model.pipeline.v1.RunnerApi;
 import org.apache.beam.runners.core.InMemoryTimerInternals;
 import org.apache.beam.runners.core.TimerInternals;
 import org.apache.beam.runners.core.construction.SerializablePipelineOptions;
-import org.apache.beam.runners.core.construction.Timer;
 import org.apache.beam.runners.core.construction.graph.ExecutableStage;
-import org.apache.beam.runners.flink.FlinkPipelineOptions;
 import org.apache.beam.runners.flink.metrics.FlinkMetricContainer;
 import org.apache.beam.runners.fnexecution.control.BundleProgressHandler;
 import org.apache.beam.runners.fnexecution.control.ExecutableStageContext;
@@ -53,7 +52,7 @@ import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.transforms.join.RawUnionValue;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.util.WindowedValue;
-import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterables;
+import org.apache.beam.sdk.values.KV;
 import org.apache.flink.api.common.functions.AbstractRichFunction;
 import org.apache.flink.api.common.functions.GroupReduceFunction;
 import org.apache.flink.api.common.functions.MapPartitionFunction;
@@ -96,7 +95,7 @@ public class FlinkExecutableStageFunction<InputT> extends AbstractRichFunction
 
   // Worker-local fields. These should only be constructed and consumed on Flink TaskManagers.
   private transient RuntimeContext runtimeContext;
-  private transient FlinkMetricContainer metricContainer;
+  private transient FlinkMetricContainer container;
   private transient StateRequestHandler stateRequestHandler;
   private transient ExecutableStageContext stageContext;
   private transient StageBundleFactory stageBundleFactory;
@@ -125,13 +124,12 @@ public class FlinkExecutableStageFunction<InputT> extends AbstractRichFunction
   }
 
   @Override
-  public void open(Configuration parameters) {
-    FlinkPipelineOptions options = pipelineOptions.get().as(FlinkPipelineOptions.class);
+  public void open(Configuration parameters) throws Exception {
     // Register standard file systems.
-    FileSystems.setDefaultPipelineOptions(options);
+    FileSystems.setDefaultPipelineOptions(pipelineOptions.get());
     executableStage = ExecutableStage.fromPayload(stagePayload);
     runtimeContext = getRuntimeContext();
-    metricContainer = new FlinkMetricContainer(runtimeContext);
+    container = new FlinkMetricContainer(getRuntimeContext());
     // TODO: Wire this into the distributed cache and make it pluggable.
     stageContext = contextFactory.get(jobInfo);
     stageBundleFactory = stageContext.getStageBundleFactory(executableStage);
@@ -145,12 +143,12 @@ public class FlinkExecutableStageFunction<InputT> extends AbstractRichFunction
         new BundleProgressHandler() {
           @Override
           public void onProgress(ProcessBundleProgressResponse progress) {
-            metricContainer.updateMetrics(stepName, progress.getMonitoringInfosList());
+            container.updateMetrics(stepName, progress.getMonitoringInfosList());
           }
 
           @Override
           public void onCompleted(ProcessBundleResponse response) {
-            metricContainer.updateMetrics(stepName, response.getMonitoringInfosList());
+            container.updateMetrics(stepName, response.getMonitoringInfosList());
           }
         };
   }
@@ -173,7 +171,7 @@ public class FlinkExecutableStageFunction<InputT> extends AbstractRichFunction
 
     final StateRequestHandler userStateHandler;
     if (executableStage.getUserStates().size() > 0) {
-      bagUserStateHandlerFactory = new InMemoryBagUserStateFactory<>();
+      bagUserStateHandlerFactory = new InMemoryBagUserStateFactory();
       userStateHandler =
           StateRequestHandlers.forBagUserStateHandlerFactory(
               processBundleDescriptor, bagUserStateHandlerFactory);
@@ -183,9 +181,7 @@ public class FlinkExecutableStageFunction<InputT> extends AbstractRichFunction
 
     EnumMap<StateKey.TypeCase, StateRequestHandler> handlerMap =
         new EnumMap<>(StateKey.TypeCase.class);
-    handlerMap.put(StateKey.TypeCase.ITERABLE_SIDE_INPUT, sideInputHandler);
     handlerMap.put(StateKey.TypeCase.MULTIMAP_SIDE_INPUT, sideInputHandler);
-    handlerMap.put(StateKey.TypeCase.MULTIMAP_KEYS_SIDE_INPUT, sideInputHandler);
     handlerMap.put(StateKey.TypeCase.BAG_USER_STATE, userStateHandler);
 
     return StateRequestHandlers.delegateBasedUponType(handlerMap);
@@ -221,25 +217,21 @@ public class FlinkExecutableStageFunction<InputT> extends AbstractRichFunction
     timerInternals.advanceProcessingTime(Instant.now());
     timerInternals.advanceSynchronizedProcessingTime(Instant.now());
 
-    ReceiverFactory receiverFactory = new ReceiverFactory(collector, outputMap);
-
-    TimerReceiverFactory timerReceiverFactory =
-        new TimerReceiverFactory(
-            stageBundleFactory,
-            (Timer<?> timer, TimerInternals.TimerData timerData) -> {
-              currentTimerKey = timer.getUserKey();
-              if (timer.getClearBit()) {
-                timerInternals.deleteTimer(timerData);
-              } else {
-                timerInternals.setTimer(timerData);
-              }
-            },
-            windowCoder);
+    ReceiverFactory receiverFactory =
+        new ReceiverFactory(
+            collector,
+            outputMap,
+            new TimerReceiverFactory(
+                stageBundleFactory,
+                (WindowedValue timerElement, TimerInternals.TimerData timerData) -> {
+                  currentTimerKey = ((KV) timerElement.getValue()).getKey();
+                  timerInternals.setTimer(timerData);
+                },
+                windowCoder));
 
     // First process all elements and make sure no more elements can arrive
     try (RemoteBundle bundle =
-        stageBundleFactory.getBundle(
-            receiverFactory, timerReceiverFactory, stateRequestHandler, progressHandler)) {
+        stageBundleFactory.getBundle(receiverFactory, stateRequestHandler, progressHandler)) {
       processElements(iterable, bundle);
     }
 
@@ -250,14 +242,23 @@ public class FlinkExecutableStageFunction<InputT> extends AbstractRichFunction
     timerInternals.advanceSynchronizedProcessingTime(BoundedWindow.TIMESTAMP_MAX_VALUE);
 
     // Now we fire the timers and process elements generated by timers (which may be timers itself)
-    while (timerInternals.hasPendingTimers()) {
-      try (RemoteBundle bundle =
-          stageBundleFactory.getBundle(
-              receiverFactory, timerReceiverFactory, stateRequestHandler, progressHandler)) {
+    try (RemoteBundle bundle =
+        stageBundleFactory.getBundle(receiverFactory, stateRequestHandler, progressHandler)) {
 
-        PipelineTranslatorUtils.fireEligibleTimers(
-            timerInternals, bundle.getTimerReceivers(), currentTimerKey);
-      }
+      PipelineTranslatorUtils.fireEligibleTimers(
+          timerInternals,
+          (String timerId, WindowedValue timerValue) -> {
+            FnDataReceiver<WindowedValue<?>> fnTimerReceiver =
+                bundle.getInputReceivers().get(timerId);
+            Preconditions.checkNotNull(fnTimerReceiver, "No FnDataReceiver found for %s", timerId);
+            try {
+              fnTimerReceiver.accept(timerValue);
+            } catch (Exception e) {
+              throw new RuntimeException(
+                  String.format(Locale.ENGLISH, "Failed to process timer: %s", timerValue));
+            }
+          },
+          currentTimerKey);
     }
   }
 
@@ -265,8 +266,12 @@ public class FlinkExecutableStageFunction<InputT> extends AbstractRichFunction
       throws Exception {
     Preconditions.checkArgument(bundle != null, "RemoteBundle must not be null");
 
+    String inputPCollectionId = executableStage.getInputPCollection().getId();
     FnDataReceiver<WindowedValue<?>> mainReceiver =
-        Iterables.getOnlyElement(bundle.getInputReceivers().values());
+        Preconditions.checkNotNull(
+            bundle.getInputReceivers().get(inputPCollectionId),
+            "Main input receiver for %s could not be initialized",
+            inputPCollectionId);
     for (WindowedValue<InputT> input : iterable) {
       mainReceiver.accept(input);
     }
@@ -274,7 +279,6 @@ public class FlinkExecutableStageFunction<InputT> extends AbstractRichFunction
 
   @Override
   public void close() throws Exception {
-    metricContainer.registerMetricsForPipelineResult();
     // close may be called multiple times when an exception is thrown
     if (stageContext != null) {
       try (AutoCloseable bundleFactoryCloser = stageBundleFactory;
@@ -299,10 +303,19 @@ public class FlinkExecutableStageFunction<InputT> extends AbstractRichFunction
     private final Collector<RawUnionValue> collector;
 
     private final Map<String, Integer> outputMap;
+    @Nullable private final TimerReceiverFactory timerReceiverFactory;
 
     ReceiverFactory(Collector<RawUnionValue> collector, Map<String, Integer> outputMap) {
+      this(collector, outputMap, null);
+    }
+
+    ReceiverFactory(
+        Collector<RawUnionValue> collector,
+        Map<String, Integer> outputMap,
+        @Nullable TimerReceiverFactory timerReceiverFactory) {
       this.collector = collector;
       this.outputMap = outputMap;
+      this.timerReceiverFactory = timerReceiverFactory;
     }
 
     @Override
@@ -315,6 +328,9 @@ public class FlinkExecutableStageFunction<InputT> extends AbstractRichFunction
             collector.collect(new RawUnionValue(tagInt, receivedElement));
           }
         };
+      } else if (timerReceiverFactory != null) {
+        // Delegate to TimerReceiverFactory
+        return timerReceiverFactory.create(collectionId);
       } else {
         throw new IllegalStateException(
             String.format(Locale.ENGLISH, "Unknown PCollectionId %s", collectionId));

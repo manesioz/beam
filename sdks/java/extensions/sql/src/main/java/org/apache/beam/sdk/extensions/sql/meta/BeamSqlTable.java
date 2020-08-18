@@ -42,7 +42,7 @@ public interface BeamSqlTable {
   BeamSqlTableFilter constructFilter(List<RexNode> filter);
 
   /** Whether project push-down is supported by the IO API. */
-  ProjectSupport supportsProjects();
+  boolean supportsProjects();
 
   /** Whether this table is bounded (known to be finite) or unbounded (may or may not be finite). */
   PCollection.IsBounded isBounded();

@@ -29,6 +29,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import javax.annotation.Nullable;
 import org.apache.beam.runners.core.ActiveWindowSet;
 import org.apache.beam.runners.core.ActiveWindowSet.MergeCallback;
 import org.apache.beam.runners.core.InMemoryTimerInternals;
@@ -53,7 +54,6 @@ import org.apache.beam.sdk.values.TimestampedValue;
 import org.apache.beam.sdk.values.WindowingStrategy.AccumulationMode;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Lists;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Maps;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 
@@ -193,7 +193,8 @@ public class TriggerStateMachineTester<InputT, W extends BoundedWindow> {
   }
 
   /** Retrieves the next timer for this time domain, if any, for use in assertions. */
-  public @Nullable Instant getNextTimer(TimeDomain domain) {
+  @Nullable
+  public Instant getNextTimer(TimeDomain domain) {
     return timerInternals.getNextTimer(domain);
   }
 
@@ -412,17 +413,12 @@ public class TriggerStateMachineTester<InputT, W extends BoundedWindow> {
 
     @Override
     public void setTimer(Instant timestamp, TimeDomain timeDomain) {
-      timerInternals.setTimer(TimerData.of(namespace, timestamp, timestamp, timeDomain));
-    }
-
-    @Override
-    public void setTimer(Instant timestamp, Instant outputTimestamp, TimeDomain timeDomain) {
-      timerInternals.setTimer(TimerData.of(namespace, timestamp, outputTimestamp, timeDomain));
+      timerInternals.setTimer(TimerData.of(namespace, timestamp, timeDomain));
     }
 
     @Override
     public void deleteTimer(Instant timestamp, TimeDomain timeDomain) {
-      timerInternals.deleteTimer(TimerData.of(namespace, timestamp, timestamp, timeDomain));
+      timerInternals.deleteTimer(TimerData.of(namespace, timestamp, timeDomain));
     }
 
     @Override
@@ -431,7 +427,8 @@ public class TriggerStateMachineTester<InputT, W extends BoundedWindow> {
     }
 
     @Override
-    public @Nullable Instant currentSynchronizedProcessingTime() {
+    @Nullable
+    public Instant currentSynchronizedProcessingTime() {
       return timerInternals.currentSynchronizedProcessingTime();
     }
 

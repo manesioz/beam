@@ -17,7 +17,6 @@
  */
 package org.apache.beam.sdk.coders;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.ObjectInputStream;
@@ -29,10 +28,10 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.WeakHashMap;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.PipelineRunner;
 import org.apache.beam.sdk.values.TypeDescriptor;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -167,9 +166,7 @@ public class SerializableCoder<T extends Serializable> extends CustomCoder<T> {
   private final Class<T> type;
 
   /** Access via {@link #getEncodedTypeDescriptor()}. */
-  // the field is restored lazily if it is not present due to serialization
-  @SuppressFBWarnings("SE_TRANSIENT_FIELD_NOT_RESTORED")
-  private transient @Nullable TypeDescriptor<T> typeDescriptor;
+  @Nullable private transient TypeDescriptor<T> typeDescriptor;
 
   protected SerializableCoder(Class<T> type, TypeDescriptor<T> typeDescriptor) {
     this.type = type;
@@ -209,7 +206,7 @@ public class SerializableCoder<T extends Serializable> extends CustomCoder<T> {
   }
 
   @Override
-  public boolean equals(@Nullable Object other) {
+  public boolean equals(Object other) {
     return !(other == null || getClass() != other.getClass())
         && type == ((SerializableCoder<?>) other).type;
   }
@@ -225,11 +222,6 @@ public class SerializableCoder<T extends Serializable> extends CustomCoder<T> {
       typeDescriptor = TypeDescriptor.of(type);
     }
     return typeDescriptor;
-  }
-
-  @Override
-  public String toString() {
-    return "SerializableCoder(" + type.getName() + ")";
   }
 
   // This coder inherits isRegisterByteSizeObserverCheap,

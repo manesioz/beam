@@ -47,8 +47,7 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.util.concurrent.
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 
-class SplittableProcessElementsEvaluatorFactory<
-        InputT, OutputT, RestrictionT, PositionT, WatermarkEstimatorStateT>
+class SplittableProcessElementsEvaluatorFactory<InputT, OutputT, RestrictionT, PositionT>
     implements TransformEvaluatorFactory {
   private final ParDoEvaluatorFactory<KeyedWorkItem<byte[], KV<InputT, RestrictionT>>, OutputT>
       delegateFactory;
@@ -71,12 +70,9 @@ class SplittableProcessElementsEvaluatorFactory<
                 checkArgument(
                     ProcessElements.class.isInstance(application.getTransform()),
                     "No know extraction of the fn from " + application);
-                final ProcessElements<
-                        InputT, OutputT, RestrictionT, PositionT, WatermarkEstimatorStateT>
-                    transform =
-                        (ProcessElements<
-                                InputT, OutputT, RestrictionT, PositionT, WatermarkEstimatorStateT>)
-                            application.getTransform();
+                final ProcessElements<InputT, OutputT, RestrictionT, PositionT> transform =
+                    (ProcessElements<InputT, OutputT, RestrictionT, PositionT>)
+                        application.getTransform();
                 return DoFnLifecycleManager.of(transform.newProcessFn(transform.getFn()));
               }
             },
@@ -111,12 +107,12 @@ class SplittableProcessElementsEvaluatorFactory<
       AppliedPTransform<
               PCollection<KeyedWorkItem<byte[], KV<InputT, RestrictionT>>>,
               PCollectionTuple,
-              ProcessElements<InputT, OutputT, RestrictionT, PositionT, WatermarkEstimatorStateT>>
+              ProcessElements<InputT, OutputT, RestrictionT, PositionT>>
           application,
       CommittedBundle<InputT> inputBundle)
       throws Exception {
-    final ProcessElements<InputT, OutputT, RestrictionT, PositionT, WatermarkEstimatorStateT>
-        transform = application.getTransform();
+    final ProcessElements<InputT, OutputT, RestrictionT, PositionT> transform =
+        application.getTransform();
 
     final DoFnLifecycleManagerRemovingTransformEvaluator<
             KeyedWorkItem<byte[], KV<InputT, RestrictionT>>>
@@ -133,8 +129,8 @@ class SplittableProcessElementsEvaluatorFactory<
                 Collections.emptyMap());
     final ParDoEvaluator<KeyedWorkItem<byte[], KV<InputT, RestrictionT>>> pde =
         evaluator.getParDoEvaluator();
-    final ProcessFn<InputT, OutputT, RestrictionT, PositionT, WatermarkEstimatorStateT> processFn =
-        (ProcessFn<InputT, OutputT, RestrictionT, PositionT, WatermarkEstimatorStateT>)
+    final ProcessFn<InputT, OutputT, RestrictionT, PositionT> processFn =
+        (ProcessFn<InputT, OutputT, RestrictionT, PositionT>)
             ProcessFnRunner.class.cast(pde.getFnRunner()).getFn();
 
     final DirectExecutionContext.DirectStepContext stepContext = pde.getStepContext();
@@ -175,8 +171,7 @@ class SplittableProcessElementsEvaluatorFactory<
             // Setting small values here to stimulate frequent checkpointing and better exercise
             // splittable DoFn's in that respect.
             100,
-            Duration.standardSeconds(1),
-            stepContext::bundleFinalizer));
+            Duration.standardSeconds(1)));
 
     return evaluator;
   }
@@ -197,7 +192,7 @@ class SplittableProcessElementsEvaluatorFactory<
         windowingStrategy,
         doFnSchemaInformation,
         sideInputMapping) -> {
-      ProcessFn<InputT, OutputT, RestrictionT, ?, ?> processFn = (ProcessFn) fn;
+      ProcessFn<InputT, OutputT, RestrictionT, ?> processFn = (ProcessFn) fn;
       return DoFnRunners.newProcessFnRunner(
           processFn,
           options,

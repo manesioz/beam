@@ -17,8 +17,11 @@
  */
 package org.apache.beam.sdk.io.gcp.spanner;
 
+import static org.junit.Assert.assertThat;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.google.cloud.Timestamp;
@@ -42,8 +45,12 @@ import java.util.List;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.transforms.Create;
+import org.apache.beam.sdk.transforms.DoFnTester;
+import org.apache.beam.sdk.transforms.View;
+import org.apache.beam.sdk.transforms.windowing.GlobalWindow;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionView;
+import org.hamcrest.Matchers;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -87,130 +94,108 @@ public class SpannerIOReadTest implements Serializable {
 
   @Test
   public void runQuery() throws Exception {
-    Timestamp timestamp = Timestamp.ofTimeMicroseconds(12345);
-    TimestampBound timestampBound = TimestampBound.ofReadTimestamp(timestamp);
-
-    SpannerConfig spannerConfig =
-        SpannerConfig.create()
+    SpannerIO.Read read =
+        SpannerIO.read()
             .withProjectId("test")
             .withInstanceId("123")
             .withDatabaseId("aaa")
+            .withQuery("SELECT * FROM users")
             .withServiceFactory(serviceFactory);
 
-    PCollection<Struct> one =
-        pipeline.apply(
-            "read q",
-            SpannerIO.read()
-                .withSpannerConfig(spannerConfig)
-                .withQuery("SELECT * FROM users")
-                .withTimestampBound(timestampBound));
+    List<Partition> fakePartitions =
+        Arrays.asList(mock(Partition.class), mock(Partition.class), mock(Partition.class));
 
-    FakeBatchTransactionId id = new FakeBatchTransactionId("runQueryTest");
-    when(mockBatchTx.getBatchTransactionId()).thenReturn(id);
+    BatchTransactionId id = mock(BatchTransactionId.class);
+    Transaction tx = Transaction.create(id);
+    PCollectionView<Transaction> txView =
+        pipeline.apply(Create.of(tx)).apply(View.<Transaction>asSingleton());
 
-    when(serviceFactory.mockBatchClient().batchReadOnlyTransaction(timestampBound))
-        .thenReturn(mockBatchTx);
-    when(serviceFactory.mockBatchClient().batchReadOnlyTransaction(any(BatchTransactionId.class)))
-        .thenReturn(mockBatchTx);
+    BatchSpannerRead.GeneratePartitionsFn fn =
+        new BatchSpannerRead.GeneratePartitionsFn(read.getSpannerConfig(), txView);
+    DoFnTester<ReadOperation, Partition> fnTester = DoFnTester.of(fn);
+    fnTester.setSideInput(txView, GlobalWindow.INSTANCE, tx);
 
-    Partition fakePartition =
-        FakePartitionFactory.createFakeQueryPartition(ByteString.copyFromUtf8("one"));
+    when(serviceFactory.mockBatchClient().batchReadOnlyTransaction(id)).thenReturn(mockBatchTx);
+    when(mockBatchTx.partitionQuery(any(PartitionOptions.class), any(Statement.class)))
+        .thenReturn(fakePartitions);
 
-    when(mockBatchTx.partitionQuery(
-            any(PartitionOptions.class), eq(Statement.of("SELECT * FROM users"))))
-        .thenReturn(Arrays.asList(fakePartition, fakePartition));
-    when(mockBatchTx.execute(any(Partition.class)))
-        .thenReturn(
-            ResultSets.forRows(FAKE_TYPE, FAKE_ROWS.subList(0, 2)),
-            ResultSets.forRows(FAKE_TYPE, FAKE_ROWS.subList(2, 6)));
+    List<Partition> result = fnTester.processBundle(read.getReadOperation());
+    assertThat(result, Matchers.containsInAnyOrder(fakePartitions.toArray()));
 
-    PAssert.that(one).containsInAnyOrder(FAKE_ROWS);
-
-    pipeline.run();
+    verify(serviceFactory.mockBatchClient()).batchReadOnlyTransaction(id);
+    verify(mockBatchTx)
+        .partitionQuery(any(PartitionOptions.class), eq(Statement.of("SELECT * " + "FROM users")));
   }
 
   @Test
   public void runRead() throws Exception {
-    Timestamp timestamp = Timestamp.ofTimeMicroseconds(12345);
-    TimestampBound timestampBound = TimestampBound.ofReadTimestamp(timestamp);
-
-    SpannerConfig spannerConfig =
-        SpannerConfig.create()
+    SpannerIO.Read read =
+        SpannerIO.read()
             .withProjectId("test")
             .withInstanceId("123")
             .withDatabaseId("aaa")
+            .withTable("users")
+            .withColumns("id", "name")
             .withServiceFactory(serviceFactory);
 
-    PCollection<Struct> one =
-        pipeline.apply(
-            "read q",
-            SpannerIO.read()
-                .withSpannerConfig(spannerConfig)
-                .withTable("users")
-                .withColumns("id", "name")
-                .withTimestampBound(timestampBound));
+    List<Partition> fakePartitions =
+        Arrays.asList(mock(Partition.class), mock(Partition.class), mock(Partition.class));
 
-    FakeBatchTransactionId id = new FakeBatchTransactionId("runReadTest");
-    when(mockBatchTx.getBatchTransactionId()).thenReturn(id);
+    BatchTransactionId id = mock(BatchTransactionId.class);
+    Transaction tx = Transaction.create(id);
+    PCollectionView<Transaction> txView =
+        pipeline.apply(Create.of(tx)).apply(View.<Transaction>asSingleton());
 
-    when(serviceFactory.mockBatchClient().batchReadOnlyTransaction(timestampBound))
-        .thenReturn(mockBatchTx);
-    when(serviceFactory.mockBatchClient().batchReadOnlyTransaction(any(BatchTransactionId.class)))
-        .thenReturn(mockBatchTx);
+    BatchSpannerRead.GeneratePartitionsFn fn =
+        new BatchSpannerRead.GeneratePartitionsFn(read.getSpannerConfig(), txView);
+    DoFnTester<ReadOperation, Partition> fnTester = DoFnTester.of(fn);
+    fnTester.setSideInput(txView, GlobalWindow.INSTANCE, tx);
 
-    Partition fakePartition =
-        FakePartitionFactory.createFakeReadPartition(ByteString.copyFromUtf8("one"));
-
+    when(serviceFactory.mockBatchClient().batchReadOnlyTransaction(id)).thenReturn(mockBatchTx);
     when(mockBatchTx.partitionRead(
             any(PartitionOptions.class),
             eq("users"),
             eq(KeySet.all()),
             eq(Arrays.asList("id", "name"))))
-        .thenReturn(Arrays.asList(fakePartition, fakePartition, fakePartition));
-    when(mockBatchTx.execute(any(Partition.class)))
-        .thenReturn(
-            ResultSets.forRows(FAKE_TYPE, FAKE_ROWS.subList(0, 2)),
-            ResultSets.forRows(FAKE_TYPE, FAKE_ROWS.subList(2, 4)),
-            ResultSets.forRows(FAKE_TYPE, FAKE_ROWS.subList(4, 6)));
+        .thenReturn(fakePartitions);
 
-    PAssert.that(one).containsInAnyOrder(FAKE_ROWS);
+    List<Partition> result = fnTester.processBundle(read.getReadOperation());
+    assertThat(result, Matchers.containsInAnyOrder(fakePartitions.toArray()));
 
-    pipeline.run();
+    verify(serviceFactory.mockBatchClient()).batchReadOnlyTransaction(id);
+    verify(mockBatchTx)
+        .partitionRead(
+            any(PartitionOptions.class),
+            eq("users"),
+            eq(KeySet.all()),
+            eq(Arrays.asList("id", "name")));
   }
 
   @Test
   public void runReadUsingIndex() throws Exception {
-    Timestamp timestamp = Timestamp.ofTimeMicroseconds(12345);
-    TimestampBound timestampBound = TimestampBound.ofReadTimestamp(timestamp);
-
-    SpannerConfig spannerConfig =
-        SpannerConfig.create()
+    SpannerIO.Read read =
+        SpannerIO.read()
             .withProjectId("test")
             .withInstanceId("123")
             .withDatabaseId("aaa")
+            .withTimestamp(Timestamp.now())
+            .withTable("users")
+            .withColumns("id", "name")
+            .withIndex("theindex")
             .withServiceFactory(serviceFactory);
 
-    PCollection<Struct> one =
-        pipeline.apply(
-            "read q",
-            SpannerIO.read()
-                .withTimestamp(Timestamp.now())
-                .withSpannerConfig(spannerConfig)
-                .withTable("users")
-                .withColumns("id", "name")
-                .withIndex("theindex")
-                .withTimestampBound(timestampBound));
+    List<Partition> fakePartitions =
+        Arrays.asList(mock(Partition.class), mock(Partition.class), mock(Partition.class));
 
-    FakeBatchTransactionId id = new FakeBatchTransactionId("runReadUsingIndexTest");
-    when(mockBatchTx.getBatchTransactionId()).thenReturn(id);
+    FakeBatchTransactionId id = new FakeBatchTransactionId("one");
+    Transaction tx = Transaction.create(id);
+    PCollectionView<Transaction> txView =
+        pipeline.apply(Create.of(tx)).apply(View.<Transaction>asSingleton());
 
-    when(serviceFactory.mockBatchClient().batchReadOnlyTransaction(timestampBound))
-        .thenReturn(mockBatchTx);
-    when(serviceFactory.mockBatchClient().batchReadOnlyTransaction(any(BatchTransactionId.class)))
-        .thenReturn(mockBatchTx);
-
-    Partition fakePartition =
-        FakePartitionFactory.createFakeReadPartition(ByteString.copyFromUtf8("one"));
+    BatchSpannerRead.GeneratePartitionsFn fn =
+        new BatchSpannerRead.GeneratePartitionsFn(read.getSpannerConfig(), txView);
+    DoFnTester<ReadOperation, Partition> fnTester = DoFnTester.of(fn);
+    fnTester.setSideInput(txView, GlobalWindow.INSTANCE, tx);
 
     when(serviceFactory.mockBatchClient().batchReadOnlyTransaction(id)).thenReturn(mockBatchTx);
     when(mockBatchTx.partitionReadUsingIndex(
@@ -219,17 +204,19 @@ public class SpannerIOReadTest implements Serializable {
             eq("theindex"),
             eq(KeySet.all()),
             eq(Arrays.asList("id", "name"))))
-        .thenReturn(Arrays.asList(fakePartition, fakePartition, fakePartition));
+        .thenReturn(fakePartitions);
 
-    when(mockBatchTx.execute(any(Partition.class)))
-        .thenReturn(
-            ResultSets.forRows(FAKE_TYPE, FAKE_ROWS.subList(0, 2)),
-            ResultSets.forRows(FAKE_TYPE, FAKE_ROWS.subList(2, 4)),
-            ResultSets.forRows(FAKE_TYPE, FAKE_ROWS.subList(4, 6)));
+    List<Partition> result = fnTester.processBundle(read.getReadOperation());
+    assertThat(result, Matchers.containsInAnyOrder(fakePartitions.toArray()));
 
-    PAssert.that(one).containsInAnyOrder(FAKE_ROWS);
-
-    pipeline.run();
+    verify(serviceFactory.mockBatchClient()).batchReadOnlyTransaction(id);
+    verify(mockBatchTx)
+        .partitionReadUsingIndex(
+            any(PartitionOptions.class),
+            eq("users"),
+            eq("theindex"),
+            eq(KeySet.all()),
+            eq(Arrays.asList("id", "name")));
   }
 
   @Test

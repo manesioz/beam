@@ -36,7 +36,6 @@ import java.lang.annotation.Target;
   ElementType.CONSTRUCTOR,
   ElementType.FIELD,
   ElementType.METHOD,
-  ElementType.PACKAGE,
   ElementType.TYPE
 })
 
@@ -110,8 +109,5 @@ public @interface Experimental {
 
     /** Experimental APIs related to exception handling in PTransforms. */
     WITH_EXCEPTIONS,
-
-    /** Portability related APIs. */
-    PORTABILITY,
   }
 }

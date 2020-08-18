@@ -22,7 +22,6 @@ import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Prec
 import java.util.Arrays;
 import java.util.Collections;
 import org.apache.beam.sdk.annotations.Experimental;
-import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.transforms.Combine;
 import org.apache.beam.sdk.transforms.GroupByKey;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterables;
@@ -35,7 +34,7 @@ import org.joda.time.Instant;
  * <p>In particular, these govern the timestamp on the output of a grouping transform such as {@link
  * GroupByKey} or {@link Combine}.
  */
-@Experimental(Kind.OUTPUT_TIME)
+@Experimental(Experimental.Kind.OUTPUT_TIME)
 public enum TimestampCombiner {
   /**
    * The policy of taking at the earliest of a set of timestamps.

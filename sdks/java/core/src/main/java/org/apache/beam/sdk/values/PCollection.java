@@ -22,6 +22,7 @@ import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Prec
 
 import java.util.Collections;
 import java.util.Map;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.annotations.Experimental.Kind;
@@ -42,10 +43,10 @@ import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.SerializableFunction;
+import org.apache.beam.sdk.transforms.SerializableFunctions;
 import org.apache.beam.sdk.transforms.windowing.GlobalWindows;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.transforms.windowing.WindowFn;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * A {@link PCollection PCollection&lt;T&gt;} is an immutable collection of values of type {@code
@@ -85,7 +86,7 @@ public class PCollection<T> extends PValueBase implements PValue {
   private CoderOrFailure<T> coderOrFailure =
       new CoderOrFailure<>(null, "No Coder was specified, and Coder Inference did not occur");
 
-  private @Nullable TypeDescriptor<T> typeDescriptor;
+  @Nullable private TypeDescriptor<T> typeDescriptor;
 
   @Override
   public void finishSpecifyingOutput(
@@ -120,7 +121,8 @@ public class PCollection<T> extends PValueBase implements PValue {
    * {@code T}, if possible. May return {@code null} if no information is available. Subclasses may
    * override this to enable better {@code Coder} inference.
    */
-  public @Nullable TypeDescriptor<T> getTypeDescriptor() {
+  @Nullable
+  public TypeDescriptor<T> getTypeDescriptor() {
     return typeDescriptor;
   }
 
@@ -156,7 +158,6 @@ public class PCollection<T> extends PValueBase implements PValue {
         SchemaCoder<T> schemaCoder =
             SchemaCoder.of(
                 schemaRegistry.getSchema(token),
-                token,
                 schemaRegistry.getToRowFunction(token),
                 schemaRegistry.getFromRowFunction(token));
         return new CoderOrFailure<>(schemaCoder, null);
@@ -299,17 +300,19 @@ public class PCollection<T> extends PValueBase implements PValue {
    */
   @Experimental(Kind.SCHEMAS)
   public PCollection<T> setRowSchema(Schema schema) {
-    return setCoder((SchemaCoder<T>) SchemaCoder.of(schema));
+    return setSchema(
+        schema,
+        (SerializableFunction<T, Row>) SerializableFunctions.<Row>identity(),
+        (SerializableFunction<Row, T>) SerializableFunctions.<Row>identity());
   }
 
   /** Sets a {@link Schema} on this {@link PCollection}. */
   @Experimental(Kind.SCHEMAS)
   public PCollection<T> setSchema(
       Schema schema,
-      TypeDescriptor<T> typeDescriptor,
       SerializableFunction<T, Row> toRowFunction,
       SerializableFunction<Row, T> fromRowFunction) {
-    return setCoder(SchemaCoder.of(schema, typeDescriptor, toRowFunction, fromRowFunction));
+    return setCoder(SchemaCoder.of(schema, toRowFunction, fromRowFunction));
   }
 
   /** Returns whether this {@link PCollection} has an attached schema. */
@@ -462,8 +465,8 @@ public class PCollection<T> extends PValueBase implements PValue {
   }
 
   private static class CoderOrFailure<T> {
-    private final @Nullable Coder<T> coder;
-    private final @Nullable String failure;
+    @Nullable private final Coder<T> coder;
+    @Nullable private final String failure;
 
     public CoderOrFailure(@Nullable Coder<T> coder, @Nullable String failure) {
       this.coder = coder;

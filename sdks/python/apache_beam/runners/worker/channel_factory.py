@@ -14,10 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-
 """Factory to create grpc channel."""
-# pytype: skip-file
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -43,6 +40,5 @@ class GRPCChannelFactory(grpc.StreamStreamClientInterceptor):
     if options is None:
       options = []
     return grpc.secure_channel(
-        target,
-        credentials,
+        target, credentials,
         options=options + GRPCChannelFactory.DEFAULT_OPTIONS)

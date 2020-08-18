@@ -20,8 +20,6 @@
 This module is experimental. No backwards-compatibility guarantees.
 """
 
-# pytype: skip-file
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -30,20 +28,14 @@ import logging
 
 import apache_beam as beam
 from apache_beam import runners
-from apache_beam.pipeline import PipelineVisitor
 from apache_beam.runners.direct import direct_runner
-from apache_beam.runners.interactive import interactive_environment as ie
-from apache_beam.runners.interactive import pipeline_instrument as inst
-from apache_beam.runners.interactive import background_caching_job
-from apache_beam.runners.interactive.display import pipeline_graph
-from apache_beam.runners.interactive.options import capture_control
-from apache_beam.runners.interactive.utils import to_element_list
-from apache_beam.testing.test_stream_service import TestStreamServiceController
+from apache_beam.runners.interactive import cache_manager as cache
+from apache_beam.runners.interactive import pipeline_analyzer
+from apache_beam.runners.interactive.display import display_manager
+from apache_beam.runners.interactive.display import pipeline_graph_renderer
 
 # size of PCollection samples cached.
 SAMPLE_SIZE = 8
-
-_LOGGER = logging.getLogger(__name__)
 
 
 class InteractiveRunner(runners.PipelineRunner):
@@ -51,41 +43,27 @@ class InteractiveRunner(runners.PipelineRunner):
 
   Allows interactively building and running Beam Python pipelines.
   """
-  def __init__(
-      self,
-      underlying_runner=None,
-      render_option=None,
-      skip_display=True,
-      force_compute=True,
-      blocking=True):
+
+  def __init__(self,
+               underlying_runner=None,
+               cache_dir=None,
+               cache_format='text',
+               render_option=None):
     """Constructor of InteractiveRunner.
 
     Args:
       underlying_runner: (runner.PipelineRunner)
+      cache_dir: (str) the directory where PCollection caches are kept
+      cache_format: (str) the file format that should be used for saving
+          PCollection caches. Available options are 'text' and 'tfrecord'.
       render_option: (str) this parameter decides how the pipeline graph is
           rendered. See display.pipeline_graph_renderer for available options.
-      skip_display: (bool) whether to skip display operations when running the
-          pipeline. Useful if running large pipelines when display is not
-          needed.
-      force_compute: (bool) whether sequential pipeline runs can use cached data
-          of PCollections computed from the previous runs including show API
-          invocation from interactive_beam module. If True, always run the whole
-          pipeline and compute data for PCollections forcefully. If False, use
-          available data and run minimum pipeline fragment to only compute data
-          not available.
-      blocking: (bool) whether the pipeline run should be blocking or not.
     """
-    self._underlying_runner = (
-        underlying_runner or direct_runner.DirectRunner())
-    self._render_option = render_option
+    self._underlying_runner = (underlying_runner
+                               or direct_runner.DirectRunner())
+    self._cache_manager = cache.FileBasedCacheManager(cache_dir, cache_format)
+    self._renderer = pipeline_graph_renderer.get_renderer(render_option)
     self._in_session = False
-    self._skip_display = skip_display
-    self._force_compute = force_compute
-    self._blocking = blocking
-
-  def is_fnapi_compatible(self):
-    # TODO(BEAM-8436): return self._underlying_runner.is_fnapi_compatible()
-    return False
 
   def set_render_option(self, render_option):
     """Sets the rendering option.
@@ -94,7 +72,7 @@ class InteractiveRunner(runners.PipelineRunner):
       render_option: (str) this parameter decides how the pipeline graph is
           rendered. See display.pipeline_graph_renderer for available options.
     """
-    self._render_option = render_option
+    self._renderer = pipeline_graph_renderer.get_renderer(render_option)
 
   def start_session(self):
     """Start the session that keeps back-end managers and workers alive.
@@ -104,11 +82,11 @@ class InteractiveRunner(runners.PipelineRunner):
 
     enter = getattr(self._underlying_runner, '__enter__', None)
     if enter is not None:
-      _LOGGER.info('Starting session.')
+      logging.info('Starting session.')
       self._in_session = True
       enter()
     else:
-      _LOGGER.error('Keep alive not supported.')
+      logging.error('Keep alive not supported.')
 
   def end_session(self):
     """End the session that keeps backend managers and workers alive.
@@ -119,142 +97,130 @@ class InteractiveRunner(runners.PipelineRunner):
     exit = getattr(self._underlying_runner, '__exit__', None)
     if exit is not None:
       self._in_session = False
-      _LOGGER.info('Ending session.')
+      logging.info('Ending session.')
       exit(None, None, None)
+
+  def cleanup(self):
+    self._cache_manager.cleanup()
 
   def apply(self, transform, pvalueish, options):
     # TODO(qinyeli, BEAM-646): Remove runner interception of apply.
     return self._underlying_runner.apply(transform, pvalueish, options)
 
   def run_pipeline(self, pipeline, options):
-    if not ie.current_env().options.enable_capture_replay:
-      capture_control.evict_captured_data()
-    if self._force_compute:
-      ie.current_env().evict_computed_pcollections()
+    if not hasattr(self, '_desired_cache_labels'):
+      self._desired_cache_labels = set()
 
-    # Make sure that sources without a user reference are still cached.
-    inst.watch_sources(pipeline)
+    # Invoke a round trip through the runner API. This makes sure the Pipeline
+    # proto is stable.
+    pipeline = beam.pipeline.Pipeline.from_runner_api(
+        pipeline.to_runner_api(use_fake_coders=True),
+        pipeline.runner,
+        options)
 
-    user_pipeline = inst.user_pipeline(pipeline)
-    pipeline_instrument = inst.build_pipeline_instrument(pipeline, options)
+    # Snapshot the pipeline in a portable proto before mutating it.
+    pipeline_proto, original_context = pipeline.to_runner_api(
+        return_context=True, use_fake_coders=True)
+    pcolls_to_pcoll_id = self._pcolls_to_pcoll_id(pipeline, original_context)
 
-    # The user_pipeline analyzed might be None if the pipeline given has nothing
-    # to be cached and tracing back to the user defined pipeline is impossible.
-    # When it's None, there is no need to cache including the background
-    # caching job and no result to track since no background caching job is
-    # started at all.
-    if user_pipeline:
-      # Should use the underlying runner and run asynchronously.
-      background_caching_job.attempt_to_run_background_caching_job(
-          self._underlying_runner, user_pipeline, options)
-      if (background_caching_job.has_source_to_cache(user_pipeline) and
-          not background_caching_job.is_a_test_stream_service_running(
-              user_pipeline)):
-        streaming_cache_manager = ie.current_env().get_cache_manager(
-            user_pipeline)
-        if streaming_cache_manager:
-
-          def exception_handler(e):
-            _LOGGER.error(str(e))
-            return True
-
-          test_stream_service = TestStreamServiceController(
-              streaming_cache_manager, exception_handler=exception_handler)
-          test_stream_service.start()
-          ie.current_env().set_test_stream_service_controller(
-              user_pipeline, test_stream_service)
+    analyzer = pipeline_analyzer.PipelineAnalyzer(self._cache_manager,
+                                                  pipeline_proto,
+                                                  self._underlying_runner,
+                                                  options,
+                                                  self._desired_cache_labels)
+    # Should be only accessed for debugging purpose.
+    self._analyzer = analyzer
 
     pipeline_to_execute = beam.pipeline.Pipeline.from_runner_api(
-        pipeline_instrument.instrumented_pipeline_proto(),
+        analyzer.pipeline_proto_to_execute(),
         self._underlying_runner,
         options)
 
-    if ie.current_env().get_test_stream_service_controller(user_pipeline):
-      endpoint = ie.current_env().get_test_stream_service_controller(
-          user_pipeline).endpoint
+    display = display_manager.DisplayManager(
+        pipeline_proto=pipeline_proto,
+        pipeline_analyzer=analyzer,
+        cache_manager=self._cache_manager,
+        pipeline_graph_renderer=self._renderer)
+    display.start_periodic_update()
+    result = pipeline_to_execute.run()
+    result.wait_until_finish()
+    display.stop_periodic_update()
 
-      # TODO: make the StreamingCacheManager and TestStreamServiceController
-      # constructed when the InteractiveEnvironment is imported.
-      class TestStreamVisitor(PipelineVisitor):
-        def visit_transform(self, transform_node):
-          from apache_beam.testing.test_stream import TestStream
-          if (isinstance(transform_node.transform, TestStream) and
-              not transform_node.transform._events):
-            transform_node.transform._endpoint = endpoint
+    return PipelineResult(result, self, self._analyzer.pipeline_info(),
+                          self._cache_manager, pcolls_to_pcoll_id)
 
-      pipeline_to_execute.visit(TestStreamVisitor())
+  def _pcolls_to_pcoll_id(self, pipeline, original_context):
+    """Returns a dict mapping PCollections string to PCollection IDs.
 
-    if not self._skip_display:
-      a_pipeline_graph = pipeline_graph.PipelineGraph(
-          pipeline_instrument.original_pipeline,
-          render_option=self._render_option)
-      a_pipeline_graph.display_graph()
+    Using a PipelineVisitor to iterate over every node in the pipeline,
+    records the mapping from PCollections to PCollections IDs. This mapping
+    will be used to query cached PCollections.
 
-    main_job_result = PipelineResult(
-        pipeline_to_execute.run(), pipeline_instrument)
-    # In addition to this pipeline result setting, redundant result setting from
-    # outer scopes are also recommended since the user_pipeline might not be
-    # available from within this scope.
-    if user_pipeline:
-      ie.current_env().set_pipeline_result(user_pipeline, main_job_result)
+    Args:
+      pipeline: (pipeline.Pipeline)
+      original_context: (pipeline_context.PipelineContext)
 
-    if self._blocking:
-      main_job_result.wait_until_finish()
+    Returns:
+      (dict from str to str) a dict mapping str(pcoll) to pcoll_id.
+    """
+    pcolls_to_pcoll_id = {}
 
-    if main_job_result.state is beam.runners.runner.PipelineState.DONE:
-      # pylint: disable=dict-values-not-iterating
-      ie.current_env().mark_pcollection_computed(
-          pipeline_instrument.runner_pcoll_to_user_pcoll.values())
+    from apache_beam.pipeline import PipelineVisitor  # pylint: disable=import-error
 
-    return main_job_result
+    class PCollVisitor(PipelineVisitor):  # pylint: disable=used-before-assignment
+      """"A visitor that records input and output values to be replaced.
+
+      Input and output values that should be updated are recorded in maps
+      input_replacements and output_replacements respectively.
+
+      We cannot update input and output values while visiting since that
+      results in validation errors.
+      """
+
+      def enter_composite_transform(self, transform_node):
+        self.visit_transform(transform_node)
+
+      def visit_transform(self, transform_node):
+        for pcoll in transform_node.outputs.values():
+          pcolls_to_pcoll_id[str(pcoll)] = original_context.pcollections.get_id(
+              pcoll)
+
+    pipeline.visit(PCollVisitor())
+    return pcolls_to_pcoll_id
 
 
 class PipelineResult(beam.runners.runner.PipelineResult):
   """Provides access to information about a pipeline."""
-  def __init__(self, underlying_result, pipeline_instrument):
-    """Constructor of PipelineResult.
 
-    Args:
-      underlying_result: (PipelineResult) the result returned by the underlying
-          runner running the pipeline.
-      pipeline_instrument: (PipelineInstrument) pipeline instrument describing
-          the pipeline being executed with interactivity applied and related
-          metadata including where the interactivity-backing cache lies.
-    """
+  def __init__(self, underlying_result, runner, pipeline_info, cache_manager,
+               pcolls_to_pcoll_id):
     super(PipelineResult, self).__init__(underlying_result.state)
-    self._underlying_result = underlying_result
-    self._pipeline_instrument = pipeline_instrument
+    self._runner = runner
+    self._pipeline_info = pipeline_info
+    self._cache_manager = cache_manager
+    self._pcolls_to_pcoll_id = pcolls_to_pcoll_id
 
-  @property
-  def state(self):
-    return self._underlying_result.state
+  def _cache_label(self, pcoll):
+    pcoll_id = self._pcolls_to_pcoll_id[str(pcoll)]
+    return self._pipeline_info.cache_label(pcoll_id)
 
   def wait_until_finish(self):
-    self._underlying_result.wait_until_finish()
+    # PipelineResult is not constructed until pipeline execution is finished.
+    return
 
-  def get(self, pcoll, include_window_info=False):
-    """Materializes the PCollection into a list.
-
-    If include_window_info is True, then returns the elements as
-    WindowedValues. Otherwise, return the element as itself.
-    """
-    return list(self.read(pcoll, include_window_info))
-
-  def read(self, pcoll, include_window_info=False):
-    """Reads the PCollection one element at a time from cache.
-
-    If include_window_info is True, then returns the elements as
-    WindowedValues. Otherwise, return the element as itself.
-    """
-    key = self._pipeline_instrument.cache_key(pcoll)
-    cache_manager = ie.current_env().get_cache_manager(
-        self._pipeline_instrument.user_pipeline)
-    if cache_manager.exists('full', key):
-      coder = cache_manager.load_pcoder('full', key)
-      reader, _ = cache_manager.read('full', key)
-      return to_element_list(reader, coder, include_window_info)
+  def get(self, pcoll):
+    cache_label = self._cache_label(pcoll)
+    if self._cache_manager.exists('full', cache_label):
+      pcoll_list, _ = self._cache_manager.read('full', cache_label)
+      return pcoll_list
     else:
+      self._runner._desired_cache_labels.add(cache_label)  # pylint: disable=protected-access
       raise ValueError('PCollection not available, please run the pipeline.')
 
-  def cancel(self):
-    self._underlying_result.cancel()
+  def sample(self, pcoll):
+    cache_label = self._cache_label(pcoll)
+    if self._cache_manager.exists('sample', cache_label):
+      return self._cache_manager.read('sample', cache_label)
+    else:
+      self._runner._desired_cache_labels.add(cache_label)  # pylint: disable=protected-access
+      raise ValueError('PCollection not available, please run the pipeline.')

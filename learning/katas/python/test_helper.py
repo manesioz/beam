@@ -149,8 +149,7 @@ def test_text_equals(text, error_text):
         failed(error_text)
 
 
-def test_answer_placeholders_text_deleted(
-        error_text="Solution has empty answer prompt(s)."):
+def test_answer_placeholders_text_deleted(error_text="Don't just delete task text"):
     """
         Checks that all answer placeholders are not empty
     """

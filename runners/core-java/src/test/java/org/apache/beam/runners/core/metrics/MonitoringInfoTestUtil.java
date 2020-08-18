@@ -38,7 +38,7 @@ public class MonitoringInfoTestUtil {
     SimpleMonitoringInfoBuilder builder = new SimpleMonitoringInfoBuilder();
     builder.setUrn(MonitoringInfoConstants.Urns.ELEMENT_COUNT);
     builder.setLabel(MonitoringInfoConstants.Labels.PCOLLECTION, "testPCollection");
-    builder.setInt64SumValue(value);
+    builder.setInt64Value(value);
     return builder.build();
   }
 }

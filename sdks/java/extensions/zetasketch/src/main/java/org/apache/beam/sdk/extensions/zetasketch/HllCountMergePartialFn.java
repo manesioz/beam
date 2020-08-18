@@ -18,12 +18,11 @@
 package org.apache.beam.sdk.extensions.zetasketch;
 
 import com.google.zetasketch.HyperLogLogPlusPlus;
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.CoderRegistry;
 import org.apache.beam.sdk.coders.NullableCoder;
 import org.apache.beam.sdk.transforms.Combine;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,7 +32,7 @@ import org.slf4j.LoggerFactory;
  * @param <HllT> type of the HLL++ sketch to be merged
  */
 class HllCountMergePartialFn<HllT>
-    extends Combine.CombineFn<byte @Nullable [], @Nullable HyperLogLogPlusPlus<HllT>, byte[]> {
+    extends Combine.CombineFn<byte[], HyperLogLogPlusPlus<HllT>, byte[]> {
 
   private static final Logger LOG = LoggerFactory.getLogger(HllCountMergePartialFn.class);
 
@@ -45,22 +44,24 @@ class HllCountMergePartialFn<HllT>
   }
 
   @Override
-  public Coder<@Nullable HyperLogLogPlusPlus<HllT>> getAccumulatorCoder(
-      CoderRegistry registry, Coder<byte @Nullable []> inputCoder) {
+  public Coder<HyperLogLogPlusPlus<HllT>> getAccumulatorCoder(
+      CoderRegistry registry, Coder<byte[]> inputCoder) {
     // Use null to represent the "identity element" of the merge operation.
     return NullableCoder.of(HyperLogLogPlusPlusCoder.of());
   }
 
+  @Nullable
   @Override
-  public @Nullable HyperLogLogPlusPlus<HllT> createAccumulator() {
+  public HyperLogLogPlusPlus<HllT> createAccumulator() {
     // Cannot create a sketch corresponding to an empty data set, because we do not know the sketch
     // type and precision. So use null to represent the "identity element" of the merge operation.
     return null;
   }
 
+  @Nullable
   @Override
-  public @Nullable HyperLogLogPlusPlus<HllT> addInput(
-      @Nullable HyperLogLogPlusPlus<HllT> accumulator, byte @Nullable [] input) {
+  public HyperLogLogPlusPlus<HllT> addInput(
+      @Nullable HyperLogLogPlusPlus<HllT> accumulator, byte[] input) {
     if (input == null) {
       LOG.warn(
           "Received a null and treated it as an empty sketch. "
@@ -80,11 +81,10 @@ class HllCountMergePartialFn<HllT>
     }
   }
 
+  @Nullable
   @Override
-  // Spotbugs doesn't understand Nullable generics
-  @SuppressFBWarnings("NP_PARAMETER_MUST_BE_NONNULL_BUT_MARKED_AS_NULLABLE")
-  public @Nullable HyperLogLogPlusPlus<HllT> mergeAccumulators(
-      Iterable<@Nullable HyperLogLogPlusPlus<HllT>> accumulators) {
+  public HyperLogLogPlusPlus<HllT> mergeAccumulators(
+      Iterable<HyperLogLogPlusPlus<HllT>> accumulators) {
     HyperLogLogPlusPlus<HllT> merged = createAccumulator();
     for (HyperLogLogPlusPlus<HllT> accumulator : accumulators) {
       if (accumulator == null) {

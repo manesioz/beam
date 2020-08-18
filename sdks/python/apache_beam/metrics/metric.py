@@ -24,15 +24,12 @@ and displayed as part of their pipeline execution.
 - Metrics - This class lets pipeline and transform writers create and access
     metric objects such as counters, distributions, etc.
 """
-# pytype: skip-file
-
 from __future__ import absolute_import
 
 import inspect
 from builtins import object
 
-from apache_beam.metrics import cells
-from apache_beam.metrics.execution import MetricUpdater
+from apache_beam.metrics.execution import MetricsEnvironment
 from apache_beam.metrics.metricbase import Counter
 from apache_beam.metrics.metricbase import Distribution
 from apache_beam.metrics.metricbase import Gauge
@@ -100,24 +97,39 @@ class Metrics(object):
 
   class DelegatingCounter(Counter):
     """Metrics Counter that Delegates functionality to MetricsEnvironment."""
+
     def __init__(self, metric_name):
       super(Metrics.DelegatingCounter, self).__init__()
       self.metric_name = metric_name
-      self.inc = MetricUpdater(cells.CounterCell, metric_name, default=1)
+
+    def inc(self, n=1):
+      container = MetricsEnvironment.current_container()
+      if container is not None:
+        container.get_counter(self.metric_name).inc(n)
 
   class DelegatingDistribution(Distribution):
     """Metrics Distribution Delegates functionality to MetricsEnvironment."""
+
     def __init__(self, metric_name):
       super(Metrics.DelegatingDistribution, self).__init__()
       self.metric_name = metric_name
-      self.update = MetricUpdater(cells.DistributionCell, metric_name)
+
+    def update(self, value):
+      container = MetricsEnvironment.current_container()
+      if container is not None:
+        container.get_distribution(self.metric_name).update(value)
 
   class DelegatingGauge(Gauge):
     """Metrics Gauge that Delegates functionality to MetricsEnvironment."""
+
     def __init__(self, metric_name):
       super(Metrics.DelegatingGauge, self).__init__()
       self.metric_name = metric_name
-      self.set = MetricUpdater(cells.GaugeCell, metric_name)
+
+    def set(self, value):
+      container = MetricsEnvironment.current_container()
+      if container is not None:
+        container.get_gauge(self.metric_name).set(value)
 
 
 class MetricResults(object):
@@ -127,12 +139,15 @@ class MetricResults(object):
 
   @staticmethod
   def _matches_name(filter, metric_key):
-    if ((filter.namespaces and
-         metric_key.metric.namespace not in filter.namespaces) or
-        (filter.names and metric_key.metric.name not in filter.names)):
-      return False
-    else:
+    if not filter.names and not filter.namespaces:
       return True
+
+    if ((filter.namespaces and
+         metric_key.metric.namespace in filter.namespaces) or
+        (filter.names and
+         metric_key.metric.name in filter.names)):
+      return True
+    return False
 
   @staticmethod
   def _is_sub_list(needle, haystack):
@@ -141,7 +156,7 @@ class MetricResults(object):
     needle_len = len(needle)
     haystack_len = len(haystack)
     for i in range(0, haystack_len - needle_len + 1):
-      if haystack[i:i + needle_len] == needle:
+      if haystack[i:i+needle_len] == needle:
         return True
 
     return False
@@ -151,7 +166,9 @@ class MetricResults(object):
     """True iff the '/'-delimited pieces of filter_scope exist as a sub-list
     of the '/'-delimited pieces of actual_scope"""
     return MetricResults._is_sub_list(
-        filter_scope.split('/'), actual_scope.split('/'))
+        filter_scope.split('/'),
+        actual_scope.split('/')
+    )
 
   @staticmethod
   def _matches_scope(filter, metric_key):
@@ -218,11 +235,6 @@ class MetricsFilter(object):
   @property
   def namespaces(self):
     return frozenset(self._namespaces)
-
-  def with_metric(self, metric):
-    return (
-        self.with_name(metric.metric_name.name).with_namespace(
-            metric.metric_name.namespace))
 
   def with_name(self, name):
     return self.with_names([name])

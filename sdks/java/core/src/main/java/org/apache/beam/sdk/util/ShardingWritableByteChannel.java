@@ -21,7 +21,6 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.WritableByteChannel;
 import java.util.ArrayList;
-import org.apache.beam.sdk.annotations.Internal;
 
 /**
  * Implements a WritableByteChannel that may contain multiple output shards.
@@ -32,7 +31,6 @@ import org.apache.beam.sdk.annotations.Internal;
  * <p>The channel is considered open if all downstream channels are open, and closes all downstream
  * channels when closed.
  */
-@Internal
 public class ShardingWritableByteChannel implements WritableByteChannel {
 
   /** Special shard number that causes a write to all shards. */

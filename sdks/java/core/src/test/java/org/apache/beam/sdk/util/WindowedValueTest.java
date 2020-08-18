@@ -78,12 +78,6 @@ public class WindowedValueTest {
   }
 
   @Test
-  public void testParamWindowedValueCoderIsSerializableWithWellKnownCoderType() {
-    CoderProperties.coderSerializable(
-        WindowedValue.getParamWindowedValueCoder(GlobalWindow.Coder.INSTANCE));
-  }
-
-  @Test
   public void testValueOnlyWindowedValueCoderIsSerializableWithWellKnownCoderType() {
     CoderProperties.coderSerializable(WindowedValue.getValueOnlyCoder(GlobalWindow.Coder.INSTANCE));
   }

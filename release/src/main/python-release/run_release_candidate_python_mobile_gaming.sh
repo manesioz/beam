@@ -80,7 +80,6 @@ function verify_userscore_dataflow() {
   output_file_name="$USERSCORE_OUTPUT_PREFIX-dataflow-runner.txt"
   python -m apache_beam.examples.complete.game.user_score \
     --project=$PROJECT_ID \
-    --region=$REGION_ID \
     --runner=DataflowRunner \
     --temp_location=gs://$BUCKET_NAME/temp/ \
     --sdk_location=$BEAM_PYTHON_SDK \
@@ -122,7 +121,6 @@ function verify_hourlyteamscore_dataflow() {
   print_separator "Running HourlyTeamScore example with DataflowRunner"
   python -m apache_beam.examples.complete.game.hourly_team_score \
     --project=$PROJECT_ID \
-    --region=$REGION_ID \
     --dataset=$DATASET \
     --runner=DataflowRunner \
     --temp_location=gs://$BUCKET_NAME/temp/ \

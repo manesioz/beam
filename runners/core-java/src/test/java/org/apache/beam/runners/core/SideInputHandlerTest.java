@@ -103,9 +103,7 @@ public class SideInputHandlerTest {
     sideInputHandler.addSideInputValue(
         view1,
         valuesInWindow(
-            materializeValuesFor(view1.getPipeline().getOptions(), View.asIterable(), "Hello"),
-            new Instant(0),
-            firstWindow));
+            materializeValuesFor(View.asIterable(), "Hello"), new Instant(0), firstWindow));
 
     // now side input should be ready
     assertTrue(sideInputHandler.isReady(view1, firstWindow));
@@ -129,10 +127,7 @@ public class SideInputHandlerTest {
     // add a first value for view1
     sideInputHandler.addSideInputValue(
         view1,
-        valuesInWindow(
-            materializeValuesFor(view1.getPipeline().getOptions(), View.asIterable(), "Hello"),
-            new Instant(0),
-            window));
+        valuesInWindow(materializeValuesFor(View.asIterable(), "Hello"), new Instant(0), window));
 
     assertThat(sideInputHandler.get(view1, window), contains("Hello"));
 
@@ -140,10 +135,7 @@ public class SideInputHandlerTest {
     sideInputHandler.addSideInputValue(
         view1,
         valuesInWindow(
-            materializeValuesFor(
-                view1.getPipeline().getOptions(), View.asIterable(), "Ciao", "Buongiorno"),
-            new Instant(0),
-            window));
+            materializeValuesFor(View.asIterable(), "Ciao", "Buongiorno"), new Instant(0), window));
 
     assertThat(sideInputHandler.get(view1, window), contains("Ciao", "Buongiorno"));
   }
@@ -162,9 +154,7 @@ public class SideInputHandlerTest {
     sideInputHandler.addSideInputValue(
         view1,
         valuesInWindow(
-            materializeValuesFor(view1.getPipeline().getOptions(), View.asIterable(), "Hello"),
-            new Instant(0),
-            firstWindow));
+            materializeValuesFor(View.asIterable(), "Hello"), new Instant(0), firstWindow));
 
     assertThat(sideInputHandler.get(view1, firstWindow), contains("Hello"));
 
@@ -172,10 +162,7 @@ public class SideInputHandlerTest {
     sideInputHandler.addSideInputValue(
         view1,
         valuesInWindow(
-            materializeValuesFor(
-                view1.getPipeline().getOptions(), View.asIterable(), "Arrivederci"),
-            new Instant(0),
-            secondWindow));
+            materializeValuesFor(View.asIterable(), "Arrivederci"), new Instant(0), secondWindow));
 
     assertThat(sideInputHandler.get(view1, secondWindow), contains("Arrivederci"));
 
@@ -196,9 +183,7 @@ public class SideInputHandlerTest {
     sideInputHandler.addSideInputValue(
         view1,
         valuesInWindow(
-            materializeValuesFor(view1.getPipeline().getOptions(), View.asIterable(), "Hello"),
-            new Instant(0),
-            firstWindow));
+            materializeValuesFor(View.asIterable(), "Hello"), new Instant(0), firstWindow));
 
     assertThat(sideInputHandler.get(view1, firstWindow), contains("Hello"));
 
@@ -209,9 +194,7 @@ public class SideInputHandlerTest {
     sideInputHandler.addSideInputValue(
         view2,
         valuesInWindow(
-            materializeValuesFor(view2.getPipeline().getOptions(), View.asIterable(), "Salut"),
-            new Instant(0),
-            firstWindow));
+            materializeValuesFor(View.asIterable(), "Salut"), new Instant(0), firstWindow));
 
     assertTrue(sideInputHandler.isReady(view2, firstWindow));
     assertThat(sideInputHandler.get(view2, firstWindow), contains("Salut"));

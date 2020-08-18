@@ -17,14 +17,13 @@
  */
 package org.apache.beam.runners.direct;
 
-import java.util.stream.StreamSupport;
+import javax.annotation.Nullable;
 import org.apache.beam.runners.core.StateNamespace;
 import org.apache.beam.runners.core.TimerInternals;
 import org.apache.beam.runners.direct.WatermarkManager.TimerUpdate;
 import org.apache.beam.runners.direct.WatermarkManager.TimerUpdate.TimerUpdateBuilder;
 import org.apache.beam.runners.direct.WatermarkManager.TransformWatermarks;
 import org.apache.beam.sdk.state.TimeDomain;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Instant;
 
 /** An implementation of {@link TimerInternals} where all relevant data exists in memory. */
@@ -47,20 +46,11 @@ class DirectTimerInternals implements TimerInternals {
 
   @Override
   public void setTimer(
-      StateNamespace namespace,
-      String timerId,
-      String timerFamilyId,
-      Instant target,
-      Instant outputTimestamp,
-      TimeDomain timeDomain) {
-    timerUpdateBuilder.setTimer(
-        TimerData.of(timerId, timerFamilyId, namespace, target, outputTimestamp, timeDomain));
+      StateNamespace namespace, String timerId, Instant target, TimeDomain timeDomain) {
+    timerUpdateBuilder.setTimer(TimerData.of(timerId, namespace, target, timeDomain));
   }
 
-  /**
-   * @deprecated use {@link #setTimer(StateNamespace, String, String, Instant, Instant,
-   *     TimeDomain)}.
-   */
+  /** @deprecated use {@link #setTimer(StateNamespace, String, Instant, TimeDomain)}. */
   @Deprecated
   @Override
   public void setTimer(TimerData timerData) {
@@ -75,7 +65,7 @@ class DirectTimerInternals implements TimerInternals {
   /** @deprecated use {@link #deleteTimer(StateNamespace, String, TimeDomain)}. */
   @Deprecated
   @Override
-  public void deleteTimer(StateNamespace namespace, String timerId, String timerFamilyId) {
+  public void deleteTimer(StateNamespace namespace, String timerId) {
     throw new UnsupportedOperationException("Canceling of timer by ID is not yet supported.");
   }
 
@@ -90,19 +80,14 @@ class DirectTimerInternals implements TimerInternals {
     return timerUpdateBuilder.build();
   }
 
-  public boolean containsUpdateForTimeBefore(Instant time) {
-    TimerUpdate update = timerUpdateBuilder.build();
-    return hasTimeBefore(update.getSetTimers(), time)
-        || hasTimeBefore(update.getDeletedTimers(), time);
-  }
-
   @Override
   public Instant currentProcessingTime() {
     return processingTimeClock.now();
   }
 
   @Override
-  public @Nullable Instant currentSynchronizedProcessingTime() {
+  @Nullable
+  public Instant currentSynchronizedProcessingTime() {
     return watermarks.getSynchronizedProcessingInputTime();
   }
 
@@ -112,12 +97,8 @@ class DirectTimerInternals implements TimerInternals {
   }
 
   @Override
-  public @Nullable Instant currentOutputWatermarkTime() {
+  @Nullable
+  public Instant currentOutputWatermarkTime() {
     return watermarks.getOutputWatermark();
-  }
-
-  private boolean hasTimeBefore(Iterable<? extends TimerData> timers, Instant time) {
-    return StreamSupport.stream(timers.spliterator(), false)
-        .anyMatch(td -> td.getTimestamp().isBefore(time));
   }
 }

@@ -38,12 +38,6 @@ class PrecommitJobBuilder {
   /** If defined, set of path expressions used to trigger the job on commit. */
   List<String> triggerPathPatterns = []
 
-  /** If defined, set of path expressions to not trigger the job on commit. */
-  List<String> excludePathPatterns = []
-
-  /** Whether to trigger on new PR commits. Useful to set to false when testing new jobs. */
-  boolean commitTriggering = true
-
   /**
    * Define a set of pre-commit jobs.
    *
@@ -51,9 +45,7 @@ class PrecommitJobBuilder {
    */
   void build(Closure additionalCustomization = {}) {
     defineCronJob additionalCustomization
-    if (commitTriggering) {
-      defineCommitJob additionalCustomization
-    }
+    defineCommitJob additionalCustomization
     definePhraseJob additionalCustomization
   }
 
@@ -86,12 +78,10 @@ class PrecommitJobBuilder {
       description buildDescription('for each commit push.')
       concurrentBuild()
       commonJobProperties.setPullRequestBuildTrigger(delegate,
-          githubUiHint(),
-          '',
-          false,
-          true,
-          triggerPathPatterns,
-          excludePathPatterns)
+        githubUiHint(),
+        '',
+        false,
+        triggerPathPatterns)
     }
     job.with additionalCustomization
   }
@@ -110,9 +100,9 @@ class PrecommitJobBuilder {
     def allowRemotePoll = !usesRegionFilter
     return scope.job("beam_PreCommit_${nameBase}_${nameSuffix}") {
       commonJobProperties.setTopLevelMainJobProperties(delegate,
-          'master',
-          timeoutMins,
-          allowRemotePoll) // needed for included regions PR triggering; see [JENKINS-23606]
+      'master',
+      timeoutMins,
+      allowRemotePoll) // needed for included regions PR triggering; see [JENKINS-23606]
       steps {
         gradle {
           rootBuildScriptDir(commonJobProperties.checkoutDir)

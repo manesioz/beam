@@ -19,44 +19,40 @@
 import CommonJobProperties as commonJobProperties
 import PostcommitJobBuilder
 import CronJobBuilder
-import LoadTestsBuilder
 
-def chicagoTaxiJob = { scope ->
-  scope.description('Runs the Chicago Taxi Example on the Dataflow runner.')
 
-  // Set common parameters.
-  commonJobProperties.setTopLevelMainJobProperties(scope)
+// This job runs the Chicao Taxi Example script on Dataflow
+PostcommitJobBuilder.postCommitJob('beam_PostCommit_Python_Chicago_Taxi_Dataflow',
+        'Run Chicago Taxi on Dataflow', 'Google Cloud Dataflow Runner Chicago Taxi Example', this) {
+    description('Runs the Chicago Taxi Example on the Dataflow runner.')
 
-  def pipelineOptions = [
-    num_workers          : 5,
-    autoscaling_algorithm: 'NONE',
-  ]
+    // Set common parameters.
+    commonJobProperties.setTopLevelMainJobProperties(delegate)
 
-  // Gradle goals for this job.
-  scope.steps {
-    gradle {
-      rootBuildScriptDir(commonJobProperties.checkoutDir)
-      commonJobProperties.setGradleSwitches(delegate)
-      tasks(':sdks:python:test-suites:dataflow:chicagoTaxiExample')
-      switches('-PgcsRoot=gs://temp-storage-for-perf-tests/chicago-taxi')
-      switches("-PpipelineOptions=\"${LoadTestsBuilder.parseOptions(pipelineOptions)}\"")
+    // Gradle goals for this job.
+    steps {
+        gradle {
+            rootBuildScriptDir(commonJobProperties.checkoutDir)
+            tasks(':sdks:python:test-suites:dataflow:py2:dataflowChicagoTaxiExample')
+            switches('-PgcsRoot=gs://temp-storage-for-perf-tests/chicago-taxi')
+            switches('-Prunner=DataflowRunner')
+        }
     }
-  }
 }
 
-PostcommitJobBuilder.postCommitJob(
-    'beam_PostCommit_Python_Chicago_Taxi_Dataflow',
-    'Run Chicago Taxi on Dataflow',
-    'Chicago Taxi Example on Dataflow ("Run Chicago Taxi on Dataflow")',
-    this
-    ) {
-      chicagoTaxiJob(delegate)
-    }
+CronJobBuilder.cronJob('beam_PostCommit_Python_Chicago_Taxi_Dataflow', 'H 14 * * *', this) {
+    description('Runs the Chicago Taxi Example on the Dataflow runner.')
 
-CronJobBuilder.cronJob(
-    'beam_PostCommit_Python_Chicago_Taxi_Dataflow',
-    'H 14 * * *',
-    this
-    ) {
-      chicagoTaxiJob(delegate)
+    // Set common parameters.
+    commonJobProperties.setTopLevelMainJobProperties(delegate)
+
+    // Gradle goals for this job.
+    steps {
+        gradle {
+            rootBuildScriptDir(commonJobProperties.checkoutDir)
+            tasks(':sdks:python:test-suites:dataflow:py2:dataflowChicagoTaxiExample')
+            switches('-PgcsRoot=gs://temp-storage-for-perf-tests/chicago-taxi')
+            switches('-Prunner=DataflowRunner')
+        }
     }
+}

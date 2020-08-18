@@ -16,7 +16,7 @@
 package cmd
 
 import (
-	fnpb "github.com/apache/beam/sdks/go/pkg/beam/model/fnexecution_v1"
+	pb "github.com/apache/beam/sdks/go/pkg/beam/model/fnexecution_v1"
 	"github.com/golang/protobuf/proto"
 	"github.com/spf13/cobra"
 )
@@ -46,9 +46,9 @@ func infoFn(cmd *cobra.Command, args []string) error {
 	}
 	defer cc.Close()
 
-	client := fnpb.NewProvisionServiceClient(cc)
+	client := pb.NewProvisionServiceClient(cc)
 
-	info, err := client.GetProvisionInfo(ctx, &fnpb.GetProvisionInfoRequest{})
+	info, err := client.GetProvisionInfo(ctx, &pb.GetProvisionInfoRequest{})
 	if err != nil {
 		return err
 	}

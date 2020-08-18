@@ -31,7 +31,7 @@ import org.apache.beam.runners.core.construction.PTransformTranslation;
 import org.apache.beam.runners.core.construction.graph.PipelineNode.PCollectionNode;
 import org.apache.beam.runners.core.construction.graph.PipelineNode.PTransformNode;
 import org.apache.beam.sdk.transforms.Flatten;
-import org.apache.beam.vendor.grpc.v1p26p0.com.google.protobuf.InvalidProtocolBufferException;
+import org.apache.beam.vendor.grpc.v1p21p0.com.google.protobuf.InvalidProtocolBufferException;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableMap;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Maps;
 import org.slf4j.Logger;
@@ -50,17 +50,11 @@ class GreedyPCollectionFusers {
               PTransformTranslation.SPLITTABLE_PAIR_WITH_RESTRICTION_URN,
               GreedyPCollectionFusers::canFuseParDo)
           .put(
-              PTransformTranslation.SPLITTABLE_PROCESS_KEYED_URN,
-              GreedyPCollectionFusers::cannotFuse)
-          .put(
-              PTransformTranslation.SPLITTABLE_PROCESS_ELEMENTS_URN,
-              GreedyPCollectionFusers::cannotFuse)
-          .put(
               PTransformTranslation.SPLITTABLE_SPLIT_AND_SIZE_RESTRICTIONS_URN,
               GreedyPCollectionFusers::canFuseParDo)
           .put(
               PTransformTranslation.SPLITTABLE_PROCESS_SIZED_ELEMENTS_AND_RESTRICTIONS_URN,
-              GreedyPCollectionFusers::cannotFuse)
+              GreedyPCollectionFusers::canFuseParDo)
           .put(
               PTransformTranslation.COMBINE_PER_KEY_PRECOMBINE_TRANSFORM_URN,
               GreedyPCollectionFusers::canFuseCompatibleEnvironment)
@@ -203,13 +197,12 @@ class GreedyPCollectionFusers {
     try {
       ParDoPayload payload = ParDoPayload.parseFrom(parDo.getTransform().getSpec().getPayload());
       if (Maps.filterKeys(
-              parDo.getTransform().getInputsMap(),
-              s -> payload.getTimerFamilySpecsMap().containsKey(s))
+              parDo.getTransform().getInputsMap(), s -> payload.getTimerSpecsMap().containsKey(s))
           .values()
           .contains(candidate.getId())) {
         // Allow fusion across timer PCollections because they are a self loop.
         return true;
-      } else if (payload.getStateSpecsCount() > 0 || payload.getTimerFamilySpecsCount() > 0) {
+      } else if (payload.getStateSpecsCount() > 0 || payload.getTimerSpecsCount() > 0) {
         // Inputs to a ParDo that uses State or Timers must be key-partitioned, and elements for
         // a key must execute serially. To avoid checking if the rest of the stage is
         // key-partitioned and preserves keys, these ParDos do not fuse into an existing stage.

@@ -28,8 +28,6 @@ per line in the following format:
   [TEAM_NAME, POINTS]
 """
 
-# pytype: skip-file
-
 from __future__ import absolute_import
 
 import argparse
@@ -46,6 +44,7 @@ from apache_beam.options.pipeline_options import SetupOptions
 
 class JsonCoder(object):
   """A JSON coder interpreting each line as a JSON string."""
+
   def encode(self, x):
     return json.dumps(x)
 
@@ -76,9 +75,12 @@ def run(argv=None):
   """Runs the workflow computing total points from a collection of matches."""
 
   parser = argparse.ArgumentParser()
-  parser.add_argument('--input', required=True, help='Input file to process.')
-  parser.add_argument(
-      '--output', required=True, help='Output file to write results to.')
+  parser.add_argument('--input',
+                      required=True,
+                      help='Input file to process.')
+  parser.add_argument('--output',
+                      required=True,
+                      help='Output file to write results to.')
   known_args, pipeline_args = parser.parse_known_args(argv)
   # We use the save_main_session option because one or more DoFn's in this
   # workflow rely on global context (e.g., a module imported at module level).
@@ -86,12 +88,11 @@ def run(argv=None):
   pipeline_options.view_as(SetupOptions).save_main_session = True
 
   with beam.Pipeline(options=pipeline_options) as p:
-    (  # pylint: disable=expression-not-assigned
-        p
-        | 'read' >> ReadFromText(known_args.input, coder=JsonCoder())
-        | 'points' >> beam.FlatMap(compute_points)
-        | beam.CombinePerKey(sum)
-        | 'write' >> WriteToText(known_args.output, coder=JsonCoder()))
+    (p  # pylint: disable=expression-not-assigned
+     | 'read' >> ReadFromText(known_args.input, coder=JsonCoder())
+     | 'points' >> beam.FlatMap(compute_points)
+     | beam.CombinePerKey(sum)
+     | 'write' >> WriteToText(known_args.output, coder=JsonCoder()))
 
 
 if __name__ == '__main__':

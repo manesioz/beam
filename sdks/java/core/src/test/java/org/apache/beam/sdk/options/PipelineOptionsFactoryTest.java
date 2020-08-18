@@ -19,7 +19,6 @@ package org.apache.beam.sdk.options;
 
 import static java.util.Locale.ROOT;
 import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Maps.uniqueIndex;
-import static org.hamcrest.Matchers.anyOf;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasItem;
@@ -75,6 +74,7 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Immutabl
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableMap;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ListMultimap;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Sets;
+import org.hamcrest.Matchers;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
@@ -506,7 +506,7 @@ public class PipelineOptionsFactoryTest {
             + "PipelineOptionsFactoryTest$MultipleGettersWithInconsistentJsonIgnore]");
 
     expectedException.expectMessage(
-        anyOf(
+        Matchers.anyOf(
             containsString(
                 java.util.Arrays.toString(
                     new String[] {
@@ -640,18 +640,12 @@ public class PipelineOptionsFactoryTest {
     GetterWithDefault options = PipelineOptionsFactory.as(GetterWithDefault.class);
 
     expectedException.expect(IllegalArgumentException.class);
-
-    // Make sure the error message says what the problem is, generally
-    expectedException.expectMessage("contradictory annotations");
-
-    // Make sure the error message gives actionable details about what
-    // annotations were contradictory.
-    // Note that the quotes in the unparsed string are present in Java 11 but absent in Java 8
     expectedException.expectMessage(
-        anyOf(
-            containsString("Default.String(value=\"abc\")"),
-            containsString("Default.String(value=abc)")));
-    expectedException.expectMessage("Default.Integer(value=1");
+        "Property [object] is marked with contradictory annotations. Found ["
+            + "[Default.Integer(value=1) on org.apache.beam.sdk.options.PipelineOptionsFactoryTest"
+            + "$GetterWithDefault#getObject()], "
+            + "[Default.String(value=abc) on org.apache.beam.sdk.options.PipelineOptionsFactoryTest"
+            + "$GetterWithInconsistentDefaultType#getObject()]].");
 
     // When we attempt to convert, we should error at this moment.
     options.as(GetterWithInconsistentDefaultType.class);
@@ -703,18 +697,12 @@ public class PipelineOptionsFactoryTest {
   @Test
   public void testGettersWithMultipleDefaults() throws Exception {
     expectedException.expect(IllegalArgumentException.class);
-
-    // Make sure the error message says what the problem is, generally
-    expectedException.expectMessage("contradictory annotations");
-
-    // Make sure the error message gives actionable details about what annotations were
-    // contradictory.
-    // Note that the quotes in the unparsed string are present in Java 11 but absent in Java 8
     expectedException.expectMessage(
-        anyOf(
-            containsString("Default.String(value=\"abc\")"),
-            containsString("Default.String(value=abc)")));
-    expectedException.expectMessage("Default.Integer(value=0)");
+        "Property [object] is marked with contradictory annotations. Found ["
+            + "[Default.String(value=abc) on org.apache.beam.sdk.options.PipelineOptionsFactoryTest"
+            + "$GettersWithMultipleDefault#getObject()], "
+            + "[Default.Integer(value=0) on org.apache.beam.sdk.options.PipelineOptionsFactoryTest"
+            + "$GettersWithMultipleDefault#getObject()]].");
 
     // When we attempt to create, we should error at this moment.
     PipelineOptionsFactory.as(GettersWithMultipleDefault.class);
@@ -769,7 +757,7 @@ public class PipelineOptionsFactoryTest {
             + "PipelineOptionsFactoryTest$MultipleGettersWithInconsistentDefault]");
 
     expectedException.expectMessage(
-        anyOf(
+        Matchers.anyOf(
             containsString(
                 java.util.Arrays.toString(
                     new String[] {
@@ -1505,8 +1493,7 @@ public class PipelineOptionsFactoryTest {
     expectedException.expect(IllegalArgumentException.class);
     expectedException.expectMessage(
         emptyStringErrorMessage(
-            "java.util.Map<java.lang.Integer, java.util.Map<java.lang.Integer,"
-                + " java.lang.Integer>>"));
+            "java.util.Map<java.lang.Integer, java.util.Map<java.lang.Integer, java.lang.Integer>>"));
     PipelineOptionsFactory.fromArgs(missingArg).as(Maps.class);
   }
 
@@ -1860,12 +1847,13 @@ public class PipelineOptionsFactoryTest {
   public void testAllFromPipelineOptions() {
     expectedException.expect(IllegalArgumentException.class);
     expectedException.expectMessage(
-        "All inherited interfaces of"
-            + " [org.apache.beam.sdk.options.PipelineOptionsFactoryTest$PipelineOptionsInheritedInvalid]"
-            + " should inherit from the PipelineOptions interface. The following inherited"
-            + " interfaces do not:\n"
-            + " - org.apache.beam.sdk.options.PipelineOptionsFactoryTest$InvalidPipelineOptions1\n"
-            + " - org.apache.beam.sdk.options.PipelineOptionsFactoryTest$InvalidPipelineOptions2");
+        "All inherited interfaces of [org.apache.beam.sdk.options.PipelineOptionsFactoryTest"
+            + "$PipelineOptionsInheritedInvalid] should inherit from the PipelineOptions interface. "
+            + "The following inherited interfaces do not:\n"
+            + " - org.apache.beam.sdk.options.PipelineOptionsFactoryTest"
+            + "$InvalidPipelineOptions1\n"
+            + " - org.apache.beam.sdk.options.PipelineOptionsFactoryTest"
+            + "$InvalidPipelineOptions2");
 
     PipelineOptionsFactory.as(PipelineOptionsInheritedInvalid.class);
   }

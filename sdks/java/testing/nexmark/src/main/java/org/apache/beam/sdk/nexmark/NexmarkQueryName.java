@@ -17,7 +17,7 @@
  */
 package org.apache.beam.sdk.nexmark;
 
-import org.checkerframework.checker.nullness.qual.Nullable;
+import javax.annotation.Nullable;
 
 /** Known "Nexmark" queries, some of which are of our own devising but use the same data set. */
 @SuppressWarnings("ImmutableEnumChecker")
@@ -42,8 +42,8 @@ public enum NexmarkQueryName {
   PROCESSING_TIME_WINDOWS(12), // Query "12"
 
   // Other non-numbered queries
-  BOUNDED_SIDE_INPUT_JOIN(13),
-  SESSION_SIDE_INPUT_JOIN(14);
+  BOUNDED_SIDE_INPUT_JOIN,
+  SESSION_SIDE_INPUT_JOIN;
 
   private @Nullable Integer number;
 
@@ -80,22 +80,5 @@ public enum NexmarkQueryName {
       }
     }
     return null;
-  }
-
-  /**
-   * @return The given {@link NexmarkQueryName} for the id. The id can be the query number (for
-   *     backwards compatibility) or its name.
-   */
-  public static NexmarkQueryName fromId(String id) {
-    NexmarkQueryName query;
-    try {
-      query = NexmarkQueryName.valueOf(id);
-    } catch (IllegalArgumentException exc) {
-      query = NexmarkQueryName.fromNumber(Integer.parseInt(id));
-    }
-    if (query == null) {
-      throw new IllegalArgumentException("Unknown query: " + id);
-    }
-    return query;
   }
 }

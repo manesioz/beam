@@ -34,13 +34,11 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
-import java.util.NoSuchElementException;
 import org.apache.beam.sdk.coders.ByteArrayCoder;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterators;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.primitives.UnsignedBytes;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -121,15 +119,10 @@ class NativeFileSorter {
     InputStream inputStream = new BufferedInputStream(new FileInputStream(dataFile));
     try {
       final List<KV<byte[], byte[]>> tempList = new ArrayList<>();
-      @Nullable KV<byte[], byte[]> kv = KV.of(new byte[0], new byte[0]);
+      KV<byte[], byte[]> kv = KV.of(null, null);
       while (kv != null) {
         long currentBlockSize = 0;
-        while (currentBlockSize < blockSize) {
-          kv = readKeyValue(inputStream);
-          if (kv == null) {
-            break;
-          }
-
+        while ((currentBlockSize < blockSize) && (kv = readKeyValue(inputStream)) != null) {
           // as long as you have enough memory
           tempList.add(kv);
           currentBlockSize += estimateSizeOf(kv);
@@ -183,7 +176,7 @@ class NativeFileSorter {
   private Iterator<KV<byte[], byte[]>> iterateFile(File file) throws FileNotFoundException {
     final InputStream inputStream = new BufferedInputStream(new FileInputStream(file));
     return new Iterator<KV<byte[], byte[]>>() {
-      @Nullable KV<byte[], byte[]> nextKv = readKeyValueOrFail(inputStream);
+      KV<byte[], byte[]> nextKv = readNext();
 
       @Override
       public boolean hasNext() {
@@ -192,28 +185,25 @@ class NativeFileSorter {
 
       @Override
       public KV<byte[], byte[]> next() {
-        if (nextKv == null) {
-          throw new NoSuchElementException();
-        }
         KV<byte[], byte[]> r = nextKv;
-        nextKv = readKeyValueOrFail(inputStream);
+        nextKv = readNext();
         return r;
+      }
+
+      private KV<byte[], byte[]> readNext() {
+        try {
+          return readKeyValue(inputStream);
+        } catch (EOFException e) {
+          return null;
+        } catch (IOException e) {
+          throw new IllegalStateException(e);
+        }
       }
     };
   }
 
-  private @Nullable KV<byte[], byte[]> readKeyValueOrFail(InputStream inputStream) {
-    try {
-      return readKeyValue(inputStream);
-    } catch (EOFException e) {
-      return null;
-    } catch (IOException e) {
-      throw new IllegalStateException(e);
-    }
-  }
-
   /** Reads the next key-value pair from a file. */
-  private @Nullable KV<byte[], byte[]> readKeyValue(InputStream inputStream) throws IOException {
+  private KV<byte[], byte[]> readKeyValue(InputStream inputStream) throws IOException {
     try {
       final byte[] keyBytes = CODER.decode(inputStream);
       final byte[] valueBytes = CODER.decode(inputStream);

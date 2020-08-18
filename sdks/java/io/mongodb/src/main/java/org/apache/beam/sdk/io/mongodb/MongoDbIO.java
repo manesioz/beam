@@ -38,9 +38,8 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
-import javax.net.ssl.SSLContext;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
-import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.SerializableCoder;
 import org.apache.beam.sdk.io.BoundedSource;
@@ -60,7 +59,6 @@ import org.bson.BsonString;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -108,7 +106,7 @@ import org.slf4j.LoggerFactory;
  *
  * }</pre>
  */
-@Experimental(Kind.SOURCE_SINK)
+@Experimental(Experimental.Kind.SOURCE_SINK)
 public class MongoDbIO {
 
   private static final Logger LOG = LoggerFactory.getLogger(MongoDbIO.class);
@@ -143,8 +141,8 @@ public class MongoDbIO {
   /** A {@link PTransform} to read data from MongoDB. */
   @AutoValue
   public abstract static class Read extends PTransform<PBegin, PCollection<Document>> {
-
-    abstract @Nullable String uri();
+    @Nullable
+    abstract String uri();
 
     abstract int maxConnectionIdleTime();
 
@@ -154,9 +152,11 @@ public class MongoDbIO {
 
     abstract boolean ignoreSSLCertificate();
 
-    abstract @Nullable String database();
+    @Nullable
+    abstract String database();
 
-    abstract @Nullable String collection();
+    @Nullable
+    abstract String collection();
 
     abstract int numSplits();
 
@@ -323,13 +323,6 @@ public class MongoDbIO {
       return input.apply(org.apache.beam.sdk.io.Read.from(new BoundedMongoDbSource(this)));
     }
 
-    public long getDocumentCount() {
-      checkArgument(uri() != null, "withUri() is required");
-      checkArgument(database() != null, "withDatabase() is required");
-      checkArgument(collection() != null, "withCollection() is required");
-      return new BoundedMongoDbSource(this).getDocumentCount();
-    }
-
     @Override
     public void populateDisplayData(DisplayData.Builder builder) {
       super.populateDisplayData(builder);
@@ -347,19 +340,14 @@ public class MongoDbIO {
   }
 
   private static MongoClientOptions.Builder getOptions(
-      int maxConnectionIdleTime,
-      boolean sslEnabled,
-      boolean sslInvalidHostNameAllowed,
-      boolean ignoreSSLCertificate) {
+      int maxConnectionIdleTime, boolean sslEnabled, boolean sslInvalidHostNameAllowed) {
     MongoClientOptions.Builder optionsBuilder = new MongoClientOptions.Builder();
     optionsBuilder.maxConnectionIdleTime(maxConnectionIdleTime);
     if (sslEnabled) {
-      optionsBuilder.sslEnabled(sslEnabled).sslInvalidHostNameAllowed(sslInvalidHostNameAllowed);
-      if (ignoreSSLCertificate) {
-        SSLContext sslContext = SSLUtils.ignoreSSLCertificate();
-        optionsBuilder.sslContext(sslContext);
-        optionsBuilder.socketFactory(sslContext.getSocketFactory());
-      }
+      optionsBuilder
+          .sslEnabled(sslEnabled)
+          .sslInvalidHostNameAllowed(sslInvalidHostNameAllowed)
+          .sslContext(SSLUtils.ignoreSSLCertificate());
     }
     return optionsBuilder;
   }
@@ -388,39 +376,6 @@ public class MongoDbIO {
       return new BoundedMongoDbReader(this);
     }
 
-    /**
-     * Returns number of Documents in a collection.
-     *
-     * @return Positive number of Documents in a collection or -1 on error.
-     */
-    long getDocumentCount() {
-      try (MongoClient mongoClient =
-          new MongoClient(
-              new MongoClientURI(
-                  spec.uri(),
-                  getOptions(
-                      spec.maxConnectionIdleTime(),
-                      spec.sslEnabled(),
-                      spec.sslInvalidHostNameAllowed(),
-                      spec.ignoreSSLCertificate())))) {
-        return getDocumentCount(mongoClient, spec.database(), spec.collection());
-      } catch (Exception e) {
-        return -1;
-      }
-    }
-
-    private long getDocumentCount(MongoClient mongoClient, String database, String collection) {
-      MongoDatabase mongoDatabase = mongoClient.getDatabase(database);
-
-      // get the Mongo collStats object
-      // it gives the size for the entire collection
-      BasicDBObject stat = new BasicDBObject();
-      stat.append("collStats", collection);
-      Document stats = mongoDatabase.runCommand(stat);
-
-      return stats.get("count", Number.class).longValue();
-    }
-
     @Override
     public long getEstimatedSizeBytes(PipelineOptions pipelineOptions) {
       try (MongoClient mongoClient =
@@ -430,8 +385,7 @@ public class MongoDbIO {
                   getOptions(
                       spec.maxConnectionIdleTime(),
                       spec.sslEnabled(),
-                      spec.sslInvalidHostNameAllowed(),
-                      spec.ignoreSSLCertificate())))) {
+                      spec.sslInvalidHostNameAllowed())))) {
         return getEstimatedSizeBytes(mongoClient, spec.database(), spec.collection());
       }
     }
@@ -459,8 +413,7 @@ public class MongoDbIO {
                   getOptions(
                       spec.maxConnectionIdleTime(),
                       spec.sslEnabled(),
-                      spec.sslInvalidHostNameAllowed(),
-                      spec.ignoreSSLCertificate())))) {
+                      spec.sslInvalidHostNameAllowed())))) {
         MongoDatabase mongoDatabase = mongoClient.getDatabase(spec.database());
 
         List<Document> splitKeys;
@@ -497,7 +450,7 @@ public class MongoDbIO {
           }
 
           if (splitKeys.size() < 1) {
-            LOG.debug("Split keys is low, using a unique source");
+            LOG.debug("Split keys is low, using an unique source");
             return Collections.singletonList(this);
           }
 
@@ -751,8 +704,7 @@ public class MongoDbIO {
               getOptions(
                   spec.maxConnectionIdleTime(),
                   spec.sslEnabled(),
-                  spec.sslInvalidHostNameAllowed(),
-                  spec.ignoreSSLCertificate())));
+                  spec.sslInvalidHostNameAllowed())));
     }
   }
 
@@ -760,7 +712,8 @@ public class MongoDbIO {
   @AutoValue
   public abstract static class Write extends PTransform<PCollection<Document>, PDone> {
 
-    abstract @Nullable String uri();
+    @Nullable
+    abstract String uri();
 
     abstract int maxConnectionIdleTime();
 
@@ -772,9 +725,11 @@ public class MongoDbIO {
 
     abstract boolean ordered();
 
-    abstract @Nullable String database();
+    @Nullable
+    abstract String database();
 
-    abstract @Nullable String collection();
+    @Nullable
+    abstract String collection();
 
     abstract long batchSize();
 
@@ -931,8 +886,7 @@ public class MongoDbIO {
                     getOptions(
                         spec.maxConnectionIdleTime(),
                         spec.sslEnabled(),
-                        spec.sslInvalidHostNameAllowed(),
-                        spec.ignoreSSLCertificate())));
+                        spec.sslInvalidHostNameAllowed())));
       }
 
       @StartBundle

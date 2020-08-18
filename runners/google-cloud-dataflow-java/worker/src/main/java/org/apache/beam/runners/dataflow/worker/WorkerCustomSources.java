@@ -46,6 +46,7 @@ import java.util.NoSuchElementException;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import javax.annotation.Nullable;
 import org.apache.beam.runners.dataflow.internal.CustomSources;
 import org.apache.beam.runners.dataflow.options.DataflowPipelineOptions;
 import org.apache.beam.runners.dataflow.util.CloudObject;
@@ -60,12 +61,11 @@ import org.apache.beam.sdk.util.BackOff;
 import org.apache.beam.sdk.util.FluentBackoff;
 import org.apache.beam.sdk.util.WindowedValue;
 import org.apache.beam.sdk.values.ValueWithRecordId;
-import org.apache.beam.vendor.grpc.v1p26p0.com.google.protobuf.ByteString;
+import org.apache.beam.vendor.grpc.v1p21p0.com.google.protobuf.ByteString;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.annotations.VisibleForTesting;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableMap;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.util.concurrent.Uninterruptibles;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.slf4j.Logger;
@@ -147,13 +147,7 @@ public class WorkerCustomSources {
     SourceMetadata metadata = new SourceMetadata();
     // Size estimation is best effort so we continue even if it fails here.
     try {
-      long estimatedSize = source.getEstimatedSizeBytes(PipelineOptionsFactory.create());
-      if (estimatedSize >= 0) {
-        metadata.setEstimatedSizeBytes(estimatedSize);
-      } else {
-        LOG.warn(
-            "Ignoring negative estimated size {} produced by source {}", estimatedSize, source);
-      }
+      metadata.setEstimatedSizeBytes(source.getEstimatedSizeBytes(PipelineOptionsFactory.create()));
     } catch (Exception e) {
       LOG.warn("Size estimation of the source failed: " + source, e);
     }

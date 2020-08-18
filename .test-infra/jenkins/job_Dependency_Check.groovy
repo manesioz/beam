@@ -26,35 +26,33 @@ job('beam_Dependency_Check') {
 
   // Allows triggering this build against pull requests.
   commonJobProperties.enablePhraseTriggeringFromPullRequest(
-      delegate,
-      'Beam Dependency Check',
-      'Run Dependency Check',
-      false
-      )
+    delegate,
+    'Beam Dependency Check',
+    'Run Dependency Check')
 
   // This is a job that runs weekly.
   commonJobProperties.setAutoJob(
-      delegate,
-      '0 12 * * 1')
+    delegate,
+    '0 12 * * 1')
 
   steps {
     gradle {
       rootBuildScriptDir(commonJobProperties.checkoutDir)
-      tasks('runBeamDependencyCheck')
+      tasks(':runBeamDependencyCheck')
       commonJobProperties.setGradleSwitches(delegate)
       switches('-Drevision=release')
     }
 
     shell('cd ' + commonJobProperties.checkoutDir +
-        ' && bash .test-infra/jenkins/dependency_check/generate_report.sh')
+            ' && bash .test-infra/jenkins/dependency_check/generate_report.sh')
   }
 
   wrappers{
     credentialsBinding {
-      usernamePassword('BEAM_JIRA_BOT_USERNAME', 'BEAM_JIRA_BOT_PASSWORD', 'beam-jira-bot')
+        usernamePassword('BEAM_JIRA_BOT_USERNAME', 'BEAM_JIRA_BOT_PASSWORD', 'beam-jira-bot')
     }
   }
-
+    
   def date = new Date().format('yyyy-MM-dd')
   publishers {
     extendedEmail {

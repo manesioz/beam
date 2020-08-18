@@ -17,7 +17,6 @@
  */
 package org.apache.beam.runners.core;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.state.BagState;
 import org.apache.beam.sdk.state.CombiningState;
@@ -117,7 +116,6 @@ public abstract class SystemReduceFn<K, InputT, AccumT, OutputT, W extends Bound
   }
 
   @Override
-  @SuppressFBWarnings("RV_RETURN_VALUE_IGNORED_NO_SIDE_EFFECT") // just prefetch calls to readLater
   public void prefetchOnTrigger(StateAccessor<K> state) {
     state.access(bufferTag).readLater();
   }

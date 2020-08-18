@@ -19,7 +19,6 @@ package org.apache.beam.sdk.util.common;
 
 import java.util.Iterator;
 import java.util.Observable;
-import org.apache.beam.sdk.annotations.Internal;
 
 /**
  * An abstract class used for iterators that notify observers about size in bytes of their elements,
@@ -28,7 +27,6 @@ import org.apache.beam.sdk.annotations.Internal;
  *
  * @param <V> value type
  */
-@Internal
 public abstract class ElementByteSizeObservableIterator<V> extends Observable
     implements Iterator<V> {
   protected final void notifyValueReturned(long byteSize) {

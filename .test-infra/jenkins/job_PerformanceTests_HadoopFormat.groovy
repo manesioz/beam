@@ -15,10 +15,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 import CommonJobProperties as common
 import Kubernetes
-import InfluxDBCredentialsHelper
 
 String jobName = "beam_PerformanceTests_HadoopFormat"
 
@@ -26,10 +24,9 @@ job(jobName) {
   common.setTopLevelMainJobProperties(delegate)
   common.setAutoJob(delegate, 'H */6 * * *')
   common.enablePhraseTriggeringFromPullRequest(
-      delegate,
-      'Java HadoopFormatIO Performance Test',
-      'Run Java HadoopFormatIO Performance Test')
-  InfluxDBCredentialsHelper.useCredentials(delegate)
+          delegate,
+          'Java HadoopFormatIO Performance Test',
+          'Run Java HadoopFormatIO Performance Test')
 
   String namespace = common.getKubernetesNamespace(jobName)
   String kubeconfig = common.getKubeconfigLocationForNamespace(namespace)
@@ -40,23 +37,20 @@ job(jobName) {
   k8s.loadBalancerIP("postgres-for-dev", postgresHostName)
 
   Map pipelineOptions = [
-    tempRoot             : 'gs://temp-storage-for-perf-tests',
-    project              : 'apache-beam-testing',
-    runner               : 'DataflowRunner',
-    numberOfRecords      : '600000',
-    bigQueryDataset      : 'beam_performance',
-    bigQueryTable        : 'hadoopformatioit_results',
-    influxMeasurement    : 'hadoopformatioit_results',
-    influxDatabase       : InfluxDBCredentialsHelper.InfluxDBDatabaseName,
-    influxHost           : InfluxDBCredentialsHelper.InfluxDBHostname,
-    postgresUsername     : 'postgres',
-    postgresPassword     : 'uuinkks',
-    postgresDatabaseName : 'postgres',
-    postgresServerName   : "\$${postgresHostName}",
-    postgresSsl          : false,
-    postgresPort         : '5432',
-    numWorkers           : '5',
-    autoscalingAlgorithm : 'NONE'
+          tempRoot             : 'gs://temp-storage-for-perf-tests',
+          project              : 'apache-beam-testing',
+          runner               : 'DataflowRunner',
+          numberOfRecords      : '600000',
+          bigQueryDataset      : 'beam_performance',
+          bigQueryTable        : 'hadoopformatioit_results',
+          postgresUsername     : 'postgres',
+          postgresPassword     : 'uuinkks',
+          postgresDatabaseName : 'postgres',
+          postgresServerName   : "\$${postgresHostName}",
+          postgresSsl          : false,
+          postgresPort         : '5432',
+          numWorkers           : '5',
+          autoscalingAlgorithm : 'NONE'
   ]
 
   steps {

@@ -21,18 +21,19 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import javax.annotation.Nullable;
 import org.apache.beam.model.pipeline.v1.RunnerApi;
 import org.apache.beam.runners.core.construction.PipelineOptionsTranslation;
 import org.apache.beam.runners.fnexecution.GrpcFnServer;
 import org.apache.beam.runners.fnexecution.ServerFactory;
+import org.apache.beam.runners.fnexecution.artifact.BeamFileSystemArtifactStagingService;
+import org.apache.beam.runners.fnexecution.jobsubmission.InMemoryJobService;
+import org.apache.beam.runners.fnexecution.jobsubmission.JobInvocation;
+import org.apache.beam.runners.fnexecution.jobsubmission.JobInvoker;
 import org.apache.beam.runners.fnexecution.provisioning.JobInfo;
-import org.apache.beam.runners.jobsubmission.InMemoryJobService;
-import org.apache.beam.runners.jobsubmission.JobInvocation;
-import org.apache.beam.runners.jobsubmission.JobInvoker;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
-import org.apache.beam.vendor.grpc.v1p26p0.com.google.protobuf.Struct;
+import org.apache.beam.vendor.grpc.v1p21p0.com.google.protobuf.Struct;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.util.concurrent.ListeningExecutorService;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -91,10 +92,16 @@ public class SamzaJobServerDriver {
         };
     return InMemoryJobService.create(
         null,
-        session -> session,
+        (String session) -> {
+          try {
+            return BeamFileSystemArtifactStagingService.generateStagingSessionToken(
+                session, "/tmp/beam-artifact-staging");
+          } catch (Exception exn) {
+            throw new RuntimeException(exn);
+          }
+        },
         stagingSessionToken -> {},
-        jobInvoker,
-        InMemoryJobService.DEFAULT_MAX_INVOCATION_HISTORY);
+        jobInvoker);
   }
 
   public void run() throws Exception {

@@ -27,8 +27,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.coders.AtomicCoder;
 import org.apache.beam.sdk.coders.BigEndianLongCoder;
+import org.apache.beam.sdk.coders.ByteArrayCoder;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.CoderException;
 import org.apache.beam.sdk.coders.KvCoder;
@@ -36,7 +38,6 @@ import org.apache.beam.sdk.coders.MapCoder;
 import org.apache.beam.sdk.coders.NullableCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.coders.VarIntCoder;
-import org.apache.beam.sdk.extensions.protobuf.ProtoCoder;
 import org.apache.beam.sdk.io.gcp.pubsub.PubsubClient.OutgoingMessage;
 import org.apache.beam.sdk.io.gcp.pubsub.PubsubClient.PubsubClientFactory;
 import org.apache.beam.sdk.io.gcp.pubsub.PubsubClient.TopicPath;
@@ -61,7 +62,6 @@ import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PDone;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.annotations.VisibleForTesting;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.hash.Hashing;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Duration;
 
 /**
@@ -101,18 +101,19 @@ public class PubsubUnboundedSink extends PTransform<PCollection<PubsubMessage>, 
     @Override
     public void encode(OutgoingMessage value, OutputStream outStream)
         throws CoderException, IOException {
-      ProtoCoder.of(com.google.pubsub.v1.PubsubMessage.class).encode(value.message(), outStream);
-      BigEndianLongCoder.of().encode(value.timestampMsSinceEpoch(), outStream);
-      RECORD_ID_CODER.encode(value.recordId(), outStream);
+      ByteArrayCoder.of().encode(value.elementBytes, outStream);
+      ATTRIBUTES_CODER.encode(value.attributes, outStream);
+      BigEndianLongCoder.of().encode(value.timestampMsSinceEpoch, outStream);
+      RECORD_ID_CODER.encode(value.recordId, outStream);
     }
 
     @Override
     public OutgoingMessage decode(InputStream inStream) throws CoderException, IOException {
-      com.google.pubsub.v1.PubsubMessage message =
-          ProtoCoder.of(com.google.pubsub.v1.PubsubMessage.class).decode(inStream);
+      byte[] elementBytes = ByteArrayCoder.of().decode(inStream);
+      Map<String, String> attributes = ATTRIBUTES_CODER.decode(inStream);
       long timestampMsSinceEpoch = BigEndianLongCoder.of().decode(inStream);
       @Nullable String recordId = RECORD_ID_CODER.decode(inStream);
-      return OutgoingMessage.of(message, timestampMsSinceEpoch, recordId);
+      return new OutgoingMessage(elementBytes, attributes, timestampMsSinceEpoch, recordId);
     }
   }
 
@@ -153,6 +154,7 @@ public class PubsubUnboundedSink extends PTransform<PCollection<PubsubMessage>, 
       elementCounter.inc();
       PubsubMessage message = c.element();
       byte[] elementBytes = message.getPayload();
+      Map<String, String> attributes = message.getAttributeMap();
 
       long timestampMsSinceEpoch = c.timestamp().getMillis();
       @Nullable String recordId = null;
@@ -173,7 +175,7 @@ public class PubsubUnboundedSink extends PTransform<PCollection<PubsubMessage>, 
       c.output(
           KV.of(
               ThreadLocalRandom.current().nextInt(numShards),
-              OutgoingMessage.of(message, timestampMsSinceEpoch, recordId)));
+              new OutgoingMessage(elementBytes, attributes, timestampMsSinceEpoch, recordId)));
     }
 
     @Override
@@ -197,7 +199,7 @@ public class PubsubUnboundedSink extends PTransform<PCollection<PubsubMessage>, 
     private final int publishBatchBytes;
 
     /** Client on which to talk to Pubsub. Null until created by {@link #startBundle}. */
-    private transient @Nullable PubsubClient pubsubClient;
+    @Nullable private transient PubsubClient pubsubClient;
 
     private final Counter batchCounter = Metrics.counter(WriterFn.class, "batches");
     private final Counter elementCounter = SinkMetrics.elementsWritten();
@@ -244,8 +246,7 @@ public class PubsubUnboundedSink extends PTransform<PCollection<PubsubMessage>, 
       List<OutgoingMessage> pubsubMessages = new ArrayList<>(publishBatchSize);
       int bytes = 0;
       for (OutgoingMessage message : c.element().getValue()) {
-        if (!pubsubMessages.isEmpty()
-            && bytes + message.message().getData().size() > publishBatchBytes) {
+        if (!pubsubMessages.isEmpty() && bytes + message.elementBytes.length > publishBatchBytes) {
           // Break large (in bytes) batches into smaller.
           // (We've already broken by batch size using the trigger below, though that may
           // run slightly over the actual PUBLISH_BATCH_SIZE. We'll consider that ok since
@@ -256,7 +257,7 @@ public class PubsubUnboundedSink extends PTransform<PCollection<PubsubMessage>, 
           bytes = 0;
         }
         pubsubMessages.add(message);
-        bytes += message.message().getData().size();
+        bytes += message.elementBytes.length;
       }
       if (!pubsubMessages.isEmpty()) {
         // BLOCKS until published.
@@ -294,13 +295,13 @@ public class PubsubUnboundedSink extends PTransform<PCollection<PubsubMessage>, 
    * Pubsub metadata field holding timestamp of each element, or {@literal null} if should use
    * Pubsub message publish timestamp instead.
    */
-  private final @Nullable String timestampAttribute;
+  @Nullable private final String timestampAttribute;
 
   /**
    * Pubsub metadata field holding id for each element, or {@literal null} if need to generate a
    * unique id ourselves.
    */
-  private final @Nullable String idAttribute;
+  @Nullable private final String idAttribute;
 
   /**
    * Number of 'shards' to use so that latency in Pubsub publish can be hidden. Generally this
@@ -395,12 +396,14 @@ public class PubsubUnboundedSink extends PTransform<PCollection<PubsubMessage>, 
   }
 
   /** Get the timestamp attribute. */
-  public @Nullable String getTimestampAttribute() {
+  @Nullable
+  public String getTimestampAttribute() {
     return timestampAttribute;
   }
 
   /** Get the id attribute. */
-  public @Nullable String getIdAttribute() {
+  @Nullable
+  public String getIdAttribute() {
     return idAttribute;
   }
 

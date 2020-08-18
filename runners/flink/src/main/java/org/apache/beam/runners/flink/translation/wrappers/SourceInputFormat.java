@@ -52,7 +52,6 @@ public class SourceInputFormat<T> extends RichInputFormat<WindowedValue<T>, Sour
   private boolean inputAvailable = false;
 
   private transient ReaderInvocationUtil<T, BoundedSource.BoundedReader<T>> readerInvoker;
-  private transient FlinkMetricContainer metricContainer;
 
   public SourceInputFormat(
       String stepName, BoundedSource<T> initialSource, PipelineOptions options) {
@@ -68,7 +67,7 @@ public class SourceInputFormat<T> extends RichInputFormat<WindowedValue<T>, Sour
 
   @Override
   public void open(SourceInputSplit<T> sourceInputSplit) throws IOException {
-    metricContainer = new FlinkMetricContainer(getRuntimeContext());
+    FlinkMetricContainer metricContainer = new FlinkMetricContainer(getRuntimeContext());
 
     readerInvoker = new ReaderInvocationUtil<>(stepName, serializedOptions.get(), metricContainer);
 
@@ -146,7 +145,6 @@ public class SourceInputFormat<T> extends RichInputFormat<WindowedValue<T>, Sour
 
   @Override
   public void close() throws IOException {
-    metricContainer.registerMetricsForPipelineResult();
     // TODO null check can be removed once FLINK-3796 is fixed
     if (reader != null) {
       reader.close();

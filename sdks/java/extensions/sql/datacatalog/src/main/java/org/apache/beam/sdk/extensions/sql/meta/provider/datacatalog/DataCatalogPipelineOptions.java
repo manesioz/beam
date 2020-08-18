@@ -28,16 +28,8 @@ public interface DataCatalogPipelineOptions extends PipelineOptions {
   /** DataCatalog endpoint. */
   @Description("Data catalog endpoint.")
   @Validation.Required
-  @Default.String("datacatalog.googleapis.com:443")
+  @Default.String("datacatalog.googleapis.com")
   String getDataCatalogEndpoint();
 
   void setDataCatalogEndpoint(String dataCatalogEndpoint);
-
-  /** Whether to truncate timestamps in tables described by Data Catalog. */
-  @Description("Truncate sub-millisecond precision timestamps in tables described by Data Catalog")
-  @Validation.Required
-  @Default.Boolean(false)
-  boolean getTruncateTimestamps();
-
-  void setTruncateTimestamps(boolean newValue);
 }

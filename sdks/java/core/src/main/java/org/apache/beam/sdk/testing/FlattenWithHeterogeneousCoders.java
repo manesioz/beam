@@ -17,7 +17,6 @@
  */
 package org.apache.beam.sdk.testing;
 
-import org.apache.beam.sdk.annotations.Internal;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.transforms.Flatten;
 import org.apache.beam.sdk.values.PCollection;
@@ -27,5 +26,4 @@ import org.apache.beam.sdk.values.PCollectionList;
  * Category tag for tests that use a {@link Flatten} where the input {@link PCollectionList}
  * contains {@link PCollection PCollections} heterogeneous {@link Coder coders}.
  */
-@Internal
 public interface FlattenWithHeterogeneousCoders {}

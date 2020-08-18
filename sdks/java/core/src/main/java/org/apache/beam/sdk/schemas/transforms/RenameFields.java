@@ -89,8 +89,6 @@ public class RenameFields {
         return FieldType.row(renameSchema(inputType.getRowSchema(), renames));
       case ARRAY:
         return FieldType.array(renameFieldType(inputType.getCollectionElementType(), renames));
-      case ITERABLE:
-        return FieldType.iterable(renameFieldType(inputType.getCollectionElementType(), renames));
       case MAP:
         return FieldType.map(
             renameFieldType(inputType.getMapKeyType(), renames),
@@ -180,7 +178,7 @@ public class RenameFields {
                   new DoFn<T, Row>() {
                     @ProcessElement
                     public void processElement(@Element Row row, OutputReceiver<Row> o) {
-                      o.output(Row.withSchema(outputSchema).attachValues(row.getValues()));
+                      o.output(Row.withSchema(outputSchema).attachValues(row.getValues()).build());
                     }
                   }))
           .setRowSchema(outputSchema);

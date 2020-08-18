@@ -91,28 +91,23 @@ func TestSym2Addr(t *testing.T) {
 	gotool := filepath.Join(runtime.GOROOT(), "bin", "go")
 
 	for _, arg := range []string{"-buildmode=exe", "-buildmode=pie"} {
-		for _, strip := range []bool{false, true} {
-			args := []string{
-				gotool,
-				"build",
-				"-o",
-				bin,
-				arg,
-			}
-			if strip {
-				args = append(args, "-ldflags=-w")
-			}
-			args = append(args, fname)
-			if out, err := exec.Command(args[0], args[1:]...).CombinedOutput(); err != nil {
-				t.Logf("%s", out)
-				t.Errorf("%v failed: %v", args, err)
-				continue
-			}
+		args := []string{
+			gotool,
+			"build",
+			"-o",
+			bin,
+			arg,
+			fname,
+		}
+		if out, err := exec.Command(args[0], args[1:]...).CombinedOutput(); err != nil {
+			t.Logf("%s", out)
+			t.Errorf("%v failed: %v", args, err)
+			continue
+		}
 
-			if out, err := exec.Command(bin).CombinedOutput(); err != nil {
-				t.Logf("%s", out)
-				t.Errorf("test program built with %v failed: %v", args, err)
-			}
+		if out, err := exec.Command(bin).CombinedOutput(); err != nil {
+			t.Logf("%s", out)
+			t.Errorf("test program built with %v failed: %v", args, err)
 		}
 	}
 }

@@ -17,11 +17,7 @@
  */
 
 plugins { id 'org.apache.beam.module' }
-applyJavaNature(
-  enableChecker:false,
-  ignoreRawtypeErrors:true,
-  exportJavadoc: false,
-  automaticModuleName: 'org.apache.beam.sdk.io.synthetic')
+applyJavaNature(exportJavadoc: false, automaticModuleName: 'org.apache.beam.sdk.io.synthetic')
 
 description = "Apache Beam :: SDKs :: Java :: IO :: Synthetic"
 ext.summary = "Generators of Synthetic IO for Testing."
@@ -38,5 +34,5 @@ dependencies {
   testCompile library.java.junit
   testCompile library.java.hamcrest_core
   testCompile library.java.hamcrest_library
-  testRuntimeOnly project(path: ":runners:direct-java", configuration: "shadow")
+  testRuntimeOnly project(":runners:direct-java")
 }

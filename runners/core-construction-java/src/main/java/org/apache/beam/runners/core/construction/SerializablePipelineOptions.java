@@ -26,7 +26,6 @@ import java.util.Objects;
 import org.apache.beam.sdk.io.FileSystems;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.util.common.ReflectHelpers;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Holds a {@link PipelineOptions} in JSON serialized form and calls {@link
@@ -85,7 +84,7 @@ public class SerializablePipelineOptions implements Serializable {
   }
 
   @Override
-  public boolean equals(@Nullable Object o) {
+  public boolean equals(Object o) {
     if (this == o) {
       return true;
     }

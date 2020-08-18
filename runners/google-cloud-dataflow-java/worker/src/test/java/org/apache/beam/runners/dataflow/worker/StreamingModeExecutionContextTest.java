@@ -46,7 +46,6 @@ import org.apache.beam.runners.core.TimerInternals.TimerData;
 import org.apache.beam.runners.core.metrics.ExecutionStateSampler;
 import org.apache.beam.runners.core.metrics.ExecutionStateTracker;
 import org.apache.beam.runners.core.metrics.ExecutionStateTracker.ExecutionState;
-import org.apache.beam.runners.dataflow.options.DataflowWorkerHarnessOptions;
 import org.apache.beam.runners.dataflow.worker.DataflowExecutionContext.DataflowExecutionStateTracker;
 import org.apache.beam.runners.dataflow.worker.MetricsToCounterUpdateConverter.Kind;
 import org.apache.beam.runners.dataflow.worker.StreamingModeExecutionContext.StreamingModeExecutionState;
@@ -66,7 +65,7 @@ import org.apache.beam.sdk.util.SerializableUtils;
 import org.apache.beam.sdk.util.WindowedValue;
 import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.TupleTag;
-import org.apache.beam.vendor.grpc.v1p26p0.com.google.protobuf.ByteString;
+import org.apache.beam.vendor.grpc.v1p21p0.com.google.protobuf.ByteString;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Lists;
 import org.hamcrest.Matchers;
 import org.joda.time.Instant;
@@ -88,12 +87,10 @@ public class StreamingModeExecutionContextTest {
   private StreamingModeExecutionStateRegistry executionStateRegistry =
       new StreamingModeExecutionStateRegistry(null);
   private StreamingModeExecutionContext executionContext;
-  DataflowWorkerHarnessOptions options;
 
   @Before
   public void setUp() {
     MockitoAnnotations.initMocks(this);
-    options = PipelineOptionsFactory.as(DataflowWorkerHarnessOptions.class);
     CounterSet counterSet = new CounterSet();
     ConcurrentHashMap<String, String> stateNameMap = new ConcurrentHashMap<>();
     stateNameMap.put(NameContextsForTests.nameContextForTest().userName(), "testStateFamily");
@@ -103,7 +100,7 @@ public class StreamingModeExecutionContextTest {
             "computationId",
             new ReaderCache(),
             stateNameMap,
-            new WindmillStateCache(options.getWorkerCacheMb()).forComputation("comp"),
+            new WindmillStateCache().forComputation("comp"),
             StreamingStepMetricsContainer.createRegistry(),
             new DataflowExecutionStateTracker(
                 ExecutionStateSampler.newForTest(),
@@ -143,11 +140,7 @@ public class StreamingModeExecutionContextTest {
     TimerInternals timerInternals = stepContext.timerInternals();
 
     timerInternals.setTimer(
-        TimerData.of(
-            new StateNamespaceForTest("key"),
-            new Instant(5000),
-            new Instant(5000),
-            TimeDomain.EVENT_TIME));
+        TimerData.of(new StateNamespaceForTest("key"), new Instant(5000), TimeDomain.EVENT_TIME));
     executionContext.flushState();
 
     Windmill.Timer timer = outputBuilder.buildPartial().getOutputTimers(0);

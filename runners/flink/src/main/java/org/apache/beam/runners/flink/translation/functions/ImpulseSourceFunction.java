@@ -26,7 +26,6 @@ import org.apache.flink.runtime.state.FunctionInitializationContext;
 import org.apache.flink.runtime.state.FunctionSnapshotContext;
 import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction;
 import org.apache.flink.streaming.api.functions.source.SourceFunction;
-import org.apache.flink.streaming.api.watermark.Watermark;
 
 /**
  * Source function which sends a single global impulse to a downstream operator. It may keep the
@@ -36,8 +35,8 @@ import org.apache.flink.streaming.api.watermark.Watermark;
 public class ImpulseSourceFunction
     implements SourceFunction<WindowedValue<byte[]>>, CheckpointedFunction {
 
-  /** The idle time before the source shuts down. */
-  private final long idleTimeoutMs;
+  /** Keep source running even after it has done all the work. */
+  private final boolean keepSourceAlive;
 
   /** Indicates the streaming job is running and the source can produce elements. */
   private volatile boolean running;
@@ -45,8 +44,8 @@ public class ImpulseSourceFunction
   /** Checkpointed state which indicates whether the impulse has finished. */
   private transient ListState<Boolean> impulseEmitted;
 
-  public ImpulseSourceFunction(long idleTimeoutMs) {
-    this.idleTimeoutMs = idleTimeoutMs;
+  public ImpulseSourceFunction(boolean keepSourceAlive) {
+    this.keepSourceAlive = keepSourceAlive;
     this.running = true;
   }
 
@@ -59,37 +58,27 @@ public class ImpulseSourceFunction
         impulseEmitted.add(true);
       }
     }
-    // Always emit a final watermark.
-    // (1) In case we didn't restore the pipeline, this is important to close the global window;
-    // if no operator holds back this watermark.
-    // (2) In case we are restoring the pipeline, this is needed to initialize the operators with
-    // the current watermark and trigger execution of any pending timers.
-    sourceContext.emitWatermark(Watermark.MAX_WATERMARK);
-    // Wait to allow checkpoints of the pipeline
-    waitToEnsureCheckpointingWorksCorrectly();
-  }
-
-  private void waitToEnsureCheckpointingWorksCorrectly() {
     // Do nothing, but still look busy ...
     // we can't return here since Flink requires that all operators stay up,
     // otherwise checkpointing would not work correctly anymore
     //
     // See https://issues.apache.org/jira/browse/FLINK-2491 for progress on this issue
-    long idleStart = System.currentTimeMillis();
-    // wait until this is canceled
-    final Object waitLock = new Object();
-    while (running && (System.currentTimeMillis() - idleStart < idleTimeoutMs)) {
-      try {
-        // Flink will interrupt us at some point
-        //noinspection SynchronizationOnLocalVariableOrMethodParameter
-        synchronized (waitLock) {
-          // don't wait indefinitely, in case something goes horribly wrong
-          waitLock.wait(1000);
-        }
-      } catch (InterruptedException e) {
-        if (!running) {
-          // restore the interrupted state, and fall through the loop
-          Thread.currentThread().interrupt();
+    if (keepSourceAlive) {
+      // wait until this is canceled
+      final Object waitLock = new Object();
+      while (running) {
+        try {
+          // Flink will interrupt us at some point
+          //noinspection SynchronizationOnLocalVariableOrMethodParameter
+          synchronized (waitLock) {
+            // don't wait indefinitely, in case something goes horribly wrong
+            waitLock.wait(1000);
+          }
+        } catch (InterruptedException e) {
+          if (!running) {
+            // restore the interrupted state, and fall through the loop
+            Thread.currentThread().interrupt();
+          }
         }
       }
     }

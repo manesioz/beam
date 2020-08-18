@@ -16,7 +16,7 @@
 # limitations under the License.
 ################################################################################
 
-FROM grafana/grafana:6.7.3
+FROM grafana/grafana:6.2.5
 
 COPY ./provisioning /etc/beamgrafana/provisioning
 COPY ./dashboards /etc/beamgrafana/dashboards

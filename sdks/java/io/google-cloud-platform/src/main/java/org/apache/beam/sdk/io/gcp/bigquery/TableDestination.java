@@ -22,15 +22,15 @@ import com.google.api.services.bigquery.model.TableReference;
 import com.google.api.services.bigquery.model.TimePartitioning;
 import java.io.Serializable;
 import java.util.Objects;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import javax.annotation.Nullable;
 
 /** Encapsulates a BigQuery table destination. */
 public class TableDestination implements Serializable {
   private static final long serialVersionUID = 1L;
   private final String tableSpec;
-  private final @Nullable String tableDescription;
-  private final @Nullable String jsonTimePartitioning;
-  private final @Nullable String jsonClustering;
+  @Nullable private final String tableDescription;
+  @Nullable private final String jsonTimePartitioning;
+  @Nullable private final String jsonClustering;
 
   public TableDestination(String tableSpec, @Nullable String tableDescription) {
     this(tableSpec, tableDescription, (String) null, (String) null);
@@ -148,7 +148,8 @@ public class TableDestination implements Serializable {
     }
   }
 
-  public @Nullable String getTableDescription() {
+  @Nullable
+  public String getTableDescription() {
     return tableDescription;
   }
 
@@ -162,7 +163,7 @@ public class TableDestination implements Serializable {
   }
 
   @Override
-  public boolean equals(@Nullable Object o) {
+  public boolean equals(Object o) {
     if (!(o instanceof TableDestination)) {
       return false;
     }

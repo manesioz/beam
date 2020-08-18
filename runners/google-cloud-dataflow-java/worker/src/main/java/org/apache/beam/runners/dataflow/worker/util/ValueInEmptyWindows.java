@@ -24,7 +24,6 @@ import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.PaneInfo;
 import org.apache.beam.sdk.util.WindowedValue;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.MoreObjects;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Instant;
 
 /**
@@ -70,7 +69,7 @@ public class ValueInEmptyWindows<T> extends WindowedValue<T> {
   }
 
   @Override
-  public boolean equals(@Nullable Object o) {
+  public boolean equals(Object o) {
     if (o instanceof ValueInEmptyWindows) {
       ValueInEmptyWindows<?> that = (ValueInEmptyWindows<?>) o;
       return Objects.equals(this.getValue(), that.getValue());

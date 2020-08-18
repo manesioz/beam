@@ -17,34 +17,16 @@
  */
 package org.apache.beam.runners.core;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.transforms.Materializations;
 import org.apache.beam.sdk.transforms.Materializations.MultimapView;
 import org.apache.beam.sdk.values.KV;
-import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.FluentIterable;
-import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterables;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ArrayListMultimap;
+import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Multimap;
+import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Multimaps;
 
 /** An in-memory representation of {@link MultimapView}. */
 public class InMemoryMultimapSideInputView<K, V> implements Materializations.MultimapView<K, V> {
-  /** An empty {@link MultimapView}. */
-  private static final MultimapView EMPTY =
-      new MultimapView() {
-        @Override
-        public Iterable get() {
-          return Collections.emptyList();
-        }
-
-        @Override
-        public Iterable get(@Nullable Object k) {
-          return Collections.emptyList();
-        }
-      };
 
   /**
    * Creates a {@link MultimapView} from the provided values. The provided {@link Coder} is used to
@@ -52,45 +34,27 @@ public class InMemoryMultimapSideInputView<K, V> implements Materializations.Mul
    */
   public static <K, V> MultimapView<K, V> fromIterable(
       Coder<K> keyCoder, Iterable<KV<K, V>> values) {
-    // We specifically use a hash map to allow for null keys
-    Map<Object, KV<K, List<V>>> data = new HashMap<>();
-
+    // We specifically use an array list multimap to allow for:
+    //  * null keys
+    //  * null values
+    //  * duplicate values
+    Multimap<Object, Object> multimap = ArrayListMultimap.create();
     for (KV<K, V> value : values) {
-      KV<K, List<V>> keyedValues =
-          data.computeIfAbsent(
-              keyCoder.structuralValue(value.getKey()),
-              o -> KV.of(value.getKey(), new ArrayList<>()));
-      keyedValues.getValue().add(value.getValue());
+      multimap.put(keyCoder.structuralValue(value.getKey()), value.getValue());
     }
-    return new InMemoryMultimapSideInputView(keyCoder, data);
-  }
-
-  /** Returns an empty {@link MultimapView}. */
-  public static <K, V> MultimapView<K, V> empty() {
-    return EMPTY;
+    return new InMemoryMultimapSideInputView(keyCoder, Multimaps.unmodifiableMultimap(multimap));
   }
 
   private final Coder<K> keyCoder;
-  private final Map<Object, KV<K, List<V>>> structuralKeyToValuesMap;
+  private final Multimap<Object, V> structuralKeyToValuesMap;
 
-  private InMemoryMultimapSideInputView(Coder<K> keyCoder, Map<Object, KV<K, List<V>>> data) {
+  private InMemoryMultimapSideInputView(Coder<K> keyCoder, Multimap<Object, V> data) {
     this.keyCoder = keyCoder;
     this.structuralKeyToValuesMap = data;
   }
 
   @Override
-  public Iterable<K> get() {
-    return Iterables.unmodifiableIterable(
-        FluentIterable.from(structuralKeyToValuesMap.values())
-            .transform(kListKV -> kListKV.getKey()));
-  }
-
-  @Override
   public Iterable<V> get(K k) {
-    KV<K, List<V>> records = structuralKeyToValuesMap.get(keyCoder.structuralValue(k));
-    if (records == null) {
-      return Collections.emptyList();
-    }
-    return records.getValue();
+    return structuralKeyToValuesMap.get(keyCoder.structuralValue(k));
   }
 }

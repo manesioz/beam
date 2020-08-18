@@ -20,6 +20,7 @@ package org.apache.beam.sdk.extensions.euphoria.core.client.operator;
 import static java.util.Objects.requireNonNull;
 
 import java.util.Optional;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.extensions.euphoria.core.annotation.audience.Audience;
 import org.apache.beam.sdk.extensions.euphoria.core.annotation.operator.Derived;
 import org.apache.beam.sdk.extensions.euphoria.core.annotation.operator.StateComplexity;
@@ -27,6 +28,7 @@ import org.apache.beam.sdk.extensions.euphoria.core.client.functional.UnaryFunct
 import org.apache.beam.sdk.extensions.euphoria.core.client.operator.base.Builders;
 import org.apache.beam.sdk.extensions.euphoria.core.client.operator.base.OptionalMethodBuilder;
 import org.apache.beam.sdk.extensions.euphoria.core.client.operator.base.ShuffleOperator;
+import org.apache.beam.sdk.extensions.euphoria.core.client.operator.hint.OutputHint;
 import org.apache.beam.sdk.extensions.euphoria.core.client.type.TypeAwareness;
 import org.apache.beam.sdk.extensions.euphoria.core.client.type.TypeUtils;
 import org.apache.beam.sdk.extensions.euphoria.core.client.util.PCollectionLists;
@@ -43,7 +45,6 @@ import org.apache.beam.sdk.values.PCollectionList;
 import org.apache.beam.sdk.values.TypeDescriptor;
 import org.apache.beam.sdk.values.TypeDescriptors;
 import org.apache.beam.sdk.values.WindowingStrategy;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Duration;
 
 /**
@@ -164,10 +165,10 @@ public class CountByKey<InputT, KeyT> extends ShuffleOperator<InputT, KeyT, KV<K
 
     private final WindowBuilder<InputT> windowBuilder = new WindowBuilder<>();
 
-    private final @Nullable String name;
+    @Nullable private final String name;
     private PCollection<InputT> input;
     private UnaryFunction<InputT, KeyT> keyExtractor;
-    private @Nullable TypeDescriptor<KeyT> keyType;
+    @Nullable private TypeDescriptor<KeyT> keyType;
 
     Builder(@Nullable String name) {
       this.name = name;
@@ -236,7 +237,7 @@ public class CountByKey<InputT, KeyT> extends ShuffleOperator<InputT, KeyT, KV<K
     }
 
     @Override
-    public PCollection<KV<KeyT, Long>> output() {
+    public PCollection<KV<KeyT, Long>> output(OutputHint... outputHints) {
       final CountByKey<InputT, KeyT> cbk =
           new CountByKey<>(
               name,

@@ -21,7 +21,6 @@ import com.google.api.services.bigquery.model.TableDataInsertAllResponse;
 import com.google.api.services.bigquery.model.TableReference;
 import com.google.api.services.bigquery.model.TableRow;
 import java.util.Objects;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Model definition for BigQueryInsertError.
@@ -64,7 +63,7 @@ public class BigQueryInsertError {
   }
 
   @Override
-  public boolean equals(@Nullable Object o) {
+  public boolean equals(Object o) {
     if (this == o) {
       return true;
     }

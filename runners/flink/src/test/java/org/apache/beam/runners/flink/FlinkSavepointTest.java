@@ -20,9 +20,11 @@ package org.apache.beam.runners.flink;
 import static org.hamcrest.MatcherAssert.assertThat;
 
 import java.io.Serializable;
+import java.lang.reflect.Method;
 import java.net.URI;
 import java.util.Collections;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
@@ -30,7 +32,7 @@ import java.util.concurrent.TimeUnit;
 import org.apache.beam.model.pipeline.v1.RunnerApi;
 import org.apache.beam.runners.core.construction.Environments;
 import org.apache.beam.runners.core.construction.PipelineTranslation;
-import org.apache.beam.runners.jobsubmission.JobInvocation;
+import org.apache.beam.runners.fnexecution.jobsubmission.JobInvocation;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.io.GenerateSequence;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
@@ -59,12 +61,13 @@ import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.RestOptions;
 import org.apache.flink.runtime.client.JobStatusMessage;
 import org.apache.flink.runtime.jobgraph.JobGraph;
+import org.apache.flink.runtime.jobgraph.JobStatus;
 import org.apache.flink.runtime.jobgraph.SavepointRestoreSettings;
 import org.apache.flink.runtime.minicluster.MiniCluster;
 import org.apache.flink.runtime.minicluster.MiniClusterConfiguration;
 import org.hamcrest.Matchers;
 import org.hamcrest.core.IsIterableContaining;
-import org.joda.time.Instant;
+import org.joda.time.Duration;
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
@@ -95,7 +98,7 @@ public class FlinkSavepointTest implements Serializable {
   @ClassRule public static transient TemporaryFolder tempFolder = new TemporaryFolder();
 
   /** Each test has a timeout of 60 seconds (for safety). */
-  @Rule public Timeout timeout = new Timeout(2, TimeUnit.MINUTES);
+  @Rule public Timeout timeout = new Timeout(60, TimeUnit.SECONDS);
 
   @BeforeClass
   public static void beforeClass() throws Exception {
@@ -132,11 +135,14 @@ public class FlinkSavepointTest implements Serializable {
   @After
   public void afterTest() throws Exception {
     for (JobStatusMessage jobStatusMessage : flinkCluster.listJobs().get()) {
-      if (jobStatusMessage.getJobState().name().equals("RUNNING")) {
+      if (jobStatusMessage.getJobState() == JobStatus.RUNNING) {
         flinkCluster.cancelJob(jobStatusMessage.getJobId()).get();
       }
     }
-    ensureNoJobRunning();
+    while (!flinkCluster.listJobs().get().stream()
+        .allMatch(job -> job.getJobState().isTerminalState())) {
+      Thread.sleep(50);
+    }
   }
 
   @Test
@@ -155,8 +161,6 @@ public class FlinkSavepointTest implements Serializable {
     // Initial parallelism
     options.setParallelism(2);
     options.setRunner(FlinkRunner.class);
-    // Avoid any task from shutting down which would prevent savepointing
-    options.setShutdownSourcesAfterIdleMs(Long.MAX_VALUE);
 
     oneShotLatch = new CountDownLatch(1);
     Pipeline pipeline = Pipeline.create(options);
@@ -170,7 +174,6 @@ public class FlinkSavepointTest implements Serializable {
     }
     oneShotLatch.await();
     String savepointDir = takeSavepointAndCancelJob(jobID);
-    ensureNoJobRunning();
 
     oneShotLatch = new CountDownLatch(1);
     // Increase parallelism
@@ -206,14 +209,13 @@ public class FlinkSavepointTest implements Serializable {
     FlinkPipelineOptions pipelineOptions = pipeline.getOptions().as(FlinkPipelineOptions.class);
     try {
       JobInvocation jobInvocation =
-          FlinkJobInvoker.create(null)
-              .createJobInvocation(
-                  "id",
-                  "none",
-                  executorService,
-                  pipelineProto,
-                  pipelineOptions,
-                  new FlinkPipelineRunner(pipelineOptions, null, Collections.emptyList()));
+          FlinkJobInvoker.createJobInvocation(
+              "id",
+              "none",
+              executorService,
+              pipelineProto,
+              pipelineOptions,
+              new FlinkPipelineRunner(pipelineOptions, null, Collections.emptyList()));
 
       jobInvocation.start();
 
@@ -224,21 +226,25 @@ public class FlinkSavepointTest implements Serializable {
   }
 
   private String getFlinkMaster() throws Exception {
-    URI uri = flinkCluster.getRestAddress().get();
-    return uri.getHost() + ":" + uri.getPort();
-  }
-
-  private void ensureNoJobRunning() throws Exception {
-    while (!flinkCluster.listJobs().get().stream()
-        .allMatch(job -> job.getJobState().isTerminalState())) {
-      Thread.sleep(50);
+    final URI uri;
+    Method getRestAddress = flinkCluster.getClass().getMethod("getRestAddress");
+    if (getRestAddress.getReturnType().equals(URI.class)) {
+      // Flink 1.5 way
+      uri = (URI) getRestAddress.invoke(flinkCluster);
+    } else if (getRestAddress.getReturnType().equals(CompletableFuture.class)) {
+      @SuppressWarnings("unchecked")
+      CompletableFuture<URI> future = (CompletableFuture<URI>) getRestAddress.invoke(flinkCluster);
+      uri = future.get();
+    } else {
+      throw new RuntimeException("Could not determine Rest address for this Flink version.");
     }
+    return uri.getHost() + ":" + uri.getPort();
   }
 
   private JobID waitForJobToBeReady() throws InterruptedException, ExecutionException {
     while (true) {
       JobStatusMessage jobStatus = Iterables.getFirst(flinkCluster.listJobs().get(), null);
-      if (jobStatus != null && jobStatus.getJobState().name().equals("RUNNING")) {
+      if (jobStatus != null && jobStatus.getJobState() == JobStatus.RUNNING) {
         return jobStatus.getJobId();
       }
       Thread.sleep(100);
@@ -285,9 +291,8 @@ public class FlinkSavepointTest implements Serializable {
     if (isPortablePipeline) {
       key =
           pipeline
-              .apply("ImpulseStage", Impulse.create())
+              .apply(Impulse.create())
               .apply(
-                  "KvMapperStage",
                   MapElements.via(
                       new InferableFunction<byte[], KV<String, Void>>() {
                         @Override
@@ -299,7 +304,6 @@ public class FlinkSavepointTest implements Serializable {
                         }
                       }))
               .apply(
-                  "TimerStage",
                   ParDo.of(
                       new DoFn<KV<String, Void>, KV<String, Long>>() {
                         @StateId("nextInteger")
@@ -307,12 +311,14 @@ public class FlinkSavepointTest implements Serializable {
                             StateSpecs.value();
 
                         @TimerId("timer")
-                        private final TimerSpec timer = TimerSpecs.timer(TimeDomain.EVENT_TIME);
+                        private final TimerSpec timer =
+                            TimerSpecs.timer(TimeDomain.PROCESSING_TIME);
 
                         @ProcessElement
                         public void processElement(
                             ProcessContext context, @TimerId("timer") Timer timer) {
-                          timer.set(new Instant(0));
+
+                          timer.offset(Duration.ZERO).setRelative();
                         }
 
                         @OnTimer("timer")
@@ -321,20 +327,20 @@ public class FlinkSavepointTest implements Serializable {
                             @StateId("nextInteger") ValueState<Long> nextInteger,
                             @TimerId("timer") Timer timer) {
                           Long current = nextInteger.read();
-                          current = current != null ? current : 0L;
-                          context.output(KV.of("key", current));
-                          LOG.debug("triggering timer {}", current);
-                          nextInteger.write(current + 1);
-                          // Trigger timer again and continue to hold back the watermark
-                          timer.withOutputTimestamp(new Instant(0)).set(context.fireTimestamp());
+                          if (current == null) {
+                            current = -1L;
+                          }
+                          long next = current + 1;
+                          nextInteger.write(next);
+                          context.output(KV.of("key", next));
+                          timer.offset(Duration.millis(100)).setRelative();
                         }
                       }));
     } else {
       key =
           pipeline
-              .apply("IdGeneratorStage", GenerateSequence.from(0))
+              .apply(GenerateSequence.from(0))
               .apply(
-                  "KvMapperStage",
                   ParDo.of(
                       new DoFn<Long, KV<String, Long>>() {
                         @ProcessElement
@@ -345,7 +351,6 @@ public class FlinkSavepointTest implements Serializable {
     }
     if (restored) {
       return key.apply(
-          "VerificationStage",
           ParDo.of(
               new DoFn<KV<String, Long>, String>() {
 
@@ -367,7 +372,6 @@ public class FlinkSavepointTest implements Serializable {
               }));
     } else {
       return key.apply(
-          "VerificationStage",
           ParDo.of(
               new DoFn<KV<String, Long>, String>() {
 
@@ -382,14 +386,12 @@ public class FlinkSavepointTest implements Serializable {
                     ProcessContext context,
                     @StateId("valueState") ValueState<Integer> intValueState,
                     @StateId("bagState") BagState<Integer> intBagState) {
-                  long value = Objects.requireNonNull(context.element().getValue());
-                  LOG.debug("value: {} timestamp: {}", value, context.timestamp().getMillis());
+                  Long value = Objects.requireNonNull(context.element().getValue());
                   if (value == 0L) {
                     intValueState.write(42);
                     intBagState.add(40);
                     intBagState.add(1);
                     intBagState.add(1);
-                  } else if (value >= 1) {
                     oneShotLatch.countDown();
                   }
                 }

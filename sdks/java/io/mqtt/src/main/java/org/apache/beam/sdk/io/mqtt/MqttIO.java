@@ -30,8 +30,8 @@ import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
-import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.coders.ByteArrayCoder;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.SerializableCoder;
@@ -45,7 +45,6 @@ import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PDone;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.annotations.VisibleForTesting;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.fusesource.mqtt.client.BlockingConnection;
 import org.fusesource.mqtt.client.MQTT;
 import org.fusesource.mqtt.client.Message;
@@ -100,11 +99,10 @@ import org.slf4j.LoggerFactory;
  *
  * }</pre>
  */
-@Experimental(Kind.SOURCE_SINK)
+@Experimental(Experimental.Kind.SOURCE_SINK)
 public class MqttIO {
 
   private static final Logger LOG = LoggerFactory.getLogger(MqttIO.class);
-  private static final int MQTT_3_1_MAX_CLIENT_ID_LENGTH = 23;
 
   public static Read read() {
     return new AutoValue_MqttIO_Read.Builder()
@@ -127,11 +125,14 @@ public class MqttIO {
 
     abstract String getTopic();
 
-    abstract @Nullable String getClientId();
+    @Nullable
+    abstract String getClientId();
 
-    abstract @Nullable String getUsername();
+    @Nullable
+    abstract String getUsername();
 
-    abstract @Nullable String getPassword();
+    @Nullable
+    abstract String getPassword();
 
     abstract Builder builder();
 
@@ -151,7 +152,7 @@ public class MqttIO {
     }
 
     /**
-     * Describe a connection configuration to the MQTT broker. This method creates a unique random
+     * Describe a connection configuration to the MQTT broker. This method creates an unique random
      * MQTT client ID.
      *
      * @param serverUri The MQTT broker URI.
@@ -172,7 +173,7 @@ public class MqttIO {
      *
      * @param serverUri The MQTT broker URI.
      * @param topic The MQTT getTopic pattern.
-     * @param clientId A client ID prefix, used to construct a unique client ID.
+     * @param clientId A client ID prefix, used to construct an unique client ID.
      * @return A connection configuration to the MQTT broker.
      * @deprecated This constructor will be removed in a future version of Beam, please use
      *     #create(String, String)} and {@link #withClientId(String)} instead.
@@ -195,7 +196,7 @@ public class MqttIO {
       return builder().setTopic(topic).build();
     }
 
-    /** Set up the client ID prefix, which is used to construct a unique client ID. */
+    /** Set up the client ID prefix, which is used to construct an unique client ID. */
     public ConnectionConfiguration withClientId(String clientId) {
       checkArgument(clientId != null, "clientId can not be null");
       return builder().setClientId(clientId).build();
@@ -229,14 +230,10 @@ public class MqttIO {
       }
       if (getClientId() != null) {
         String clientId = getClientId() + "-" + UUID.randomUUID().toString();
-        clientId =
-            clientId.substring(0, Math.min(clientId.length(), MQTT_3_1_MAX_CLIENT_ID_LENGTH));
         LOG.debug("MQTT client id set to {}", clientId);
         client.setClientId(clientId);
       } else {
         String clientId = UUID.randomUUID().toString();
-        clientId =
-            clientId.substring(0, Math.min(clientId.length(), MQTT_3_1_MAX_CLIENT_ID_LENGTH));
         LOG.debug("MQTT client id set to random value {}", clientId);
         client.setClientId(clientId);
       }
@@ -248,11 +245,13 @@ public class MqttIO {
   @AutoValue
   public abstract static class Read extends PTransform<PBegin, PCollection<byte[]>> {
 
-    abstract @Nullable ConnectionConfiguration connectionConfiguration();
+    @Nullable
+    abstract ConnectionConfiguration connectionConfiguration();
 
     abstract long maxNumRecords();
 
-    abstract @Nullable Duration maxReadTime();
+    @Nullable
+    abstract Duration maxReadTime();
 
     abstract Builder builder();
 
@@ -361,7 +360,7 @@ public class MqttIO {
     }
 
     @Override
-    public boolean equals(@Nullable Object other) {
+    public boolean equals(Object other) {
       if (other instanceof MqttCheckpointMark) {
         MqttCheckpointMark that = (MqttCheckpointMark) other;
         return Objects.equals(this.clientId, that.clientId)
@@ -522,7 +521,8 @@ public class MqttIO {
   @AutoValue
   public abstract static class Write extends PTransform<PCollection<byte[]>, PDone> {
 
-    abstract @Nullable ConnectionConfiguration connectionConfiguration();
+    @Nullable
+    abstract ConnectionConfiguration connectionConfiguration();
 
     abstract boolean retained();
 

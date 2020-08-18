@@ -44,25 +44,26 @@ class EnrichCountryDoFn(beam.DoFn):
                      cities_to_countries[element.city])
 
 
-with beam.Pipeline() as p:
+p = beam.Pipeline()
 
-  cities_to_countries = {
-      'Beijing': 'China',
-      'London': 'United Kingdom',
-      'San Francisco': 'United States',
-      'Singapore': 'Singapore',
-      'Sydney': 'Australia'
-  }
+cities_to_countries = {
+    'Beijing': 'China',
+    'London': 'United Kingdom',
+    'San Francisco': 'United States',
+    'Singapore': 'Singapore',
+    'Sydney': 'Australia'
+}
 
-  persons = [
-      Person('Henry', 'Singapore'),
-      Person('Jane', 'San Francisco'),
-      Person('Lee', 'Beijing'),
-      Person('John', 'Sydney'),
-      Person('Alfred', 'London')
-  ]
+persons = [
+    Person('Henry', 'Singapore'),
+    Person('Jane', 'San Francisco'),
+    Person('Lee', 'Beijing'),
+    Person('John', 'Sydney'),
+    Person('Alfred', 'London')
+]
 
-  (p | beam.Create(persons)
-     | beam.ParDo(EnrichCountryDoFn(), cities_to_countries)
-     | LogElements())
+(p | beam.Create(persons)
+   | beam.ParDo(EnrichCountryDoFn(), cities_to_countries)
+   | LogElements())
 
+p.run()

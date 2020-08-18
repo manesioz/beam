@@ -19,6 +19,7 @@ package org.apache.beam.sdk.extensions.euphoria.core.client.operator;
 
 import static java.util.Objects.requireNonNull;
 
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.extensions.euphoria.core.annotation.audience.Audience;
 import org.apache.beam.sdk.extensions.euphoria.core.annotation.operator.Derived;
 import org.apache.beam.sdk.extensions.euphoria.core.annotation.operator.StateComplexity;
@@ -26,12 +27,12 @@ import org.apache.beam.sdk.extensions.euphoria.core.client.functional.UnaryPredi
 import org.apache.beam.sdk.extensions.euphoria.core.client.io.Collector;
 import org.apache.beam.sdk.extensions.euphoria.core.client.operator.base.Builders;
 import org.apache.beam.sdk.extensions.euphoria.core.client.operator.base.Operator;
+import org.apache.beam.sdk.extensions.euphoria.core.client.operator.hint.OutputHint;
 import org.apache.beam.sdk.extensions.euphoria.core.client.util.PCollectionLists;
 import org.apache.beam.sdk.extensions.euphoria.core.translate.OperatorTransform;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionList;
 import org.apache.beam.sdk.values.TypeDescriptor;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Operator performing a filter operation.
@@ -97,7 +98,7 @@ public class Filter<InputT> extends Operator<InputT> implements CompositeOperato
   private static class Builder<InputT>
       implements OfBuilder, ByBuilder<InputT>, Builders.Output<InputT> {
 
-    private final @Nullable String name;
+    @Nullable private final String name;
     private PCollection<InputT> input;
     private UnaryPredicate<InputT> predicate;
 
@@ -120,7 +121,7 @@ public class Filter<InputT> extends Operator<InputT> implements CompositeOperato
     }
 
     @Override
-    public PCollection<InputT> output() {
+    public PCollection<InputT> output(OutputHint... outputHints) {
       final Filter<InputT> filter = new Filter<>(name, predicate, input.getTypeDescriptor());
       return OperatorTransform.apply(filter, PCollectionList.of(input));
     }

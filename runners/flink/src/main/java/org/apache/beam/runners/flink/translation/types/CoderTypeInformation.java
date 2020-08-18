@@ -19,15 +19,12 @@ package org.apache.beam.runners.flink.translation.types;
 
 import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions.checkNotNull;
 
-import org.apache.beam.runners.core.construction.SerializablePipelineOptions;
 import org.apache.beam.sdk.coders.Coder;
-import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.typeinfo.AtomicType;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.common.typeutils.TypeComparator;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Flink {@link org.apache.flink.api.common.typeinfo.TypeInformation} for Beam {@link
@@ -36,18 +33,10 @@ import org.checkerframework.checker.nullness.qual.Nullable;
 public class CoderTypeInformation<T> extends TypeInformation<T> implements AtomicType<T> {
 
   private final Coder<T> coder;
-  private final @Nullable SerializablePipelineOptions pipelineOptions;
 
   public CoderTypeInformation(Coder<T> coder) {
     checkNotNull(coder);
     this.coder = coder;
-    this.pipelineOptions = null;
-  }
-
-  private CoderTypeInformation(Coder<T> coder, PipelineOptions pipelineOptions) {
-    checkNotNull(coder);
-    this.coder = coder;
-    this.pipelineOptions = new SerializablePipelineOptions(pipelineOptions);
   }
 
   public Coder<T> getCoder() {
@@ -81,8 +70,9 @@ public class CoderTypeInformation<T> extends TypeInformation<T> implements Atomi
   }
 
   @Override
+  @SuppressWarnings("unchecked")
   public TypeSerializer<T> createSerializer(ExecutionConfig config) {
-    return new CoderTypeSerializer<>(coder, pipelineOptions);
+    return new CoderTypeSerializer<>(coder);
   }
 
   @Override
@@ -90,20 +80,8 @@ public class CoderTypeInformation<T> extends TypeInformation<T> implements Atomi
     return 2;
   }
 
-  /**
-   * Creates a new {@link CoderTypeInformation} with {@link PipelineOptions}, that can be used for
-   * {@link org.apache.beam.sdk.io.FileSystems} registration.
-   *
-   * @see <a href="https://issues.apache.org/jira/browse/BEAM-8577">Jira issue.</a>
-   * @param pipelineOptions Options of current pipeline.
-   * @return New type information.
-   */
-  public CoderTypeInformation<T> withPipelineOptions(PipelineOptions pipelineOptions) {
-    return new CoderTypeInformation<>(getCoder(), pipelineOptions);
-  }
-
   @Override
-  public boolean equals(@Nullable Object o) {
+  public boolean equals(Object o) {
     if (this == o) {
       return true;
     }

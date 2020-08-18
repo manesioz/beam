@@ -22,8 +22,8 @@ import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Prec
 import com.google.auto.value.AutoValue;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
-import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.coders.KvCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.transforms.Create;
@@ -43,7 +43,6 @@ import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.PDone;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ArrayListMultimap;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Multimap;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.Pipeline;
 import redis.clients.jedis.ScanParams;
@@ -80,13 +79,13 @@ import redis.clients.jedis.ScanResult;
  *
  * }</pre>
  *
- * <p>{@link #readKeyPatterns()} can be used to request Redis server using input PCollection
- * elements as key pattern (as String).
+ * <p>{@link #readAll()} can be used to request Redis server using input PCollection elements as key
+ * pattern (as String).
  *
  * <pre>{@code
  * pipeline.apply(...)
  *    // here we have a PCollection<String> with the key patterns
- *    .apply(RedisIO.readKeyPatterns().withEndpoint("::1", 6379))
+ *    .apply(RedisIO.readAll().withEndpoint("::1", 6379))
  *   // here we have a PCollection<KV<String,String>>
  *
  * }</pre>
@@ -106,7 +105,7 @@ import redis.clients.jedis.ScanResult;
  *
  * }</pre>
  */
-@Experimental(Kind.SOURCE_SINK)
+@Experimental(Experimental.Kind.SOURCE_SINK)
 public class RedisIO {
 
   /** Read data from a Redis server. */
@@ -115,35 +114,17 @@ public class RedisIO {
         .setConnectionConfiguration(RedisConnectionConfiguration.create())
         .setKeyPattern("*")
         .setBatchSize(1000)
-        .setOutputParallelization(true)
         .build();
   }
 
   /**
    * Like {@link #read()} but executes multiple instances of the Redis query substituting each
    * element of a {@link PCollection} as key pattern.
-   *
-   * @deprecated This method is not consistent with the readAll pattern of other transforms and will
-   *     be remove soon. Please update you code to use {@link #readKeyPatterns()} instead.
    */
-  @Deprecated
   public static ReadAll readAll() {
     return new AutoValue_RedisIO_ReadAll.Builder()
         .setConnectionConfiguration(RedisConnectionConfiguration.create())
         .setBatchSize(1000)
-        .setOutputParallelization(true)
-        .build();
-  }
-
-  /**
-   * Like {@link #read()} but executes multiple instances of the Redis query substituting each
-   * element of a {@link PCollection} as key pattern.
-   */
-  public static ReadKeyPatterns readKeyPatterns() {
-    return new AutoValue_RedisIO_ReadKeyPatterns.Builder()
-        .setConnectionConfiguration(RedisConnectionConfiguration.create())
-        .setBatchSize(1000)
-        .setOutputParallelization(true)
         .build();
   }
 
@@ -161,27 +142,25 @@ public class RedisIO {
   @AutoValue
   public abstract static class Read extends PTransform<PBegin, PCollection<KV<String, String>>> {
 
-    abstract @Nullable RedisConnectionConfiguration connectionConfiguration();
+    @Nullable
+    abstract RedisConnectionConfiguration connectionConfiguration();
 
-    abstract @Nullable String keyPattern();
+    @Nullable
+    abstract String keyPattern();
 
     abstract int batchSize();
 
-    abstract boolean outputParallelization();
-
-    abstract Builder toBuilder();
+    abstract Builder builder();
 
     @AutoValue.Builder
     abstract static class Builder {
+      @Nullable
+      abstract Builder setConnectionConfiguration(RedisConnectionConfiguration connection);
 
-      abstract @Nullable Builder setConnectionConfiguration(
-          RedisConnectionConfiguration connection);
-
-      abstract @Nullable Builder setKeyPattern(String keyPattern);
+      @Nullable
+      abstract Builder setKeyPattern(String keyPattern);
 
       abstract Builder setBatchSize(int batchSize);
-
-      abstract Builder setOutputParallelization(boolean outputParallelization);
 
       abstract Read build();
     }
@@ -189,45 +168,35 @@ public class RedisIO {
     public Read withEndpoint(String host, int port) {
       checkArgument(host != null, "host can not be null");
       checkArgument(0 < port && port < 65536, "port must be a positive integer less than 65536");
-      return toBuilder()
+      return builder()
           .setConnectionConfiguration(connectionConfiguration().withHost(host).withPort(port))
           .build();
     }
 
     public Read withAuth(String auth) {
       checkArgument(auth != null, "auth can not be null");
-      return toBuilder()
-          .setConnectionConfiguration(connectionConfiguration().withAuth(auth))
-          .build();
+      return builder().setConnectionConfiguration(connectionConfiguration().withAuth(auth)).build();
     }
 
     public Read withTimeout(int timeout) {
       checkArgument(timeout >= 0, "timeout can not be negative");
-      return toBuilder()
+      return builder()
           .setConnectionConfiguration(connectionConfiguration().withTimeout(timeout))
           .build();
     }
 
     public Read withKeyPattern(String keyPattern) {
       checkArgument(keyPattern != null, "keyPattern can not be null");
-      return toBuilder().setKeyPattern(keyPattern).build();
+      return builder().setKeyPattern(keyPattern).build();
     }
 
     public Read withConnectionConfiguration(RedisConnectionConfiguration connection) {
       checkArgument(connection != null, "connection can not be null");
-      return toBuilder().setConnectionConfiguration(connection).build();
+      return builder().setConnectionConfiguration(connection).build();
     }
 
     public Read withBatchSize(int batchSize) {
-      return toBuilder().setBatchSize(batchSize).build();
-    }
-
-    /**
-     * Whether to reshuffle the resulting PCollection so results are distributed to all workers. The
-     * default is to parallelize and should only be changed if this is known to be unnecessary.
-     */
-    public Read withOutputParallelization(boolean outputParallelization) {
-      return toBuilder().setOutputParallelization(outputParallelization).build();
+      return builder().setBatchSize(batchSize).build();
     }
 
     @Override
@@ -243,41 +212,30 @@ public class RedisIO {
           .apply(Create.of(keyPattern()))
           .apply(ParDo.of(new ReadKeysWithPattern(connectionConfiguration())))
           .apply(
-              RedisIO.readKeyPatterns()
+              RedisIO.readAll()
                   .withConnectionConfiguration(connectionConfiguration())
-                  .withBatchSize(batchSize())
-                  .withOutputParallelization(outputParallelization()));
+                  .withBatchSize(batchSize()));
     }
   }
 
-  /**
-   * Implementation of {@link #readAll()}.
-   *
-   * @deprecated This class will be removed soon. Please update you code to depend on {@link
-   *     ReadKeyPatterns} instead.
-   */
-  @Deprecated
+  /** Implementation of {@link #readAll()}. */
   @AutoValue
   public abstract static class ReadAll
       extends PTransform<PCollection<String>, PCollection<KV<String, String>>> {
 
-    abstract @Nullable RedisConnectionConfiguration connectionConfiguration();
+    @Nullable
+    abstract RedisConnectionConfiguration connectionConfiguration();
 
     abstract int batchSize();
 
-    abstract boolean outputParallelization();
-
-    abstract Builder toBuilder();
+    abstract ReadAll.Builder builder();
 
     @AutoValue.Builder
     abstract static class Builder {
+      @Nullable
+      abstract ReadAll.Builder setConnectionConfiguration(RedisConnectionConfiguration connection);
 
-      abstract @Nullable Builder setConnectionConfiguration(
-          RedisConnectionConfiguration connection);
-
-      abstract Builder setBatchSize(int batchSize);
-
-      abstract Builder setOutputParallelization(boolean outputParallelization);
+      abstract ReadAll.Builder setBatchSize(int batchSize);
 
       abstract ReadAll build();
     }
@@ -285,136 +243,44 @@ public class RedisIO {
     public ReadAll withEndpoint(String host, int port) {
       checkArgument(host != null, "host can not be null");
       checkArgument(port > 0, "port can not be negative or 0");
-      return toBuilder()
+      return builder()
           .setConnectionConfiguration(connectionConfiguration().withHost(host).withPort(port))
           .build();
     }
 
     public ReadAll withAuth(String auth) {
       checkArgument(auth != null, "auth can not be null");
-      return toBuilder()
-          .setConnectionConfiguration(connectionConfiguration().withAuth(auth))
-          .build();
+      return builder().setConnectionConfiguration(connectionConfiguration().withAuth(auth)).build();
     }
 
     public ReadAll withTimeout(int timeout) {
       checkArgument(timeout >= 0, "timeout can not be negative");
-      return toBuilder()
+      return builder()
           .setConnectionConfiguration(connectionConfiguration().withTimeout(timeout))
           .build();
     }
 
     public ReadAll withConnectionConfiguration(RedisConnectionConfiguration connection) {
       checkArgument(connection != null, "connection can not be null");
-      return toBuilder().setConnectionConfiguration(connection).build();
+      return builder().setConnectionConfiguration(connection).build();
     }
 
     public ReadAll withBatchSize(int batchSize) {
-      return toBuilder().setBatchSize(batchSize).build();
-    }
-
-    /**
-     * Whether to reshuffle the resulting PCollection so results are distributed to all workers. The
-     * default is to parallelize and should only be changed if this is known to be unnecessary.
-     */
-    public ReadAll withOutputParallelization(boolean outputParallelization) {
-      return toBuilder().setOutputParallelization(outputParallelization).build();
+      return builder().setBatchSize(batchSize).build();
     }
 
     @Override
     public PCollection<KV<String, String>> expand(PCollection<String> input) {
       checkArgument(connectionConfiguration() != null, "withConnectionConfiguration() is required");
-      PCollection<KV<String, String>> output =
-          input
-              .apply(ParDo.of(new ReadFn(connectionConfiguration(), batchSize())))
-              .setCoder(KvCoder.of(StringUtf8Coder.of(), StringUtf8Coder.of()));
-      if (outputParallelization()) {
-        output = output.apply(new Reparallelize());
-      }
-      return output;
+
+      return input
+          .apply(ParDo.of(new ReadFn(connectionConfiguration(), batchSize())))
+          .setCoder(KvCoder.of(StringUtf8Coder.of(), StringUtf8Coder.of()))
+          .apply(new Reparallelize());
     }
   }
 
-  /** Implementation of {@link #readKeyPatterns()}. */
-  @AutoValue
-  public abstract static class ReadKeyPatterns
-      extends PTransform<PCollection<String>, PCollection<KV<String, String>>> {
-
-    abstract @Nullable RedisConnectionConfiguration connectionConfiguration();
-
-    abstract int batchSize();
-
-    abstract boolean outputParallelization();
-
-    abstract Builder toBuilder();
-
-    @AutoValue.Builder
-    abstract static class Builder {
-
-      abstract @Nullable Builder setConnectionConfiguration(
-          RedisConnectionConfiguration connection);
-
-      abstract Builder setBatchSize(int batchSize);
-
-      abstract Builder setOutputParallelization(boolean outputParallelization);
-
-      abstract ReadKeyPatterns build();
-    }
-
-    public ReadKeyPatterns withEndpoint(String host, int port) {
-      checkArgument(host != null, "host can not be null");
-      checkArgument(port > 0, "port can not be negative or 0");
-      return toBuilder()
-          .setConnectionConfiguration(connectionConfiguration().withHost(host).withPort(port))
-          .build();
-    }
-
-    public ReadKeyPatterns withAuth(String auth) {
-      checkArgument(auth != null, "auth can not be null");
-      return toBuilder()
-          .setConnectionConfiguration(connectionConfiguration().withAuth(auth))
-          .build();
-    }
-
-    public ReadKeyPatterns withTimeout(int timeout) {
-      checkArgument(timeout >= 0, "timeout can not be negative");
-      return toBuilder()
-          .setConnectionConfiguration(connectionConfiguration().withTimeout(timeout))
-          .build();
-    }
-
-    public ReadKeyPatterns withConnectionConfiguration(RedisConnectionConfiguration connection) {
-      checkArgument(connection != null, "connection can not be null");
-      return toBuilder().setConnectionConfiguration(connection).build();
-    }
-
-    public ReadKeyPatterns withBatchSize(int batchSize) {
-      return toBuilder().setBatchSize(batchSize).build();
-    }
-
-    /**
-     * Whether to reshuffle the resulting PCollection so results are distributed to all workers. The
-     * default is to parallelize and should only be changed if this is known to be unnecessary.
-     */
-    public ReadKeyPatterns withOutputParallelization(boolean outputParallelization) {
-      return toBuilder().setOutputParallelization(outputParallelization).build();
-    }
-
-    @Override
-    public PCollection<KV<String, String>> expand(PCollection<String> input) {
-      checkArgument(connectionConfiguration() != null, "withConnectionConfiguration() is required");
-      PCollection<KV<String, String>> output =
-          input
-              .apply(ParDo.of(new ReadFn(connectionConfiguration(), batchSize())))
-              .setCoder(KvCoder.of(StringUtf8Coder.of(), StringUtf8Coder.of()));
-      if (outputParallelization()) {
-        output = output.apply(new Reparallelize());
-      }
-      return output;
-    }
-  }
-
-  private abstract static class BaseReadFn<T> extends DoFn<String, T> {
+  abstract static class BaseReadFn<T> extends DoFn<String, T> {
     protected final RedisConnectionConfiguration connectionConfiguration;
 
     transient Jedis jedis;
@@ -441,9 +307,9 @@ public class RedisIO {
     }
 
     @ProcessElement
-    public void processElement(ProcessContext c) {
+    public void processElement(ProcessContext processContext) throws Exception {
       ScanParams scanParams = new ScanParams();
-      scanParams.match(c.element());
+      scanParams.match(processContext.element());
 
       String cursor = ScanParams.SCAN_POINTER_START;
       boolean finished = false;
@@ -451,7 +317,7 @@ public class RedisIO {
         ScanResult<String> scanResult = jedis.scan(cursor, scanParams);
         List<String> keys = scanResult.getResult();
         for (String k : keys) {
-          c.output(k);
+          processContext.output(k);
         }
         cursor = scanResult.getCursor();
         if (cursor.equals(ScanParams.SCAN_POINTER_START)) {
@@ -460,50 +326,40 @@ public class RedisIO {
       }
     }
   }
-
   /** A {@link DoFn} requesting Redis server to get key/value pairs. */
   private static class ReadFn extends BaseReadFn<KV<String, String>> {
-    transient @Nullable Multimap<BoundedWindow, String> bundles = null;
+    @Nullable transient Multimap<BoundedWindow, String> bundles = null;
     @Nullable AtomicInteger batchCount = null;
     private final int batchSize;
+
+    @StartBundle
+    public void startBundle(StartBundleContext context) {
+      bundles = ArrayListMultimap.create();
+      batchCount = new AtomicInteger();
+    }
 
     ReadFn(RedisConnectionConfiguration connectionConfiguration, int batchSize) {
       super(connectionConfiguration);
       this.batchSize = batchSize;
     }
 
-    @StartBundle
-    public void startBundle() {
-      bundles = ArrayListMultimap.create();
-      batchCount = new AtomicInteger();
+    private int getBatchSize() {
+      return batchSize;
     }
 
     @ProcessElement
-    public void processElement(ProcessContext c, BoundedWindow window) {
-      String key = c.element();
+    public void processElement(ProcessContext processContext, BoundedWindow window)
+        throws Exception {
+      String key = processContext.element();
       bundles.put(window, key);
       if (batchCount.incrementAndGet() > getBatchSize()) {
         Multimap<BoundedWindow, KV<String, String>> kvs = fetchAndFlush();
         for (BoundedWindow w : kvs.keySet()) {
           for (KV<String, String> kv : kvs.get(w)) {
-            c.output(kv);
+            processContext.output(kv);
           }
         }
       }
-    }
-
-    @FinishBundle
-    public void finishBundle(FinishBundleContext context) {
-      Multimap<BoundedWindow, KV<String, String>> kvs = fetchAndFlush();
-      for (BoundedWindow w : kvs.keySet()) {
-        for (KV<String, String> kv : kvs.get(w)) {
-          context.output(kv, w.maxTimestamp(), w);
-        }
-      }
-    }
-
-    private int getBatchSize() {
-      return batchSize;
     }
 
     private Multimap<BoundedWindow, KV<String, String>> fetchAndFlush() {
@@ -522,6 +378,16 @@ public class RedisIO {
       batchCount.set(0);
       return kvs;
     }
+
+    @FinishBundle
+    public void finishBundle(FinishBundleContext context) throws Exception {
+      Multimap<BoundedWindow, KV<String, String>> kvs = fetchAndFlush();
+      for (BoundedWindow w : kvs.keySet()) {
+        for (KV<String, String> kv : kvs.get(w)) {
+          context.output(kv, w.maxTimestamp(), w);
+        }
+      }
+    }
   }
 
   private static class Reparallelize
@@ -529,7 +395,8 @@ public class RedisIO {
 
     @Override
     public PCollection<KV<String, String>> expand(PCollection<KV<String, String>> input) {
-      // reparallelize mimics the same behavior as in JdbcIO, used to break fusion
+      // reparallelize mimics the same behavior as in JdbcIO
+      // breaking fusion
       PCollectionView<Iterable<KV<String, String>>> empty =
           input
               .apply("Consume", Filter.by(SerializableFunctions.constant(false)))
@@ -540,8 +407,8 @@ public class RedisIO {
               ParDo.of(
                       new DoFn<KV<String, String>, KV<String, String>>() {
                         @ProcessElement
-                        public void processElement(ProcessContext c) {
-                          c.output(c.element());
+                        public void processElement(ProcessContext context) {
+                          context.output(context.element());
                         }
                       })
                   .withSideInputs(empty));
@@ -592,13 +459,16 @@ public class RedisIO {
       DECRBY,
     }
 
-    abstract @Nullable RedisConnectionConfiguration connectionConfiguration();
+    @Nullable
+    abstract RedisConnectionConfiguration connectionConfiguration();
 
-    abstract @Nullable Method method();
+    @Nullable
+    abstract Method method();
 
-    abstract @Nullable Long expireTime();
+    @Nullable
+    abstract Long expireTime();
 
-    abstract Builder toBuilder();
+    abstract Builder builder();
 
     @AutoValue.Builder
     abstract static class Builder {
@@ -616,39 +486,37 @@ public class RedisIO {
     public Write withEndpoint(String host, int port) {
       checkArgument(host != null, "host can not be null");
       checkArgument(port > 0, "port can not be negative or 0");
-      return toBuilder()
+      return builder()
           .setConnectionConfiguration(connectionConfiguration().withHost(host).withPort(port))
           .build();
     }
 
     public Write withAuth(String auth) {
       checkArgument(auth != null, "auth can not be null");
-      return toBuilder()
-          .setConnectionConfiguration(connectionConfiguration().withAuth(auth))
-          .build();
+      return builder().setConnectionConfiguration(connectionConfiguration().withAuth(auth)).build();
     }
 
     public Write withTimeout(int timeout) {
       checkArgument(timeout >= 0, "timeout can not be negative");
-      return toBuilder()
+      return builder()
           .setConnectionConfiguration(connectionConfiguration().withTimeout(timeout))
           .build();
     }
 
     public Write withConnectionConfiguration(RedisConnectionConfiguration connection) {
       checkArgument(connection != null, "connection can not be null");
-      return toBuilder().setConnectionConfiguration(connection).build();
+      return builder().setConnectionConfiguration(connection).build();
     }
 
     public Write withMethod(Method method) {
       checkArgument(method != null, "method can not be null");
-      return toBuilder().setMethod(method).build();
+      return builder().setMethod(method).build();
     }
 
     public Write withExpireTime(Long expireTimeMillis) {
       checkArgument(expireTimeMillis != null, "expireTimeMillis can not be null");
       checkArgument(expireTimeMillis > 0, "expireTimeMillis can not be negative or 0");
-      return toBuilder().setExpireTime(expireTimeMillis).build();
+      return builder().setExpireTime(expireTimeMillis).build();
     }
 
     @Override
@@ -687,8 +555,8 @@ public class RedisIO {
       }
 
       @ProcessElement
-      public void processElement(ProcessContext c) {
-        KV<String, String> record = c.element();
+      public void processElement(ProcessContext processContext) {
+        KV<String, String> record = processContext.element();
 
         writeRecord(record);
 

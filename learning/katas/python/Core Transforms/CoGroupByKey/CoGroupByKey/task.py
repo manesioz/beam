@@ -46,11 +46,12 @@ def apply_transforms(fruits, countries):
             | beam.Map(cogbk_result_to_wordsalphabet))
 
 
-with beam.Pipeline() as p:
+p = beam.Pipeline()
 
-  fruits = p | 'Fruits' >> beam.Create(['apple', 'banana', 'cherry'])
-  countries = p | 'Countries' >> beam.Create(['australia', 'brazil', 'canada'])
+fruits = p | 'Fruits' >> beam.Create(['apple', 'banana', 'cherry'])
+countries = p | 'Countries' >> beam.Create(['australia', 'brazil', 'canada'])
 
-  (apply_transforms(fruits, countries)
-   | LogElements())
+(apply_transforms(fruits, countries)
+ | LogElements())
 
+p.run()

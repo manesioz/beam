@@ -25,6 +25,7 @@ import static org.apache.beam.sdk.transforms.Requirements.requiresSideInputs;
 import static org.apache.beam.sdk.transforms.display.DisplayDataMatchers.hasDisplayItem;
 import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.MoreObjects.firstNonNull;
 import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.hasItem;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
@@ -46,6 +47,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
+import java.util.Set;
 import org.apache.avro.Schema;
 import org.apache.avro.file.CodecFactory;
 import org.apache.avro.file.DataFileReader;
@@ -53,6 +55,7 @@ import org.apache.avro.file.DataFileStream;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericDatumReader;
 import org.apache.avro.generic.GenericRecord;
+import org.apache.avro.reflect.Nullable;
 import org.apache.avro.reflect.ReflectData;
 import org.apache.avro.reflect.ReflectDatumReader;
 import org.apache.beam.sdk.coders.AvroCoder;
@@ -70,6 +73,7 @@ import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.testing.TestStream;
 import org.apache.beam.sdk.testing.UsesTestStream;
 import org.apache.beam.sdk.testing.UsesUnboundedSplittableParDo;
+import org.apache.beam.sdk.testing.ValidatesRunner;
 import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.transforms.MapElements;
 import org.apache.beam.sdk.transforms.PTransform;
@@ -78,6 +82,7 @@ import org.apache.beam.sdk.transforms.SimpleFunction;
 import org.apache.beam.sdk.transforms.View;
 import org.apache.beam.sdk.transforms.Watch;
 import org.apache.beam.sdk.transforms.display.DisplayData;
+import org.apache.beam.sdk.transforms.display.DisplayDataEvaluator;
 import org.apache.beam.sdk.transforms.windowing.AfterPane;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.FixedWindows;
@@ -99,7 +104,6 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterator
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Lists;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Maps;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Multimap;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.junit.Rule;
@@ -211,7 +215,7 @@ public class AvroIOTest implements Serializable {
       }
 
       @Override
-      public boolean equals(@Nullable Object other) {
+      public boolean equals(Object other) {
         if (other == null || !(other instanceof GenericClass)) {
           return false;
         }
@@ -751,7 +755,7 @@ public class AvroIOTest implements Serializable {
     static class GenericClassV2 {
       int intField;
       String stringField;
-      @org.apache.avro.reflect.Nullable String nullableField;
+      @Nullable String nullableField;
 
       GenericClassV2() {}
 
@@ -776,7 +780,7 @@ public class AvroIOTest implements Serializable {
       }
 
       @Override
-      public boolean equals(@Nullable Object other) {
+      public boolean equals(Object other) {
         if (!(other instanceof GenericClassV2)) {
           return false;
         }
@@ -1488,5 +1492,22 @@ public class AvroIOTest implements Serializable {
     }
     // TODO: for Write only, test withSuffix,
     // withShardNameTemplate and withoutSharding.
+
+    @Test
+    @Category(ValidatesRunner.class)
+    public void testPrimitiveReadDisplayData() {
+      DisplayDataEvaluator evaluator = DisplayDataEvaluator.create();
+
+      AvroIO.Read<GenericRecord> read =
+          AvroIO.readGenericRecords(Schema.create(Schema.Type.STRING))
+              .withBeamSchemas(withBeamSchemas)
+              .from("/foo.*");
+
+      Set<DisplayData> displayData = evaluator.displayDataForPrimitiveSourceTransforms(read);
+      assertThat(
+          "AvroIO.Read should include the file pattern in its primitive transform",
+          displayData,
+          hasItem(hasDisplayItem("filePattern")));
+    }
   }
 }

@@ -39,7 +39,7 @@ import yaml
 docs_logo_url = 'https://beam.apache.org/images/logos/full-color/name-bottom/beam-logo-full-color-name-bottom-100.png'
 
 
-def run(docs, root_dir, variables=None,
+def run(docs, variables=None,
         inputs_dir='.', outputs_dir='.', imports_dir='.', include_dir='.'):
 
   errors = []
@@ -70,8 +70,7 @@ def run(docs, root_dir, variables=None,
             filter_classes='notebook-skip',
             docs_url='https://beam.apache.org/' + basename.replace('-', ''),
             docs_logo_url=docs_logo_url,
-            github_ipynb_url='https://github.com/apache/beam/blob/master/'
-                + os.path.relpath(ipynb_file, root_dir),
+            github_ipynb_url='https://github.com/apache/beam/blob/master/' + ipynb_file,
             include_dir=include_dir,
         )
         logging.info('{} succeeded'.format(input_file))
@@ -121,7 +120,6 @@ if __name__ == '__main__':
 
   run(
       docs=docs,
-      root_dir=root_dir,
       variables=variables,
       inputs_dir=os.path.join(root_dir, 'website', 'src'),
       outputs_dir=os.path.join(root_dir, 'examples', 'notebooks'),

@@ -22,6 +22,7 @@ import java.lang.reflect.Method;
 import java.util.List;
 import java.util.stream.Collectors;
 import org.apache.beam.runners.spark.translation.SparkCombineFn;
+import org.apache.beam.sdk.annotations.Internal;
 import org.apache.beam.sdk.util.WindowedValue;
 import org.apache.beam.sdk.values.KV;
 import org.apache.spark.api.java.JavaPairRDD;
@@ -31,6 +32,7 @@ import org.apache.spark.streaming.api.java.JavaDStream;
 import org.apache.spark.streaming.api.java.JavaStreamingContext;
 
 /** A set of functions to provide API compatibility between Spark 2 and Spark 3. */
+@Internal
 public class SparkCompat {
   /**
    * Union of dStreams in the given StreamingContext.

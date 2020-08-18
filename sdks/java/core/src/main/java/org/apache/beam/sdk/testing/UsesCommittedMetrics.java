@@ -17,7 +17,6 @@
  */
 package org.apache.beam.sdk.testing;
 
-import org.apache.beam.sdk.annotations.Internal;
 import org.apache.beam.sdk.metrics.MetricResult;
 
 /**
@@ -25,5 +24,4 @@ import org.apache.beam.sdk.metrics.MetricResult;
  * Tests tagged with {@link UsesCommittedMetrics} should be run for runners which support {@link
  * MetricResult#getCommitted()}.
  */
-@Internal
 public interface UsesCommittedMetrics {}

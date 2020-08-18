@@ -11,10 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Utility and schema methods for the chicago_taxi sample."""
-# pytype: skip-file
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -23,7 +20,7 @@ from tensorflow_transform import coders as tft_coders
 from tensorflow_transform.tf_metadata import dataset_schema
 from tensorflow_transform.tf_metadata import schema_utils
 
-from google.protobuf import text_format  # type: ignore  # typeshed out of date
+from google.protobuf import text_format
 from tensorflow.python.lib.io import file_io
 from tensorflow_metadata.proto.v0 import schema_pb2
 
@@ -31,12 +28,8 @@ from tensorflow_metadata.proto.v0 import schema_pb2
 MAX_CATEGORICAL_FEATURE_VALUES = [24, 31, 12]
 
 CATEGORICAL_FEATURE_KEYS = [
-    'trip_start_hour',
-    'trip_start_day',
-    'trip_start_month',
-    'pickup_census_tract',
-    'dropoff_census_tract',
-    'pickup_community_area',
+    'trip_start_hour', 'trip_start_day', 'trip_start_month',
+    'pickup_census_tract', 'dropoff_census_tract', 'pickup_community_area',
     'dropoff_community_area'
 ]
 
@@ -46,9 +39,7 @@ DENSE_FLOAT_FEATURE_KEYS = ['trip_miles', 'fare', 'trip_seconds']
 FEATURE_BUCKET_COUNT = 10
 
 BUCKET_FEATURE_KEYS = [
-    'pickup_latitude',
-    'pickup_longitude',
-    'dropoff_latitude',
+    'pickup_latitude', 'pickup_longitude', 'dropoff_latitude',
     'dropoff_longitude'
 ]
 
@@ -177,9 +168,7 @@ def make_sql(table_name, max_rows=None, for_eval=False):
   {where_clause}
   {limit_clause}
 """.format(
-      table_name=table_name,
-      where_clause=where_clause,
-      limit_clause=limit_clause)
+    table_name=table_name, where_clause=where_clause, limit_clause=limit_clause)
 
 
 def read_schema(path):

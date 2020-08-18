@@ -77,12 +77,7 @@ public class BoundedReadEvaluatorFactoryTest {
   private BundleFactory bundleFactory;
   private AppliedPTransform<?, ?, ?> longsProducer;
 
-  @Rule
-  public TestPipeline p =
-      TestPipeline.fromOptions(
-              PipelineOptionsFactory.fromArgs("--experiments=use_deprecated_read").create())
-          .enableAbandonedNodeEnforcement(false);
-
+  @Rule public TestPipeline p = TestPipeline.create().enableAbandonedNodeEnforcement(false);
   private PipelineOptions options;
 
   @Before
@@ -91,9 +86,10 @@ public class BoundedReadEvaluatorFactoryTest {
     source = CountingSource.upTo(10L);
     longs = p.apply(Read.from(source));
 
+    options = PipelineOptionsFactory.create();
     factory =
         new BoundedReadEvaluatorFactory(
-            context, p.getOptions(), Long.MAX_VALUE /* minimum size for dynamic splits */);
+            context, options, Long.MAX_VALUE /* minimum size for dynamic splits */);
     bundleFactory = ImmutableListBundleFactory.create();
     longsProducer = DirectGraphs.getProducer(longs);
   }

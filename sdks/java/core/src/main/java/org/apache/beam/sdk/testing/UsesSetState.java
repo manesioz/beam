@@ -17,9 +17,7 @@
  */
 package org.apache.beam.sdk.testing;
 
-import org.apache.beam.sdk.annotations.Internal;
 import org.apache.beam.sdk.state.SetState;
 
 /** Category tag for validation tests which utilize {@link SetState}. */
-@Internal
-public interface UsesSetState extends UsesStatefulParDo {}
+public interface UsesSetState {}

@@ -22,12 +22,11 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.extensions.sql.impl.BeamSqlEnv;
 import org.apache.beam.sdk.extensions.sql.impl.BeamSqlEnv.BeamSqlEnvBuilder;
 import org.apache.beam.sdk.extensions.sql.impl.BeamSqlPipelineOptions;
-import org.apache.beam.sdk.extensions.sql.impl.QueryPlanner;
-import org.apache.beam.sdk.extensions.sql.impl.QueryPlanner.QueryParameters;
 import org.apache.beam.sdk.extensions.sql.impl.rel.BeamSqlRelUtils;
 import org.apache.beam.sdk.extensions.sql.impl.schema.BeamPCollectionTable;
 import org.apache.beam.sdk.extensions.sql.meta.BeamSqlTable;
@@ -44,8 +43,6 @@ import org.apache.beam.sdk.values.Row;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.vendor.calcite.v1_20_0.com.google.common.collect.ImmutableList;
 import org.apache.beam.vendor.calcite.v1_20_0.com.google.common.collect.ImmutableMap;
-import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.MoreObjects;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * {@link SqlTransform} is the DSL interface of Beam SQL. It translates a SQL query as a {@link
@@ -90,8 +87,6 @@ public abstract class SqlTransform extends PTransform<PInput, PCollection<Row>> 
 
   abstract String queryString();
 
-  abstract QueryParameters queryParameters();
-
   abstract List<UdfDefinition> udfDefinitions();
 
   abstract List<UdafDefinition> udafDefinitions();
@@ -101,8 +96,6 @@ public abstract class SqlTransform extends PTransform<PInput, PCollection<Row>> 
   abstract Map<String, TableProvider> tableProviderMap();
 
   abstract @Nullable String defaultTableProvider();
-
-  abstract @Nullable String queryPlannerClassName();
 
   @Override
   public PCollection<Row> expand(PInput input) {
@@ -124,15 +117,12 @@ public abstract class SqlTransform extends PTransform<PInput, PCollection<Row>> 
     }
 
     sqlEnvBuilder.setQueryPlannerClassName(
-        MoreObjects.firstNonNull(
-            queryPlannerClassName(),
-            input.getPipeline().getOptions().as(BeamSqlPipelineOptions.class).getPlannerName()));
+        input.getPipeline().getOptions().as(BeamSqlPipelineOptions.class).getPlannerName());
 
     sqlEnvBuilder.setPipelineOptions(input.getPipeline().getOptions());
 
     BeamSqlEnv sqlEnv = sqlEnvBuilder.build();
-    return BeamSqlRelUtils.toPCollection(
-        input.getPipeline(), sqlEnv.parseQuery(queryString(), queryParameters()));
+    return BeamSqlRelUtils.toPCollection(input.getPipeline(), sqlEnv.parseQuery(queryString()));
   }
 
   @SuppressWarnings("unchecked")
@@ -183,16 +173,10 @@ public abstract class SqlTransform extends PTransform<PInput, PCollection<Row>> 
    *   <li>Always, tables from the upstream {@link PCollectionTuple} are only valid in the scope of
    *       the current query call.
    * </ul>
-   *
-   * <p>Any available implementation of {@link QueryPlanner} can be used as the query planner in
-   * {@link SqlTransform}. An implementation can be specified globally for the entire pipeline with
-   * {@link BeamSqlPipelineOptions#getPlannerName()}. The global planner can be overridden
-   * per-transform with {@link #withQueryPlannerClass(Class<? extends QueryPlanner>)}.
    */
   public static SqlTransform query(String queryString) {
     return builder()
         .setQueryString(queryString)
-        .setQueryParameters(QueryParameters.ofNone())
         .setUdafDefinitions(Collections.emptyList())
         .setUdfDefinitions(Collections.emptyList())
         .setTableProviderMap(Collections.emptyMap())
@@ -208,18 +192,6 @@ public abstract class SqlTransform extends PTransform<PInput, PCollection<Row>> 
 
   public SqlTransform withDefaultTableProvider(String name, TableProvider tableProvider) {
     return withTableProvider(name, tableProvider).toBuilder().setDefaultTableProvider(name).build();
-  }
-
-  public SqlTransform withQueryPlannerClass(Class<? extends QueryPlanner> clazz) {
-    return toBuilder().setQueryPlannerClassName(clazz.getName()).build();
-  }
-
-  public SqlTransform withNamedParameters(Map<String, ?> parameters) {
-    return toBuilder().setQueryParameters(QueryParameters.ofNamed(parameters)).build();
-  }
-
-  public SqlTransform withPositionalParameters(List<?> parameters) {
-    return toBuilder().setQueryParameters(QueryParameters.ofPositional(parameters)).build();
   }
 
   public SqlTransform withAutoUdfUdafLoad(boolean autoUdfUdafLoad) {
@@ -273,8 +245,6 @@ public abstract class SqlTransform extends PTransform<PInput, PCollection<Row>> 
   abstract static class Builder {
     abstract Builder setQueryString(String queryString);
 
-    abstract Builder setQueryParameters(QueryParameters queryParameters);
-
     abstract Builder setUdfDefinitions(List<UdfDefinition> udfDefinitions);
 
     abstract Builder setUdafDefinitions(List<UdafDefinition> udafDefinitions);
@@ -284,8 +254,6 @@ public abstract class SqlTransform extends PTransform<PInput, PCollection<Row>> 
     abstract Builder setTableProviderMap(Map<String, TableProvider> tableProviderMap);
 
     abstract Builder setDefaultTableProvider(@Nullable String defaultTableProvider);
-
-    abstract Builder setQueryPlannerClassName(@Nullable String queryPlannerClassName);
 
     abstract SqlTransform build();
   }

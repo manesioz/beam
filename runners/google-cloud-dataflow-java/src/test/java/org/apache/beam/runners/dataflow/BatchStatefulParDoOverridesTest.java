@@ -28,6 +28,7 @@ import static org.mockito.Mockito.when;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.ArrayList;
+import javax.annotation.Nullable;
 import org.apache.beam.runners.dataflow.BatchStatefulParDoOverrides.StatefulMultiOutputParDo;
 import org.apache.beam.runners.dataflow.BatchStatefulParDoOverrides.StatefulSingleOutputParDo;
 import org.apache.beam.runners.dataflow.options.DataflowPipelineOptions;
@@ -37,7 +38,6 @@ import org.apache.beam.sdk.coders.VarIntCoder;
 import org.apache.beam.sdk.extensions.gcp.auth.TestCredential;
 import org.apache.beam.sdk.extensions.gcp.util.GcsUtil;
 import org.apache.beam.sdk.extensions.gcp.util.gcsfs.GcsPath;
-import org.apache.beam.sdk.io.FileSystems;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.runners.TransformHierarchy.Node;
 import org.apache.beam.sdk.state.StateSpec;
@@ -50,7 +50,6 @@ import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.TupleTagList;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -147,7 +146,7 @@ public class BatchStatefulParDoOverridesTest implements Serializable {
     }
 
     @Override
-    public boolean equals(@Nullable Object other) {
+    public boolean equals(Object other) {
       return other instanceof DummyStatefulDoFn;
     }
 
@@ -159,7 +158,7 @@ public class BatchStatefulParDoOverridesTest implements Serializable {
 
   private static class FindBatchStatefulDoFnVisitor extends PipelineVisitor.Defaults {
 
-    private @Nullable DoFn<?, ?> batchStatefulDoFn;
+    @Nullable private DoFn<?, ?> batchStatefulDoFn;
 
     public DoFn<?, ?> getStatefulDoFn() {
       assertThat(batchStatefulDoFn, not(nullValue()));
@@ -198,10 +197,6 @@ public class BatchStatefulParDoOverridesTest implements Serializable {
     options.setTempLocation(GcsPath.fromComponents("somebucket", "some/path").toString());
     options.setFilesToStage(new ArrayList<>());
     options.setGcsUtil(mockGcsUtil);
-
-    // Enable the FileSystems API to know about gs:// URIs in this test.
-    FileSystems.setDefaultPipelineOptions(options);
-
     return options;
   }
 }

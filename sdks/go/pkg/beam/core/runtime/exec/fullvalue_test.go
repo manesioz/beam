@@ -194,35 +194,17 @@ func TestConvert(t *testing.T) {
 			v:    []typex.T{1, 2, 3},
 			want: []int{1, 2, 3},
 		},
-		{
-			name: "[]typexT_to_typexX",
-			to:   typex.XType,
-			v:    []typex.T{1, 2, 3},
-			want: []int{1, 2, 3},
-		},
-		{
-			name: "empty_[]typexT_to_typexX",
-			to:   typex.XType,
-			v:    []typex.T{},
-			want: []typex.T{},
-		},
-		{
-			name: "nil_[]typexT_to_typexX",
-			to:   typex.XType,
-			v:    []typex.T(nil),
-			want: []typex.T(nil),
-		},
 	}
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
-			if got := Convert(test.v, test.to); !reflect.DeepEqual(got, test.want) {
+			if got := Convert(test.v, test.to); reflect.TypeOf(got) != test.to {
 				t.Errorf("Convert(%v,%v) = %v,  want %v", test.v, test.to, got, test.want)
 			}
 		})
 		t.Run("Fn_"+test.name, func(t *testing.T) {
 			fn := ConvertFn(reflect.TypeOf(test.v), test.to)
-			if got := fn(test.v); !reflect.DeepEqual(got, test.want) {
+			if got := fn(test.v); reflect.TypeOf(got) != test.to {
 				t.Errorf("ConvertFn(%T, %v)(%v) = %v,  want %v", test.v, test.to, test.v, got, test.want)
 			}
 		})

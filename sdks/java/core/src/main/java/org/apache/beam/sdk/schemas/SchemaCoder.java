@@ -17,46 +17,69 @@
  */
 package org.apache.beam.sdk.schemas;
 
-import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions.checkArgument;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Objects;
 import java.util.UUID;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.annotations.Experimental.Kind;
+import org.apache.beam.sdk.coders.BigDecimalCoder;
+import org.apache.beam.sdk.coders.BigEndianShortCoder;
+import org.apache.beam.sdk.coders.BooleanCoder;
+import org.apache.beam.sdk.coders.ByteArrayCoder;
+import org.apache.beam.sdk.coders.ByteCoder;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.CustomCoder;
+import org.apache.beam.sdk.coders.DoubleCoder;
+import org.apache.beam.sdk.coders.FloatCoder;
+import org.apache.beam.sdk.coders.InstantCoder;
+import org.apache.beam.sdk.coders.ListCoder;
+import org.apache.beam.sdk.coders.MapCoder;
 import org.apache.beam.sdk.coders.RowCoder;
 import org.apache.beam.sdk.coders.RowCoderGenerator;
+import org.apache.beam.sdk.coders.StringUtf8Coder;
+import org.apache.beam.sdk.coders.VarIntCoder;
+import org.apache.beam.sdk.coders.VarLongCoder;
 import org.apache.beam.sdk.schemas.Schema.Field;
 import org.apache.beam.sdk.schemas.Schema.FieldType;
+import org.apache.beam.sdk.schemas.Schema.TypeName;
 import org.apache.beam.sdk.transforms.SerializableFunction;
 import org.apache.beam.sdk.util.SerializableUtils;
 import org.apache.beam.sdk.values.Row;
-import org.apache.beam.sdk.values.TypeDescriptor;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableMap;
 
 /** {@link SchemaCoder} is used as the coder for types that have schemas registered. */
 @Experimental(Kind.SCHEMAS)
 public class SchemaCoder<T> extends CustomCoder<T> {
+
+  // This contains a map of primitive types to their coders.
+  public static final ImmutableMap<TypeName, Coder> CODER_MAP =
+      ImmutableMap.<TypeName, Coder>builder()
+          .put(TypeName.BYTE, ByteCoder.of())
+          .put(TypeName.BYTES, ByteArrayCoder.of())
+          .put(TypeName.INT16, BigEndianShortCoder.of())
+          .put(TypeName.INT32, VarIntCoder.of())
+          .put(TypeName.INT64, VarLongCoder.of())
+          .put(TypeName.DECIMAL, BigDecimalCoder.of())
+          .put(TypeName.FLOAT, FloatCoder.of())
+          .put(TypeName.DOUBLE, DoubleCoder.of())
+          .put(TypeName.STRING, StringUtf8Coder.of())
+          .put(TypeName.DATETIME, InstantCoder.of())
+          .put(TypeName.BOOLEAN, BooleanCoder.of())
+          .build();
+
   protected final Schema schema;
-  private final TypeDescriptor<T> typeDescriptor;
   private final SerializableFunction<T, Row> toRowFunction;
   private final SerializableFunction<Row, T> fromRowFunction;
-  private transient @Nullable Coder<Row> delegateCoder;
+  @Nullable private transient Coder<Row> delegateCoder;
 
   protected SchemaCoder(
       Schema schema,
-      TypeDescriptor<T> typeDescriptor,
       SerializableFunction<T, Row> toRowFunction,
       SerializableFunction<Row, T> fromRowFunction) {
-    checkArgument(
-        !typeDescriptor.hasUnresolvedParameters(),
-        "Cannot create SchemaCoder with a TypeDescriptor that has unresolved parameters: %s",
-        typeDescriptor);
     if (schema.getUUID() == null) {
       // Clone the schema before modifying the Java object.
       schema = SerializableUtils.clone(schema);
@@ -64,26 +87,40 @@ public class SchemaCoder<T> extends CustomCoder<T> {
     }
     this.toRowFunction = toRowFunction;
     this.fromRowFunction = fromRowFunction;
-    this.typeDescriptor = typeDescriptor;
     this.schema = schema;
   }
 
   /**
    * Returns a {@link SchemaCoder} for the specified class. If no schema is registered for this
-   * class, then throws {@link NoSuchSchemaException}. The parameter functions to convert from and
-   * to Rows <b>must</b> implement the equals contract.
+   * class, then throws {@link NoSuchSchemaException}.
    */
   public static <T> SchemaCoder<T> of(
       Schema schema,
-      TypeDescriptor<T> typeDescriptor,
       SerializableFunction<T, Row> toRowFunction,
       SerializableFunction<Row, T> fromRowFunction) {
-    return new SchemaCoder<>(schema, typeDescriptor, toRowFunction, fromRowFunction);
+    return new SchemaCoder<>(schema, toRowFunction, fromRowFunction);
   }
 
   /** Returns a {@link SchemaCoder} for {@link Row} instances with the given {@code schema}. */
   public static SchemaCoder<Row> of(Schema schema) {
     return RowCoder.of(schema);
+  }
+
+  /** Returns the coder used for a given primitive type. */
+  public static <T> Coder<T> coderForFieldType(FieldType fieldType) {
+    switch (fieldType.getTypeName()) {
+      case ROW:
+        return (Coder<T>) SchemaCoder.of(fieldType.getRowSchema());
+      case ARRAY:
+        return (Coder<T>) ListCoder.of(coderForFieldType(fieldType.getCollectionElementType()));
+      case MAP:
+        return (Coder<T>)
+            MapCoder.of(
+                coderForFieldType(fieldType.getMapKeyType()),
+                coderForFieldType(fieldType.getMapValueType()));
+      default:
+        return (Coder<T>) CODER_MAP.get(fieldType.getTypeName());
+    }
   }
 
   /** Returns the schema associated with this type. */
@@ -132,7 +169,7 @@ public class SchemaCoder<T> extends CustomCoder<T> {
     ImmutableList<Coder<?>> coders =
         schema.getFields().stream()
             .map(Field::getType)
-            .map(SchemaCoderHelpers::coderForFieldType)
+            .map(SchemaCoder::coderForFieldType)
             .collect(ImmutableList.toImmutableList());
 
     Coder.verifyDeterministic(this, "All fields must have deterministic encoding", coders);
@@ -141,10 +178,6 @@ public class SchemaCoder<T> extends CustomCoder<T> {
   @Override
   public boolean consistentWithEquals() {
     return true;
-  }
-
-  public static <T> Coder<T> coderForFieldType(FieldType fieldType) {
-    return SchemaCoderHelpers.coderForFieldType(fieldType);
   }
 
   @Override
@@ -181,7 +214,6 @@ public class SchemaCoder<T> extends CustomCoder<T> {
         return;
 
       case ARRAY:
-      case ITERABLE:;
         setSchemaIds(fieldType.getCollectionElementType());
         return;
 
@@ -191,7 +223,7 @@ public class SchemaCoder<T> extends CustomCoder<T> {
   }
 
   @Override
-  public boolean equals(@Nullable Object o) {
+  public boolean equals(Object o) {
     if (this == o) {
       return true;
     }
@@ -200,42 +232,12 @@ public class SchemaCoder<T> extends CustomCoder<T> {
     }
     SchemaCoder<?> that = (SchemaCoder<?>) o;
     return schema.equals(that.schema)
-        && typeDescriptor.equals(that.typeDescriptor)
         && toRowFunction.equals(that.toRowFunction)
         && fromRowFunction.equals(that.fromRowFunction);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(schema, typeDescriptor, toRowFunction, fromRowFunction);
-  }
-
-  private static RowIdentity identity() {
-    return new RowIdentity();
-  }
-
-  private static class RowIdentity implements SerializableFunction<Row, Row> {
-    @Override
-    public Row apply(Row input) {
-      return input;
-    }
-
-    @Override
-    public int hashCode() {
-      return Objects.hash(getClass());
-    }
-
-    @Override
-    public boolean equals(@Nullable Object o) {
-      if (this == o) {
-        return true;
-      }
-      return o != null && getClass() == o.getClass();
-    }
-  }
-
-  @Override
-  public TypeDescriptor<T> getEncodedTypeDescriptor() {
-    return this.typeDescriptor;
+    return Objects.hash(schema, toRowFunction, fromRowFunction);
   }
 }

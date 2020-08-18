@@ -24,7 +24,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import org.apache.beam.sdk.annotations.Internal;
 import org.apache.beam.sdk.values.KV;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hive.hcatalog.common.HCatException;
@@ -37,7 +36,6 @@ import org.apache.hive.hcatalog.data.transfer.WriteEntity;
 import org.apache.hive.hcatalog.data.transfer.WriterContext;
 
 /** Utility class for HCatalogIOTest and HCatalogIOIT. */
-@Internal
 public class HCatalogIOTestUtils {
   public static final String TEST_DATABASE = "default";
   public static final String TEST_TABLE = "mytable";

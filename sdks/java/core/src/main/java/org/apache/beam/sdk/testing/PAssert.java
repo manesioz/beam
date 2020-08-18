@@ -30,6 +30,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.Pipeline.PipelineVisitor;
 import org.apache.beam.sdk.PipelineRunner;
@@ -49,7 +50,6 @@ import org.apache.beam.sdk.transforms.GroupByKey;
 import org.apache.beam.sdk.transforms.MapElements;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
-import org.apache.beam.sdk.transforms.Reify;
 import org.apache.beam.sdk.transforms.SerializableFunction;
 import org.apache.beam.sdk.transforms.SimpleFunction;
 import org.apache.beam.sdk.transforms.Values;
@@ -73,10 +73,8 @@ import org.apache.beam.sdk.values.PDone;
 import org.apache.beam.sdk.values.ValueInSingleWindow;
 import org.apache.beam.sdk.values.WindowingStrategy;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Objects;
-import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterables;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Lists;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Duration;
 
 /**
@@ -195,7 +193,7 @@ public class PAssert {
     }
 
     @Override
-    public boolean equals(@Nullable Object o) {
+    public boolean equals(Object o) {
       if (this == o) {
         return true;
       }
@@ -668,7 +666,8 @@ public class PAssert {
       }
 
       @Override
-      public @Nullable Void apply(T actual) {
+      @Nullable
+      public Void apply(T actual) {
         assertThat(actual, matcher);
         return null;
       }
@@ -681,8 +680,7 @@ public class PAssert {
      */
     @Deprecated
     @Override
-    @SuppressFBWarnings("EQ_UNUSUAL")
-    public boolean equals(@Nullable Object o) {
+    public boolean equals(Object o) {
       throw new UnsupportedOperationException(
           "If you meant to test object equality, use .containsInAnyOrder instead.");
     }
@@ -912,7 +910,7 @@ public class PAssert {
     @SuppressFBWarnings("EQ_UNUSUAL")
     @Deprecated
     @Override
-    public boolean equals(@Nullable Object o) {
+    public boolean equals(Object o) {
       throw new UnsupportedOperationException(
           String.format(
               "tests for Java equality of the %s object, not the PCollection in question. "
@@ -1049,8 +1047,7 @@ public class PAssert {
      */
     @Deprecated
     @Override
-    @SuppressFBWarnings("EQ_UNUSUAL")
-    public boolean equals(@Nullable Object o) {
+    public boolean equals(Object o) {
       throw new UnsupportedOperationException(
           String.format(
               "tests for Java equality of the %s object, not the PCollection in question. "
@@ -1156,8 +1153,7 @@ public class PAssert {
   /**
    * A transform that gathers the contents of a {@link PCollection} into a single main input
    * iterable in the global window. This requires a runner to support {@link GroupByKey} in the
-   * global window, but not side inputs or other windowing or triggers unless the input is
-   * non-trivially windowed or triggered.
+   * global window, but not side inputs or other windowing or triggers.
    *
    * <p>If the {@link PCollection} is empty, this transform returns a {@link PCollection} containing
    * a single empty iterable, even though in practice most runners will not produce any element.
@@ -1174,41 +1170,6 @@ public class PAssert {
     @Override
     public PCollection<Iterable<ValueInSingleWindow<T>>> expand(PCollection<T> input) {
       final int combinedKey = 42;
-
-      if (input.getWindowingStrategy().equals(WindowingStrategy.globalDefault())
-          && rewindowingStrategy instanceof IntoGlobalWindow) {
-        // If we don't have to worry about complicated triggering semantics we can generate
-        // a much simpler pipeline.  This is particularly useful for bootstrapping runners so that
-        // we can run subsets of the validates runner test suite requiring support of only the
-        // most basic primitives.
-
-        // In order to ensure we actually get an (empty) iterable rather than an empty PCollection
-        // when the input is an empty PCollection, we flatten with a dummy PCollection containing
-        // an empty iterable before grouping on a singleton key and concatenating.
-        PCollection<Iterable<ValueInSingleWindow<T>>> actual =
-            input.apply(Reify.windows()).apply(ParDo.of(new ToSingletonIterables<>()));
-        PCollection<Iterable<ValueInSingleWindow<T>>> dummy =
-            input
-                .getPipeline()
-                .apply(
-                    Create.<Iterable<ValueInSingleWindow<T>>>of(
-                            ImmutableList.of(ImmutableList.of()))
-                        .withCoder(actual.getCoder()));
-        return PCollectionList.of(dummy)
-            .and(actual)
-            .apply(Flatten.pCollections())
-            .apply(
-                // Default end-of-window trigger disallowed for unbounded PCollections.
-                input.isBounded() == PCollection.IsBounded.UNBOUNDED
-                    ? Window.<Iterable<ValueInSingleWindow<T>>>configure()
-                        .triggering(Never.ever())
-                        .discardingFiredPanes()
-                    : Window.<Iterable<ValueInSingleWindow<T>>>configure())
-            .apply(WithKeys.of(combinedKey))
-            .apply(GroupByKey.create())
-            .apply(Values.create())
-            .apply(ParDo.of(new ConcatFn<>()));
-      }
 
       // Remove the triggering on both
       PTransform<
@@ -1262,16 +1223,9 @@ public class PAssert {
     }
   }
 
-  private static final class ToSingletonIterables<T> extends DoFn<T, Iterable<T>> {
-    @ProcessElement
-    public void processElement(ProcessContext c) {
-      c.output(ImmutableList.of(c.element()));
-    }
-  }
-
   private static final class ConcatFn<T> extends DoFn<Iterable<Iterable<T>>, Iterable<T>> {
     @ProcessElement
-    public void processElement(ProcessContext c) {
+    public void processElement(ProcessContext c) throws Exception {
       c.output(Iterables.concat(c.element()));
     }
   }
@@ -1489,7 +1443,8 @@ public class PAssert {
     }
 
     @Override
-    public @Nullable Void apply(T actual) {
+    @Nullable
+    public Void apply(T actual) {
       assertThat(actual, equalTo(expected));
       return null;
     }
@@ -1507,7 +1462,8 @@ public class PAssert {
     }
 
     @Override
-    public @Nullable Void apply(T actual) {
+    @Nullable
+    public Void apply(T actual) {
       assertThat(actual, not(equalTo(expected)));
       return null;
     }
@@ -1536,7 +1492,8 @@ public class PAssert {
     }
 
     @Override
-    public @Nullable Void apply(Iterable<T> actual) {
+    @Nullable
+    public Void apply(Iterable<T> actual) {
       assertThat(actual, containsInAnyOrder(expected));
       return null;
     }

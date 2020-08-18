@@ -19,13 +19,8 @@ package org.apache.beam.sdk.extensions.euphoria.core.client.operator.hint;
 
 import org.apache.beam.sdk.extensions.euphoria.core.annotation.audience.Audience;
 
-/**
- * Extra information for runner about Dataset size.
- *
- * @deprecated Hints unsupported for now
- */
+/** Extra information for runner about Dataset size. */
 @Audience(Audience.Type.CLIENT)
-@Deprecated
 public enum SizeHint implements OutputHint {
   /**
    * Indicate to runner that dataset can fit in memory and this information could be used for

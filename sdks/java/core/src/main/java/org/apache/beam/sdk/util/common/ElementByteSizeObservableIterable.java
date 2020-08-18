@@ -20,7 +20,6 @@ package org.apache.beam.sdk.util.common;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Observer;
-import org.apache.beam.sdk.annotations.Internal;
 
 /**
  * An abstract class used for iterables that notify observers about size in bytes of their elements,
@@ -29,7 +28,6 @@ import org.apache.beam.sdk.annotations.Internal;
  * @param <V> the type of elements returned by this iterable
  * @param <InputT> type type of iterator returned by this iterable
  */
-@Internal
 public abstract class ElementByteSizeObservableIterable<
         V, InputT extends ElementByteSizeObservableIterator<V>>
     implements Iterable<V> {

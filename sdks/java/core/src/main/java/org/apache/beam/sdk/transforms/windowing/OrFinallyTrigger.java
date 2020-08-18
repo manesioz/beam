@@ -60,11 +60,6 @@ public class OrFinallyTrigger extends Trigger {
   }
 
   @Override
-  public boolean mayFinish() {
-    return subTriggers.get(ACTUAL).mayFinish() || subTriggers.get(UNTIL).mayFinish();
-  }
-
-  @Override
   protected Trigger getContinuationTrigger(List<Trigger> continuationTriggers) {
     // Use OrFinallyTrigger instead of AfterFirst because the continuation of ACTUAL
     // may not be a OnceTrigger.

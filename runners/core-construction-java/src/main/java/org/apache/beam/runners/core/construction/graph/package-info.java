@@ -21,4 +21,4 @@
 package org.apache.beam.runners.core.construction.graph;
 
 import edu.umd.cs.findbugs.annotations.DefaultAnnotation;
-import org.checkerframework.checker.nullness.qual.NonNull;
+import edu.umd.cs.findbugs.annotations.NonNull;

@@ -79,9 +79,7 @@ func TestCombineFn3RevString(t *testing.T) {
 	}
 }
 
-// TestCombineFnMerge verifies that accumulators merge correctly and
-// extractOutput still works on the marshalled accumulators it receives after
-// merging.
+// TestCombineFnMerge verifies that accumulators merge correctly.
 func TestCombineFnMerge(t *testing.T) {
 	less := func(a, b string) bool {
 		return len(a) < len(b)
@@ -105,7 +103,7 @@ func TestCombineFnMerge(t *testing.T) {
 				list = append(list, load(fn, a...))
 			}
 			a := merge(t, fn, list...)
-			actual := outputUnmarshal(t, fn, a)
+			actual := output(fn, a)
 			if !reflect.DeepEqual(actual, test.Expected) {
 				t.Errorf("CombineFn(3; %v) = %v, want %v", test.Elms, actual, test.Expected)
 			}
@@ -136,18 +134,6 @@ func merge(t *testing.T, fn *combineFn, as ...accum) accum {
 		a = fn.MergeAccumulators(a, c)
 	}
 	return a
-}
-
-func outputUnmarshal(t *testing.T, fn *combineFn, a accum) []string {
-	buf, err := a.MarshalJSON()
-	if err != nil {
-		t.Fatalf("failure marshalling accum: %v, %+v", err, a)
-	}
-	var b accum
-	if err := b.UnmarshalJSON(buf); err != nil {
-		t.Fatalf("failure unmarshalling accum: %v, %+v", err, b)
-	}
-	return output(fn, b)
 }
 
 func output(fn *combineFn, a accum) []string {

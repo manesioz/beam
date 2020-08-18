@@ -74,9 +74,6 @@ rat {
     "**/apache_beam/portability/api/*_pb2*.py",
     "**/go/pkg/beam/**/*.pb.go",
 
-    // Ignore go.sum files, which don't permit headers
-    "**/go.sum",
-
     // Ignore Go test data files
     "**/go/data/**",
 
@@ -86,18 +83,14 @@ rat {
     // JDBC package config files
     "**/META-INF/services/java.sql.Driver",
 
-    // Website build files
+    // Ruby build files
     "**/Gemfile.lock",
     "**/Rakefile",
     "**/.htaccess",
-    "website/www/site/assets/scss/_bootstrap.scss",
-    "website/www/site/assets/scss/bootstrap/**/*",
-    "website/www/site/static/images/mascot/*.ai",
-    "website/www/site/static/js/bootstrap*.js",
-    "website/www/site/static/js/bootstrap/**/*",
-    "website/www/site/themes",
-    "website/www/yarn.lock",
-    "website/www/package.json",
+    "website/src/_sass/_bootstrap.scss",
+    "website/src/_sass/bootstrap/**/*",
+    "website/src/js/bootstrap*.js",
+    "website/src/js/bootstrap/**/*",
 
     // Ignore ownership files
     "ownership/**/*",
@@ -107,21 +100,10 @@ rat {
     "**/*.json",
 
     // Katas files
-    "learning/katas/**/course-remote-info.yaml",
-    "learning/katas/**/section-remote-info.yaml",
-    "learning/katas/**/lesson-remote-info.yaml",
-    "learning/katas/**/task-remote-info.yaml",
     "learning/katas/*/IO/**/*.txt",
 
-    // test p8 file for SnowflakeIO
-    "sdks/java/io/snowflake/src/test/resources/test_rsa_key.p8",
-
     // Mockito extensions
-    "sdks/java/io/amazon-web-services2/src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker",
-    "sdks/java/extensions/ml/src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker",
-
-    // JupyterLab extensions
-    "sdks/python/apache_beam/runners/interactive/extensions/apache-beam-jupyterlab-sidepanel/yarn.lock"
+    "sdks/java/io/amazon-web-services2/src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker"
   ]
 
   // Add .gitignore excludes to the Apache Rat exclusion list. We re-create the behavior
@@ -155,14 +137,6 @@ task javaPreCommit() {
   dependsOn ":sdks:java:extensions:sql:jdbc:preCommit"
   dependsOn ":sdks:java:javadoc:allJavadoc"
   dependsOn ":runners:direct-java:needsRunnerTests"
-  dependsOn ":sdks:java:container:docker"
-}
-
-task sqlPreCommit() {
-  dependsOn ":sdks:java:extensions:sql:runBasicExample"
-  dependsOn ":sdks:java:extensions:sql:runPojoExample"
-  dependsOn ":sdks:java:extensions:sql:build"
-  dependsOn ":sdks:java:extensions:sql:buildDependents"
 }
 
 task javaPreCommitBeamZetaSQL() {
@@ -171,6 +145,7 @@ task javaPreCommitBeamZetaSQL() {
 
 task javaPreCommitPortabilityApi() {
   dependsOn ":runners:google-cloud-dataflow-java:worker:build"
+  dependsOn ":runners:google-cloud-dataflow-java:examples:verifyPortabilityApi"
 }
 
 task javaPostCommit() {
@@ -178,7 +153,6 @@ task javaPostCommit() {
   dependsOn ":sdks:java:extensions:google-cloud-platform-core:postCommit"
   dependsOn ":sdks:java:extensions:zetasketch:postCommit"
   dependsOn ":sdks:java:io:google-cloud-platform:postCommit"
-  dependsOn ":sdks:java:io:kinesis:integrationTest"
 }
 
 task sqlPostCommit() {
@@ -187,8 +161,11 @@ task sqlPostCommit() {
   dependsOn ":sdks:java:extensions:sql:datacatalog:postCommit"
 }
 
+task javaPostCommitPortabilityApi () {
+  dependsOn ":runners:google-cloud-dataflow-java:postCommitPortabilityApi"
+}
+
 task goPreCommit() {
-  dependsOn ":sdks:go:goBuild"
   dependsOn ":sdks:go:goTest"
 
   dependsOn ":sdks:go:examples:goBuild"
@@ -216,35 +193,20 @@ task goIntegrationTests() {
 }
 
 task pythonPreCommit() {
-  dependsOn ":sdks:python:test-suites:tox:pycommon:preCommitPyCommon"
   dependsOn ":sdks:python:test-suites:tox:py2:preCommitPy2"
   dependsOn ":sdks:python:test-suites:tox:py35:preCommitPy35"
   dependsOn ":sdks:python:test-suites:tox:py36:preCommitPy36"
   dependsOn ":sdks:python:test-suites:tox:py37:preCommitPy37"
-  dependsOn ":sdks:python:test-suites:tox:py38:preCommitPy38"
-  dependsOn ":sdks:python:test-suites:dataflow:preCommitIT"
-  dependsOn ":sdks:python:test-suites:dataflow:preCommitIT_V2"
-}
-
-task pythonDocsPreCommit() {
-  dependsOn ":sdks:python:test-suites:tox:pycommon:docs"
-}
-
-task pythonDockerBuildPreCommit() {
-  dependsOn ":sdks:python:container:py2:docker"
-  dependsOn ":sdks:python:container:py35:docker"
-  dependsOn ":sdks:python:container:py36:docker"
-  dependsOn ":sdks:python:container:py37:docker"
-  dependsOn ":sdks:python:container:py38:docker"
+  dependsOn ":sdks:python:test-suites:dataflow:py2:preCommitIT"
+  dependsOn ":sdks:python:test-suites:dataflow:py37:preCommitIT"
+  // We don't include Py35, Py36 precommit ITs to reduce quota footprint.
+  // We can reconsider if we ever see an issue that these suites would
+  // have caught. Note that the same tests will still run in postcommit.
 }
 
 task pythonLintPreCommit() {
   dependsOn ":sdks:python:test-suites:tox:py2:lint"
-  dependsOn ":sdks:python:test-suites:tox:py37:lint"
-}
-
-task pythonFormatterPreCommit() {
-  dependsOn 'sdks:python:test-suites:tox:py38:formatter'
+  dependsOn ":sdks:python:test-suites:tox:py35:lint"
 }
 
 task python2PostCommit() {
@@ -253,32 +215,22 @@ task python2PostCommit() {
   dependsOn ":sdks:python:test-suites:direct:py2:directRunnerIT"
   dependsOn ":sdks:python:test-suites:direct:py2:hdfsIntegrationTest"
   dependsOn ":sdks:python:test-suites:direct:py2:mongodbioIT"
-  dependsOn ":sdks:python:test-suites:portable:py2:postCommitPy2"
 }
 
 task python35PostCommit() {
   dependsOn ":sdks:python:test-suites:dataflow:py35:postCommitIT"
   dependsOn ":sdks:python:test-suites:direct:py35:postCommitIT"
-  dependsOn ":sdks:python:test-suites:portable:py35:postCommitPy35"
 }
 
 task python36PostCommit() {
   dependsOn ":sdks:python:test-suites:dataflow:py36:postCommitIT"
   dependsOn ":sdks:python:test-suites:direct:py36:postCommitIT"
-  dependsOn ":sdks:python:test-suites:portable:py36:postCommitPy36"
 }
 
 task python37PostCommit() {
   dependsOn ":sdks:python:test-suites:dataflow:py37:postCommitIT"
   dependsOn ":sdks:python:test-suites:direct:py37:postCommitIT"
-  dependsOn ":sdks:python:test-suites:portable:py37:postCommitPy37"
-}
-
-task python38PostCommit() {
-  dependsOn ":sdks:python:test-suites:dataflow:py38:postCommitIT"
-  dependsOn ":sdks:python:test-suites:direct:py38:postCommitIT"
-  dependsOn ":sdks:python:test-suites:direct:py38:hdfsIntegrationTest"
-  dependsOn ":sdks:python:test-suites:portable:py38:postCommitPy38"
+  dependsOn ":sdks:python:test-suites:direct:py37:hdfsIntegrationTest"
 }
 
 task portablePythonPreCommit() {
@@ -286,14 +238,6 @@ task portablePythonPreCommit() {
   dependsOn ":sdks:python:test-suites:portable:py35:preCommitPy35"
   dependsOn ":sdks:python:test-suites:portable:py36:preCommitPy36"
   dependsOn ":sdks:python:test-suites:portable:py37:preCommitPy37"
-}
-
-task pythonSparkPostCommit() {
-  dependsOn ":sdks:python:test-suites:portable:py2:sparkValidatesRunner"
-  dependsOn ":sdks:python:test-suites:portable:py35:sparkValidatesRunner"
-  dependsOn ":sdks:python:test-suites:portable:py36:sparkValidatesRunner"
-  dependsOn ":sdks:python:test-suites:portable:py37:sparkValidatesRunner"
-  dependsOn ":sdks:python:test-suites:portable:py38:sparkValidatesRunner"
 }
 
 task websitePreCommit() {
@@ -326,70 +270,5 @@ release {
   git {
     requireBranch = 'release-.*|master'
     pushToRemote = ''
-  }
-}
-
-// Reports linkage errors across multiple Apache Beam artifact ids.
-//
-// To use (from the root of project):
-//    ./gradlew -Ppublishing -PjavaLinkageArtifactIds=artifactId1,artifactId2,... :checkJavaLinkage
-//
-// For example:
-//    ./gradlew -Ppublishing -PjavaLinkageArtifactIds=beam-sdks-java-core,beam-sdks-java-io-jdbc :checkJavaLinkage
-//
-// Note that this task publishes artifacts into your local Maven repository.
-if (project.hasProperty('javaLinkageArtifactIds')) {
-  if (!project.hasProperty('publishing')) {
-    throw new GradleException('You can only check linkage of Java artifacts if you specify -Ppublishing on the command line as well.')
-  }
-
-  configurations { linkageCheckerJava }
-  dependencies {
-    linkageCheckerJava "com.google.cloud.tools:dependencies:1.5.0"
-  }
-
-  // We need to evaluate all the projects first so that we can find depend on all the
-  // publishMavenJavaPublicationToMavenLocal tasks below.
-  for (p in rootProject.subprojects) {
-    if (!p.path.equals(project.path)) {
-      evaluationDependsOn(p.path)
-    }
-  }
-
-  project.task('checkJavaLinkage', type: JavaExec) {
-    dependsOn project.getTasksByName('publishMavenJavaPublicationToMavenLocal', true /* recursively */)
-    classpath = project.configurations.linkageCheckerJava
-    main = 'com.google.cloud.tools.opensource.classpath.LinkageCheckerMain'
-    def arguments = ['-a', project.javaLinkageArtifactIds.split(',').collect({
-      if (it.contains(':')) {
-        "${project.ext.mavenGroupId}:${it}"
-      } else {
-        // specify the version if not provided
-        "${project.ext.mavenGroupId}:${it}:${project.version}"
-      }
-    }).join(',')]
-
-    // Exclusion file filters out existing linkage errors before a change
-    if (project.hasProperty('javaLinkageWriteBaseline')) {
-      arguments += ['--output-exclusion-file', project.getProperty('javaLinkageWriteBaseline')]
-    } else if (project.hasProperty('javaLinkageReadBaseline')) {
-      arguments += ['--exclusion-file', project.getProperty('javaLinkageReadBaseline')]
-    }
-    args arguments
-    doLast {
-      println "NOTE: This task published artifacts into your local Maven repository. You may want to remove them manually."
-    }
-  }
-}
-if (project.hasProperty('compileAndRunTestsWithJava11')) {
-  project.javaPreCommitPortabilityApi.dependsOn ':sdks:java:testing:test-utils:verifyJavaVersion'
-  project.javaExamplesDataflowPrecommit.dependsOn ':sdks:java:testing:test-utils:verifyJavaVersion'
-  project.javaPreCommitBeamZetaSQL.dependsOn ':sdks:java:testing:test-utils:verifyJavaVersion'
-  project.sqlPreCommit.dependsOn ':sdks:java:testing:test-utils:verifyJavaVersion'
-} else {
-  allprojects {
-    tasks.withType(Test) {
-      exclude '**/JvmVerification.class'
-    }
   }
 }

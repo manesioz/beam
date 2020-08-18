@@ -27,7 +27,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import org.apache.beam.sdk.annotations.Experimental;
-import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.schemas.FieldAccessDescriptor;
 import org.apache.beam.sdk.schemas.Schema;
 import org.apache.beam.sdk.schemas.Schema.Field;
@@ -41,11 +40,10 @@ import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.Row;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Joiner;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
-import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterables;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Maps;
 
 /** Set of utilities for casting rows between schemas. */
-@Experimental(Kind.SCHEMAS)
+@Experimental(Experimental.Kind.SCHEMAS)
 @AutoValue
 public abstract class Cast<T> extends PTransform<PCollection<T>, PCollection<Row>> {
 
@@ -405,9 +403,8 @@ public abstract class Cast<T> extends PTransform<PCollection<T>, PCollection<Row
         return castRow((Row) inputValue, input.getRowSchema(), output.getRowSchema());
 
       case ARRAY:
-      case ITERABLE:;
-        Iterable<Object> inputValues = (Iterable<Object>) inputValue;
-        List<Object> outputValues = new ArrayList<>(Iterables.size(inputValues));
+        List<Object> inputValues = (List<Object>) inputValue;
+        List<Object> outputValues = new ArrayList<>(inputValues.size());
 
         for (Object elem : inputValues) {
           outputValues.add(

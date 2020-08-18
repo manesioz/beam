@@ -22,7 +22,6 @@ import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Prec
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.lang.reflect.TypeVariable;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Captures a free type variable that can be used in {@link TypeDescriptor#where}. For example:
@@ -49,7 +48,7 @@ public abstract class TypeParameter<T> {
   }
 
   @Override
-  public boolean equals(@Nullable Object obj) {
+  public boolean equals(Object obj) {
     if (!(obj instanceof TypeParameter)) {
       return false;
     }

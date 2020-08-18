@@ -17,15 +17,16 @@
  */
 package org.apache.beam.sdk.extensions.sql;
 
-import java.time.LocalDate;
-import org.apache.beam.sdk.extensions.sql.impl.utils.CalciteUtils;
+import static org.apache.beam.sdk.schemas.Schema.FieldType.DATETIME;
+import static org.joda.time.DateTimeZone.UTC;
+
 import org.apache.beam.sdk.schemas.Schema;
-import org.apache.beam.sdk.schemas.logicaltypes.SqlTypes;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.Row;
+import org.joda.time.DateTime;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
@@ -47,10 +48,7 @@ public class BeamSqlCastTest {
                 .withRowSchema(INPUT_ROW_SCHEMA));
 
     Schema resultType =
-        Schema.builder()
-            .addInt32Field("f_int")
-            .addNullableField("f_date", CalciteUtils.DATE)
-            .build();
+        Schema.builder().addInt32Field("f_int").addNullableField("f_date", DATETIME).build();
 
     PCollection<Row> result =
         input.apply(
@@ -66,7 +64,7 @@ public class BeamSqlCastTest {
 
     PAssert.that(result)
         .containsInAnyOrder(
-            Row.withSchema(resultType).addValues(1, LocalDate.of(2018, 10, 18)).build());
+            Row.withSchema(resultType).addValues(1, new DateTime(2018, 10, 18, 0, 0, UTC)).build());
 
     pipeline.run();
   }
@@ -78,11 +76,7 @@ public class BeamSqlCastTest {
             Create.of(Row.withSchema(INPUT_ROW_SCHEMA).addValues(1).addValue("20181018").build())
                 .withRowSchema(INPUT_ROW_SCHEMA));
 
-    Schema resultType =
-        Schema.builder()
-            .addInt32Field("f_int")
-            .addLogicalTypeField("f_date", SqlTypes.DATE)
-            .build();
+    Schema resultType = Schema.builder().addInt32Field("f_int").addDateTimeField("f_date").build();
 
     PCollection<Row> result =
         input.apply(
@@ -102,7 +96,7 @@ public class BeamSqlCastTest {
 
     PAssert.that(result)
         .containsInAnyOrder(
-            Row.withSchema(resultType).addValues(1, LocalDate.of(2018, 10, 18)).build());
+            Row.withSchema(resultType).addValues(1, new DateTime(2018, 10, 18, 0, 0, UTC)).build());
 
     pipeline.run();
   }

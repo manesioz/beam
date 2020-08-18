@@ -42,7 +42,11 @@ public class DirectRunnerApiSurfaceTest {
     @SuppressWarnings("unchecked")
     final Set<String> allowed =
         ImmutableSet.of(
-            "org.apache.beam.sdk", "org.apache.beam.runners.direct", "org.joda.time", "java.math");
+            "org.apache.beam.sdk",
+            "org.apache.beam.runners.direct",
+            "org.joda.time",
+            "javax.annotation",
+            "java.math");
 
     final Package thisPackage = getClass().getPackage();
     final ClassLoader thisClassLoader = getClass().getClassLoader();

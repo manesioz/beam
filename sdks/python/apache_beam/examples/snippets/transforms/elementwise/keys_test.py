@@ -16,8 +16,6 @@
 # limitations under the License.
 #
 
-# pytype: skip-file
-
 from __future__ import absolute_import
 from __future__ import print_function
 
@@ -25,26 +23,30 @@ import unittest
 
 import mock
 
-from apache_beam.examples.snippets.util import assert_matches_stdout
 from apache_beam.testing.test_pipeline import TestPipeline
+from apache_beam.testing.util import assert_that
+from apache_beam.testing.util import equal_to
 
 from . import keys
 
 
 def check_icons(actual):
-  expected = '''[START icons]
-🍓
-🥕
-🍆
-🍅
-🥔
-[END icons]'''.splitlines()[1:-1]
-  assert_matches_stdout(actual, expected)
+  # [START icons]
+  icons = [
+      '🍓',
+      '🥕',
+      '🍆',
+      '🍅',
+      '🥔',
+  ]
+  # [END icons]
+  assert_that(actual, equal_to(icons))
 
 
 @mock.patch('apache_beam.Pipeline', TestPipeline)
-@mock.patch(
-    'apache_beam.examples.snippets.transforms.elementwise.keys.print', str)
+# pylint: disable=line-too-long
+@mock.patch('apache_beam.examples.snippets.transforms.elementwise.keys.print', lambda elem: elem)
+# pylint: enable=line-too-long
 class KeysTest(unittest.TestCase):
   def test_keys(self):
     keys.keys(check_icons)

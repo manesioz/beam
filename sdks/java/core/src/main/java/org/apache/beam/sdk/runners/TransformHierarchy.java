@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.Pipeline.PipelineVisitor;
 import org.apache.beam.sdk.Pipeline.PipelineVisitor.CompositeBehavior;
@@ -45,7 +46,6 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.annotations.Visi
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.MoreObjects;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableMap;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterables;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -316,12 +316,12 @@ public class TransformHierarchy {
    */
   public class Node {
     // null for the root node, otherwise the enclosing node
-    private final @Nullable Node enclosingNode;
+    @Nullable private final Node enclosingNode;
 
     // The PTransform for this node, which may be a composite PTransform.
     // The root of a TransformHierarchy is represented as a Node
     // with a null transform field.
-    private final @Nullable PTransform<?, ?> transform;
+    @Nullable private final PTransform<?, ?> transform;
 
     private final String fullName;
 
@@ -333,7 +333,7 @@ public class TransformHierarchy {
 
     // TODO: track which outputs need to be exported to parent.
     // Output of the transform, in expanded form. Null if not yet set.
-    private @Nullable Map<TupleTag<?>, PValue> outputs;
+    @Nullable private Map<TupleTag<?>, PValue> outputs;
 
     @VisibleForTesting boolean finishedSpecifying = false;
 
@@ -399,7 +399,8 @@ public class TransformHierarchy {
      * @return {@code null} if and only if this is the root node of the graph, which has no
      *     associated transform
      */
-    public @Nullable PTransform<?, ?> getTransform() {
+    @Nullable
+    public PTransform<?, ?> getTransform() {
       return transform;
     }
 

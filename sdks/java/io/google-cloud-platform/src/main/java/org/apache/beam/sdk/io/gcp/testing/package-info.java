@@ -16,7 +16,4 @@
  * limitations under the License.
  */
 /** Defines utilities for unit testing Google Cloud Platform components of Apache Beam pipelines. */
-@Internal
 package org.apache.beam.sdk.io.gcp.testing;
-
-import org.apache.beam.sdk.annotations.Internal;

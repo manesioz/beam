@@ -179,7 +179,6 @@ public class DirectRunner extends PipelineRunner<DirectPipelineResult> {
 
       DisplayDataValidator.validatePipeline(pipeline);
       DisplayDataValidator.validateOptions(options);
-      SplittableParDo.validateNoPrimitiveReads(pipeline);
 
       ExecutorService metricsPool =
           Executors.newCachedThreadPool(
@@ -338,30 +337,26 @@ public class DirectRunner extends PipelineRunner<DirectPipelineResult> {
      */
     @Override
     public State waitUntilFinish(Duration duration) {
-      if (this.state.isTerminal()) {
-        return this.state;
-      }
-      final State endState;
-      try {
-        endState = executor.waitUntilFinish(duration);
-      } catch (UserCodeException uce) {
-        // Emulates the behavior of Pipeline#run(), where a stack trace caused by a
-        // UserCodeException is truncated and replaced with the stack starting at the call to
-        // waitToFinish
-        throw new Pipeline.PipelineExecutionException(uce.getCause());
-      } catch (Exception e) {
-        if (e instanceof InterruptedException) {
-          Thread.currentThread().interrupt();
+      State startState = this.state;
+      if (!startState.isTerminal()) {
+        try {
+          state = executor.waitUntilFinish(duration);
+        } catch (UserCodeException uce) {
+          // Emulates the behavior of Pipeline#run(), where a stack trace caused by a
+          // UserCodeException is truncated and replaced with the stack starting at the call to
+          // waitToFinish
+          throw new Pipeline.PipelineExecutionException(uce.getCause());
+        } catch (Exception e) {
+          if (e instanceof InterruptedException) {
+            Thread.currentThread().interrupt();
+          }
+          if (e instanceof RuntimeException) {
+            throw (RuntimeException) e;
+          }
+          throw new RuntimeException(e);
         }
-        if (e instanceof RuntimeException) {
-          throw (RuntimeException) e;
-        }
-        throw new RuntimeException(e);
       }
-      if (endState != null) {
-        this.state = endState;
-      }
-      return endState;
+      return this.state;
     }
   }
 

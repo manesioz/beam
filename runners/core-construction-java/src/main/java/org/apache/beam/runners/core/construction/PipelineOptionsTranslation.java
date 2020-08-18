@@ -19,7 +19,6 @@ package org.apache.beam.runners.core.construction;
 
 import com.fasterxml.jackson.core.TreeNode;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.util.HashMap;
@@ -27,9 +26,9 @@ import java.util.Iterator;
 import java.util.Map;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.util.common.ReflectHelpers;
-import org.apache.beam.vendor.grpc.v1p26p0.com.google.protobuf.InvalidProtocolBufferException;
-import org.apache.beam.vendor.grpc.v1p26p0.com.google.protobuf.Struct;
-import org.apache.beam.vendor.grpc.v1p26p0.com.google.protobuf.util.JsonFormat;
+import org.apache.beam.vendor.grpc.v1p21p0.com.google.protobuf.InvalidProtocolBufferException;
+import org.apache.beam.vendor.grpc.v1p21p0.com.google.protobuf.Struct;
+import org.apache.beam.vendor.grpc.v1p21p0.com.google.protobuf.util.JsonFormat;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.CaseFormat;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableMap;
 
@@ -49,26 +48,18 @@ public class PipelineOptionsTranslation {
 
     try {
       // TODO: Officially define URNs for options and their scheme.
-      JsonNode treeNode = MAPPER.valueToTree(options);
-      JsonNode rootOptions = treeNode.get("options");
-      Iterator<Map.Entry<String, JsonNode>> optionsEntries = rootOptions.fields();
-
-      if (!optionsEntries.hasNext()) {
-        // Due to mandatory options there is no way this map can be empty.
-        // If it is, then fail fast as it is due to incompatible jackson-core in the classpath.
-        // (observed with version 2.2.3)
-        throw new RuntimeException(
-            "Unable to convert pipeline options, please check for outdated jackson-core version in the classpath.");
-      }
-
+      TreeNode treeNode = MAPPER.valueToTree(options);
+      TreeNode rootOptions = treeNode.get("options");
+      Iterator<String> optionsKeys = rootOptions.fieldNames();
       Map<String, TreeNode> optionsUsingUrns = new HashMap<>();
-      while (optionsEntries.hasNext()) {
-        Map.Entry<String, JsonNode> entry = optionsEntries.next();
+      while (optionsKeys.hasNext()) {
+        String optionKey = optionsKeys.next();
+        TreeNode optionValue = rootOptions.get(optionKey);
         optionsUsingUrns.put(
             "beam:option:"
-                + CaseFormat.LOWER_CAMEL.to(CaseFormat.LOWER_UNDERSCORE, entry.getKey())
+                + CaseFormat.LOWER_CAMEL.to(CaseFormat.LOWER_UNDERSCORE, optionKey)
                 + ":v1",
-            entry.getValue());
+            optionValue);
       }
 
       // The JSON format of a Protobuf Struct is the JSON object that is equivalent to that struct

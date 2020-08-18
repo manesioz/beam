@@ -31,7 +31,6 @@ import java.util.Objects;
 import org.apache.beam.sdk.transforms.splittabledofn.HasDefaultTracker;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.MoreObjects;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -293,7 +292,7 @@ public final class ByteKeyRange
   }
 
   @Override
-  public boolean equals(@Nullable Object o) {
+  public boolean equals(Object o) {
     if (o == this) {
       return true;
     }
@@ -332,7 +331,7 @@ public final class ByteKeyRange
       // bit when converting to bytes.
       verify(
           padding == -1,
-          "key %s: expected length %s with exactly one byte of padding, found %s",
+          "key %s: expected length %d with exactly one byte of padding, found %d",
           ByteKey.copyFrom(array),
           size,
           -padding);

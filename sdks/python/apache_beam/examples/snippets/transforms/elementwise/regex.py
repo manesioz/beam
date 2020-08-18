@@ -16,8 +16,6 @@
 # limitations under the License.
 #
 
-# pytype: skip-file
-
 from __future__ import absolute_import
 from __future__ import print_function
 
@@ -41,7 +39,8 @@ def regex_matches(test=None):
             'invalid, 🍉, format',
         ])
         | 'Parse plants' >> beam.Regex.matches(regex)
-        | beam.Map(print))
+        | beam.Map(print)
+    )
     # [END regex_matches]
     if test:
       test(plants_matches)
@@ -66,7 +65,8 @@ def regex_all_matches(test=None):
             'invalid, 🍉, format',
         ])
         | 'Parse plants' >> beam.Regex.all_matches(regex)
-        | beam.Map(print))
+        | beam.Map(print)
+    )
     # [END regex_all_matches]
     if test:
       test(plants_all_matches)
@@ -91,7 +91,8 @@ def regex_matches_kv(test=None):
             'invalid, 🍉, format',
         ])
         | 'Parse plants' >> beam.Regex.matches_kv(regex, keyGroup='icon')
-        | beam.Map(print))
+        | beam.Map(print)
+    )
     # [END regex_matches_kv]
     if test:
       test(plants_matches_kv)
@@ -114,7 +115,8 @@ def regex_find(test=None):
             '# 🥔, Potato, perennial',
         ])
         | 'Parse plants' >> beam.Regex.find(regex)
-        | beam.Map(print))
+        | beam.Map(print)
+    )
     # [END regex_find]
     if test:
       test(plants_matches)
@@ -137,7 +139,8 @@ def regex_find_all(test=None):
             '# 🥔, Potato, perennial',
         ])
         | 'Parse plants' >> beam.Regex.find_all(regex)
-        | beam.Map(print))
+        | beam.Map(print)
+    )
     # [END regex_find_all]
     if test:
       test(plants_find_all)
@@ -160,7 +163,8 @@ def regex_find_kv(test=None):
             '# 🥔, Potato, perennial',
         ])
         | 'Parse plants' >> beam.Regex.find_kv(regex, keyGroup='icon')
-        | beam.Map(print))
+        | beam.Map(print)
+    )
     # [END regex_find_kv]
     if test:
       test(plants_matches_kv)
@@ -181,7 +185,8 @@ def regex_replace_all(test=None):
             '🥔 : Potato : perennial',
         ])
         | 'To CSV' >> beam.Regex.replace_all(r'\s*:\s*', ',')
-        | beam.Map(print))
+        | beam.Map(print)
+    )
     # [END regex_replace_all]
     if test:
       test(plants_replace_all)
@@ -202,7 +207,8 @@ def regex_replace_first(test=None):
             '🥔, Potato, perennial',
         ])
         | 'As dictionary' >> beam.Regex.replace_first(r'\s*,\s*', ': ')
-        | beam.Map(print))
+        | beam.Map(print)
+    )
     # [END regex_replace_first]
     if test:
       test(plants_replace_first)
@@ -223,7 +229,8 @@ def regex_split(test=None):
             '🥔 : Potato : perennial',
         ])
         | 'Parse plants' >> beam.Regex.split(r'\s*:\s*')
-        | beam.Map(print))
+        | beam.Map(print)
+    )
     # [END regex_split]
     if test:
       test(plants_split)

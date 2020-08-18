@@ -16,8 +16,6 @@
 # limitations under the License.
 #
 
-# pytype: skip-file
-
 from __future__ import absolute_import
 from __future__ import print_function
 
@@ -37,7 +35,8 @@ def tostring_kvs(test=None):
             ('🥔', 'Potato'),
         ])
         | 'To string' >> beam.ToString.Kvs()
-        | beam.Map(print))
+        | beam.Map(print)
+    )
     # [END tostring_kvs]
     if test:
       test(plants)
@@ -58,7 +57,8 @@ def tostring_element(test=None):
             ['🥔', 'Potato', 'perennial'],
         ])
         | 'To string' >> beam.ToString.Element()
-        | beam.Map(print))
+        | beam.Map(print)
+    )
     # [END tostring_element]
     if test:
       test(plant_lists)
@@ -79,7 +79,8 @@ def tostring_iterables(test=None):
             ['🥔', 'Potato', 'perennial'],
         ])
         | 'To string' >> beam.ToString.Iterables()
-        | beam.Map(print))
+        | beam.Map(print)
+    )
     # [END tostring_iterables]
     if test:
       test(plants_csv)

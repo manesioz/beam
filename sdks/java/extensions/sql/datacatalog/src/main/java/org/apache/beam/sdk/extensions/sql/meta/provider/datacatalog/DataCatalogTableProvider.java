@@ -19,58 +19,60 @@ package org.apache.beam.sdk.extensions.sql.meta.provider.datacatalog;
 
 import static java.util.stream.Collectors.toMap;
 
-import com.google.api.gax.rpc.InvalidArgumentException;
-import com.google.api.gax.rpc.NotFoundException;
-import com.google.api.gax.rpc.PermissionDeniedException;
-import com.google.cloud.datacatalog.v1beta1.DataCatalogClient;
-import com.google.cloud.datacatalog.v1beta1.DataCatalogSettings;
-import com.google.cloud.datacatalog.v1beta1.Entry;
-import com.google.cloud.datacatalog.v1beta1.LookupEntryRequest;
-import java.io.IOException;
+import com.google.cloud.datacatalog.DataCatalogGrpc;
+import com.google.cloud.datacatalog.DataCatalogGrpc.DataCatalogBlockingStub;
+import com.google.cloud.datacatalog.LookupEntryRequest;
+import io.grpc.ManagedChannelBuilder;
+import io.grpc.Status;
+import io.grpc.StatusRuntimeException;
+import io.grpc.auth.MoreCallCredentials;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
 import java.util.stream.Stream;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.extensions.gcp.options.GcpOptions;
 import org.apache.beam.sdk.extensions.sql.impl.TableName;
 import org.apache.beam.sdk.extensions.sql.meta.BeamSqlTable;
 import org.apache.beam.sdk.extensions.sql.meta.Table;
 import org.apache.beam.sdk.extensions.sql.meta.provider.FullNameTableProvider;
-import org.apache.beam.sdk.extensions.sql.meta.provider.InvalidTableException;
 import org.apache.beam.sdk.extensions.sql.meta.provider.TableProvider;
 import org.apache.beam.sdk.extensions.sql.meta.provider.bigquery.BigQueryTableProvider;
 import org.apache.beam.sdk.extensions.sql.meta.provider.pubsub.PubsubJsonTableProvider;
 import org.apache.beam.sdk.extensions.sql.meta.provider.text.TextTableProvider;
-import org.apache.beam.sdk.schemas.Schema;
 import org.apache.beam.vendor.calcite.v1_20_0.com.google.common.collect.ImmutableList;
-import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.MoreObjects;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.apache.beam.vendor.calcite.v1_20_0.com.google.common.collect.ImmutableMap;
 
 /** Uses DataCatalog to get the source type and schema for a table. */
-public class DataCatalogTableProvider extends FullNameTableProvider implements AutoCloseable {
+public class DataCatalogTableProvider extends FullNameTableProvider {
 
-  private static final TableFactory PUBSUB_TABLE_FACTORY = new PubsubTableFactory();
-  private static final TableFactory GCS_TABLE_FACTORY = new GcsTableFactory();
+  private Map<String, TableProvider> delegateProviders;
+  private Map<String, Table> tableCache;
+  private DataCatalogBlockingStub dataCatalog;
 
-  private static final Map<String, TableProvider> DELEGATE_PROVIDERS =
-      Stream.of(new PubsubJsonTableProvider(), new BigQueryTableProvider(), new TextTableProvider())
-          .collect(toMap(TableProvider::getTableType, p -> p));
+  private DataCatalogTableProvider(
+      Map<String, TableProvider> delegateProviders, DataCatalogBlockingStub dataCatalog) {
 
-  private final DataCatalogClient dataCatalog;
-  private final Map<String, Table> tableCache;
-  private final TableFactory tableFactory;
-
-  private DataCatalogTableProvider(DataCatalogClient dataCatalog, boolean truncateTimestamps) {
     this.tableCache = new HashMap<>();
+    this.delegateProviders = ImmutableMap.copyOf(delegateProviders);
     this.dataCatalog = dataCatalog;
-    this.tableFactory =
-        ChainedTableFactory.of(
-            PUBSUB_TABLE_FACTORY, GCS_TABLE_FACTORY, new BigQueryTableFactory(truncateTimestamps));
   }
 
   public static DataCatalogTableProvider create(DataCatalogPipelineOptions options) {
-    return new DataCatalogTableProvider(
-        createDataCatalogClient(options), options.getTruncateTimestamps());
+    return new DataCatalogTableProvider(getSupportedProviders(), createDataCatalogClient(options));
+  }
+
+  private static DataCatalogBlockingStub createDataCatalogClient(
+      DataCatalogPipelineOptions options) {
+    return DataCatalogGrpc.newBlockingStub(
+            ManagedChannelBuilder.forTarget(options.getDataCatalogEndpoint()).build())
+        .withCallCredentials(
+            MoreCallCredentials.from(options.as(GcpOptions.class).getGcpCredential()));
+  }
+
+  private static Map<String, TableProvider> getSupportedProviders() {
+    return Stream.of(
+            new PubsubJsonTableProvider(), new BigQueryTableProvider(), new TextTableProvider())
+        .collect(toMap(TableProvider::getTableType, p -> p));
   }
 
   @Override
@@ -96,12 +98,13 @@ public class DataCatalogTableProvider extends FullNameTableProvider implements A
   }
 
   @Override
-  public @Nullable Table getTable(String tableName) {
-    return loadTable(tableName);
+  public @Nullable Table getTable(String tableNamePart) {
+    throw new UnsupportedOperationException(
+        "Loading a table by partial name '" + tableNamePart + "' is unsupported");
   }
 
   @Override
-  public Table getTableByFullName(TableName fullTableName) {
+  public @Nullable Table getTableByFullName(TableName fullTableName) {
 
     ImmutableList<String> allNameParts =
         ImmutableList.<String>builder()
@@ -114,16 +117,7 @@ public class DataCatalogTableProvider extends FullNameTableProvider implements A
     return loadTable(fullEscapedTableName);
   }
 
-  @Override
-  public BeamSqlTable buildBeamSqlTable(Table table) {
-    TableProvider tableProvider = DELEGATE_PROVIDERS.get(table.getType());
-    if (tableProvider == null) {
-      throw new RuntimeException("TableProvider is null");
-    }
-    return tableProvider.buildBeamSqlTable(table);
-  }
-
-  private Table loadTable(String tableName) {
+  private @Nullable Table loadTable(String tableName) {
     if (!tableCache.containsKey(tableName)) {
       tableCache.put(tableName, loadTableFromDC(tableName));
     }
@@ -133,53 +127,20 @@ public class DataCatalogTableProvider extends FullNameTableProvider implements A
 
   private Table loadTableFromDC(String tableName) {
     try {
-      return toCalciteTable(
+      return TableUtils.toBeamTable(
           tableName,
           dataCatalog.lookupEntry(
               LookupEntryRequest.newBuilder().setSqlResource(tableName).build()));
-    } catch (InvalidArgumentException | PermissionDeniedException | NotFoundException e) {
-      throw new InvalidTableException("Could not resolve table in Data Catalog: " + tableName, e);
+    } catch (StatusRuntimeException e) {
+      if (e.getStatus().equals(Status.INVALID_ARGUMENT)) {
+        return null;
+      }
+      throw new RuntimeException(e);
     }
-  }
-
-  private static DataCatalogClient createDataCatalogClient(DataCatalogPipelineOptions options) {
-    try {
-      return DataCatalogClient.create(
-          DataCatalogSettings.newBuilder()
-              .setCredentialsProvider(() -> options.as(GcpOptions.class).getGcpCredential())
-              .setEndpoint(options.getDataCatalogEndpoint())
-              .build());
-    } catch (IOException e) {
-      throw new RuntimeException("Error creating Data Catalog client", e);
-    }
-  }
-
-  private Table toCalciteTable(String tableName, Entry entry) {
-    if (entry.getSchema().getColumnsCount() == 0) {
-      throw new UnsupportedOperationException(
-          "Entry doesn't have a schema. Please attach a schema to '"
-              + tableName
-              + "' in Data Catalog: "
-              + entry.toString());
-    }
-    Schema schema = SchemaUtils.fromDataCatalog(entry.getSchema());
-
-    Optional<Table.Builder> tableBuilder = tableFactory.tableBuilder(entry);
-    if (!tableBuilder.isPresent()) {
-      throw new UnsupportedOperationException(
-          String.format(
-              "Unsupported Data Catalog entry: %s",
-              MoreObjects.toStringHelper(entry)
-                  .add("linkedResource", entry.getLinkedResource())
-                  .add("hasGcsFilesetSpec", entry.hasGcsFilesetSpec())
-                  .toString()));
-    }
-
-    return tableBuilder.get().schema(schema).name(tableName).build();
   }
 
   @Override
-  public void close() {
-    dataCatalog.close();
+  public BeamSqlTable buildBeamSqlTable(Table table) {
+    return delegateProviders.get(table.getType()).buildBeamSqlTable(table);
   }
 }

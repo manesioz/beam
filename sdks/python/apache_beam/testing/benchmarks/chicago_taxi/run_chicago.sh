@@ -15,16 +15,12 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 #
-#
-#    The Chicago Taxi example demonstrates the end-to-end workflow and steps
-#    of how to analyze, validate and transform data, train a model, analyze
-#    and serve it.
-#
-#    Example usage:
-#    ./run_chicago.sh gs://my-gcs-bucket DataflowRunner \
-#                     --sdk_location=\"apache-beam.tar.gz\" --region=\"us-central1\"
-#
-set -eo pipefail
+
+# This script builds a Docker container with the user specified requirements on top of
+# an existing Python worker Docker container (either one you build from source as
+# described in CONTAINERS.md or from a released Docker container).
+set -e
+echo Starting distributed TFDV stats computation and schema generation...
 
 if [[ -z "$1" ]]; then
   echo "GCS bucket name required"
@@ -36,21 +32,14 @@ if [[ -z "$2" ]]; then
   exit 1
 fi
 
-GCS_BUCKET=$1
-RUNNER=$2
-PIPELINE_OPTIONS=$3
-
-if [[ "$RUNNER" == "PortableRunner" ]]; then
-  METRICS_TABLE_SUFFIX='_flink'
+if [[ -z "$3" ]]; then
+  echo "SDK location needed"
+  exit 1
 fi
 
-# Loop through pipeline options and append
-shift
-while [[ $# -gt 2 ]]
-do
-  PIPELINE_OPTIONS=${PIPELINE_OPTIONS}" "$3
-  shift
-done
+GCS_BUCKET=$1
+RUNNER=$2
+SDK_LOCATION=$3
 
 JOB_ID="chicago-taxi-tfdv-$(date +%Y%m%d-%H%M%S)"
 JOB_OUTPUT_PATH=${GCS_BUCKET}/${JOB_ID}/chicago_taxi_output
@@ -73,7 +62,6 @@ echo TFDV output path: ${TFDV_OUTPUT_PATH}
 
 # Analyze and validate
 # Compute stats and generate a schema based on the stats.
-echo Starting distributed TFDV stats computation and schema generation...
 
 python tfdv_analyze_and_validate.py \
   --input bigquery-public-data.chicago_taxi_trips.taxi_trips \
@@ -83,16 +71,17 @@ python tfdv_analyze_and_validate.py \
   --project ${GCP_PROJECT} \
   --region us-central1 \
   --temp_location ${TEMP_PATH} \
+  --experiments shuffle_mode=auto \
   --job_name ${JOB_ID} \
   --save_main_session \
   --runner ${RUNNER} \
   --max_rows=${MAX_ROWS} \
   --publish_to_big_query=true \
   --metrics_dataset='beam_performance' \
-  --metrics_table='tfdv_analyze'${METRICS_TABLE_SUFFIX} \
+  --metrics_table='tfdv_analyze' \
   --metric_reporting_project ${GCP_PROJECT} \
-  --setup_file ./setup.py \
-  ${PIPELINE_OPTIONS}
+  --sdk_location=${SDK_LOCATION} \
+  --setup_file ./setup.py
 
 EVAL_JOB_ID=${JOB_ID}-eval
 
@@ -107,16 +96,17 @@ python tfdv_analyze_and_validate.py \
   --project ${GCP_PROJECT} \
   --region us-central1 \
   --temp_location ${TEMP_PATH} \
+  --experiments shuffle_mode=auto \
   --job_name ${EVAL_JOB_ID} \
   --save_main_session \
   --runner ${RUNNER} \
   --max_rows=${MAX_ROWS} \
   --publish_to_big_query=true \
   --metrics_dataset='beam_performance' \
-  --metrics_table='chicago_taxi_tfdv_validate'${METRICS_TABLE_SUFFIX} \
+  --metrics_table='chicago_taxi_tfdv_validate' \
+  --sdk_location=${SDK_LOCATION} \
   --metric_reporting_project ${GCP_PROJECT} \
-  --setup_file ./setup.py \
-  ${PIPELINE_OPTIONS}
+  --setup_file ./setup.py
 
 # End analyze and validate
 echo Preprocessing train data...
@@ -129,15 +119,16 @@ python preprocess.py \
   --project ${GCP_PROJECT} \
   --region us-central1 \
   --temp_location ${TEMP_PATH} \
+  --experiments shuffle_mode=auto \
   --job_name ${JOB_ID} \
   --runner ${RUNNER} \
   --max_rows ${MAX_ROWS} \
   --publish_to_big_query=true \
   --metrics_dataset='beam_performance' \
-  --metrics_table='chicago_taxi_preprocess'${METRICS_TABLE_SUFFIX} \
+  --metrics_table='chicago_taxi_preprocess' \
+  --sdk_location=${SDK_LOCATION} \
   --metric_reporting_project ${GCP_PROJECT} \
-  --setup_file ./setup.py \
-  ${PIPELINE_OPTIONS}
+  --setup_file ./setup.py
 
 #Train ML engine
 TRAINER_JOB_ID="chicago_taxi_trainer_$(date +%Y%m%d_%H%M%S)"
@@ -147,7 +138,7 @@ WORKING_DIR=${TRAIN_OUTPUT_PATH}/working_dir
 MODEL_DIR=${TRAIN_OUTPUT_PATH}/model_dir
 # Inputs
 TRAIN_FILE=${TFT_OUTPUT_PATH}/train_transformed-*
-TF_VERSION=1.14
+TF_VERSION=1.13
 #workaround for boto in virtualenv, required for the gsutil commands to work:
 export BOTO_CONFIG=/dev/null
 # Start clean, but don't fail if the path does not exist yet.
@@ -169,7 +160,7 @@ gcloud ml-engine jobs submit training ${TRAINER_JOB_ID} \
                                     -- \
                                     --train-files ${TRAIN_FILE} \
                                     --train-steps ${TRAIN_STEPS} \
-                                    --eval-files ${EVAL_FILE} \
+                                   --eval-files ${EVAL_FILE} \
                                     --eval-steps ${EVAL_STEPS} \
                                     --output-dir ${WORKING_DIR} \
                                     --schema-file ${SCHEMA_PATH} \
@@ -188,13 +179,14 @@ python process_tfma.py \
   --project ${GCP_PROJECT} \
   --region us-central1 \
   --temp_location ${GCS_BUCKET}/${JOB_ID}/tmp/ \
+  --experiments shuffle_mode=auto \
   --job_name ${JOB_ID} \
   --save_main_session \
   --runner ${RUNNER} \
   --max_eval_rows=${MAX_ROWS} \
   --publish_to_big_query=true \
   --metrics_dataset='beam_performance' \
-  --metrics_table='chicago_taxi_process_tfma'${METRICS_TABLE_SUFFIX} \
+  --metrics_table='chicago_taxi_process_tfma' \
+  --sdk_location=${SDK_LOCATION} \
   --metric_reporting_project ${GCP_PROJECT} \
-  --setup_file ./setup.py \
-  ${PIPELINE_OPTIONS}
+  --setup_file ./setup.py

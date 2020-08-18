@@ -52,11 +52,6 @@ public class ReshuffleTrigger<W extends BoundedWindow> extends Trigger {
   }
 
   @Override
-  public boolean mayFinish() {
-    return false;
-  }
-
-  @Override
   public String toString() {
     return "ReshuffleTrigger()";
   }

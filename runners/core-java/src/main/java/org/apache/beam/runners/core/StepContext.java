@@ -17,8 +17,6 @@
  */
 package org.apache.beam.runners.core;
 
-import org.apache.beam.sdk.transforms.DoFn.BundleFinalizer;
-
 /**
  * The context in which a specific step is executing, including access to state and timers.
  *
@@ -32,8 +30,4 @@ public interface StepContext {
   StateInternals stateInternals();
 
   TimerInternals timerInternals();
-
-  default BundleFinalizer bundleFinalizer() {
-    throw new UnsupportedOperationException("BundleFinalizer is unsupported.");
-  }
 }

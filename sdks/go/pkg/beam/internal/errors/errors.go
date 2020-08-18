@@ -159,8 +159,7 @@ func (e *beamError) printRecursive(builder *strings.Builder) {
 	wraps := e.cause != nil
 
 	if e.context != "" {
-		// Increase the indent for multi-line contexts.
-		builder.WriteString(fmt.Sprintf("\t%s\n", strings.ReplaceAll(e.context, "\n", "\n\t")))
+		builder.WriteString(fmt.Sprintf("\t%s:\n", e.context))
 	}
 	if e.msg != "" {
 		builder.WriteString(e.msg)
@@ -178,7 +177,6 @@ func (e *beamError) printRecursive(builder *strings.Builder) {
 	}
 }
 
-// Format implements the fmt.Formatter interface
 func (e *beamError) Format(s fmt.State, verb rune) {
 	switch verb {
 	case 'v', 's':
@@ -186,9 +184,4 @@ func (e *beamError) Format(s fmt.State, verb rune) {
 	case 'q':
 		fmt.Fprintf(s, "%q", e.Error())
 	}
-}
-
-// Unwrap returns the cause of this error if present.
-func (e *beamError) Unwrap() error {
-	return e.cause
 }

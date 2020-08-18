@@ -17,13 +17,14 @@
  */
 package org.apache.beam.runners.jet;
 
-import com.hazelcast.function.SupplierEx;
 import com.hazelcast.jet.core.Processor;
 import com.hazelcast.jet.core.ProcessorMetaSupplier;
 import com.hazelcast.jet.core.Vertex;
+import com.hazelcast.jet.function.SupplierEx;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import org.apache.beam.runners.core.construction.CreatePCollectionViewTranslation;
@@ -185,14 +186,12 @@ class JetTransformTranslators {
       SerializablePipelineOptions pipelineOptions = context.getOptions();
       Coder inputValueCoder = ((PCollection) Utils.getInput(appliedTransform)).getCoder();
       Coder inputCoder = Utils.getCoder((PCollection) Utils.getInput(appliedTransform));
-      Collection<PCollectionView<?>> sideInputs = Utils.getSideInputs(appliedTransform);
+      List<PCollectionView<?>> sideInputs = Utils.getSideInputs(appliedTransform);
       Map<? extends PCollectionView<?>, Coder> sideInputCoders =
           sideInputs.stream()
               .collect(Collectors.toMap(si -> si, si -> Utils.getCoder(si.getPCollection())));
       DoFnSchemaInformation doFnSchemaInformation =
           ParDoTranslation.getSchemaInformation(appliedTransform);
-      Map<String, PCollectionView<?>> sideInputMappings =
-          ParDoTranslation.getSideInputMapping(appliedTransform);
       SupplierEx<Processor> processorSupplier =
           usesStateOrTimers
               ? new StatefulParDoP.Supplier(
@@ -209,8 +208,7 @@ class JetTransformTranslators {
                   outputCoders,
                   inputValueCoder,
                   outputValueCoders,
-                  sideInputs,
-                  sideInputMappings)
+                  sideInputs)
               : new ParDoP.Supplier(
                   stepId,
                   vertexId,
@@ -225,8 +223,7 @@ class JetTransformTranslators {
                   outputCoders,
                   inputValueCoder,
                   outputValueCoders,
-                  sideInputs,
-                  sideInputMappings);
+                  sideInputs);
 
       Vertex vertex = dagBuilder.addVertex(vertexId, processorSupplier);
       dagBuilder.registerConstructionListeners((DAGBuilder.WiringListener) processorSupplier);

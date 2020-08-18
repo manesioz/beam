@@ -76,14 +76,8 @@ public class StreamingSideInputDoFnRunner<InputT, OutputT, W extends BoundedWind
   }
 
   @Override
-  public <KeyT> void onTimer(
-      String timerId,
-      String timerFamilyId,
-      KeyT key,
-      BoundedWindow window,
-      Instant timestamp,
-      Instant outputTimestamp,
-      TimeDomain timeDomain) {
+  public void onTimer(
+      String timerId, BoundedWindow window, Instant timestamp, TimeDomain timeDomain) {
     throw new UnsupportedOperationException(
         "Attempt to deliver a timer to a DoFn, but timers are not supported in Dataflow.");
   }
@@ -92,11 +86,6 @@ public class StreamingSideInputDoFnRunner<InputT, OutputT, W extends BoundedWind
   public void finishBundle() {
     simpleDoFnRunner.finishBundle();
     sideInputFetcher.persist();
-  }
-
-  @Override
-  public <KeyT> void onWindowExpiration(BoundedWindow window, Instant timestamp, KeyT key) {
-    simpleDoFnRunner.onWindowExpiration(window, timestamp, key);
   }
 
   @Override

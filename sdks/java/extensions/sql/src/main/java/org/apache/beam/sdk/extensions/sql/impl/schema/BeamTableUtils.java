@@ -22,11 +22,7 @@ import static org.apache.beam.sdk.values.Row.toRow;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.math.BigDecimal;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.LocalTime;
 import java.util.ArrayList;
-import java.util.GregorianCalendar;
 import java.util.List;
 import java.util.stream.IntStream;
 import org.apache.beam.sdk.extensions.sql.impl.utils.CalciteUtils;
@@ -35,7 +31,6 @@ import org.apache.beam.sdk.schemas.Schema;
 import org.apache.beam.sdk.schemas.Schema.FieldType;
 import org.apache.beam.sdk.schemas.Schema.TypeName;
 import org.apache.beam.sdk.values.Row;
-import org.apache.beam.vendor.calcite.v1_20_0.org.apache.calcite.avatica.util.ByteString;
 import org.apache.beam.vendor.calcite.v1_20_0.org.apache.calcite.util.NlsString;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
@@ -88,7 +83,7 @@ public final class BeamTableUtils {
     StringWriter writer = new StringWriter();
     try (CSVPrinter printer = csvFormat.print(writer)) {
       for (int i = 0; i < row.getFieldCount(); i++) {
-        printer.print(row.getBaseValue(i, Object.class).toString());
+        printer.print(row.getValue(i).toString());
       }
       printer.println();
     } catch (IOException e) {
@@ -118,26 +113,8 @@ public final class BeamTableUtils {
       } else {
         return rawObj;
       }
-    } else if (CalciteUtils.DATE.typesEqual(type) || CalciteUtils.NULLABLE_DATE.typesEqual(type)) {
-      if (rawObj instanceof GregorianCalendar) { // used by the SQL CLI
-        GregorianCalendar calendar = (GregorianCalendar) rawObj;
-        return Instant.ofEpochMilli(calendar.getTimeInMillis())
-            .atZone(calendar.getTimeZone().toZoneId())
-            .toLocalDate();
-      } else {
-        return LocalDate.ofEpochDay((Integer) rawObj);
-      }
-    } else if (CalciteUtils.TIME.typesEqual(type) || CalciteUtils.NULLABLE_TIME.typesEqual(type)) {
-      if (rawObj instanceof GregorianCalendar) { // used by the SQL CLI
-        GregorianCalendar calendar = (GregorianCalendar) rawObj;
-        return Instant.ofEpochMilli(calendar.getTimeInMillis())
-            .atZone(calendar.getTimeZone().toZoneId())
-            .toLocalTime();
-      } else {
-        return LocalTime.ofNanoOfDay((Long) rawObj);
-      }
     } else if (CalciteUtils.isDateTimeType(type)) {
-      // Internal representation of Date in Calcite is convertible to Joda's Datetime.
+      // Internal representation of DateType in Calcite is convertible to Joda's Datetime.
       return new DateTime(rawObj);
     } else if (type.getTypeName().isNumericType()
         && ((rawObj instanceof String)
@@ -151,24 +128,14 @@ public final class BeamTableUtils {
         case INT32:
           return Integer.valueOf(raw);
         case INT64:
-          if (raw.equals("")) {
-            return null;
-          }
           return Long.valueOf(raw);
         case FLOAT:
           return Float.valueOf(raw);
         case DOUBLE:
-          if (raw.equals("")) {
-            return null;
-          }
           return Double.valueOf(raw);
         default:
           throw new UnsupportedOperationException(
               String.format("Column type %s is not supported yet!", type));
-      }
-    } else if (type.getTypeName().isPrimitiveType()) {
-      if (TypeName.BYTES.equals(type.getTypeName()) && rawObj instanceof ByteString) {
-        return ((ByteString) rawObj).getBytes();
       }
     }
     return rawObj;

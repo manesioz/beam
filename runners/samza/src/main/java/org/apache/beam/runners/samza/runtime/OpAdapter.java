@@ -128,7 +128,7 @@ public class OpAdapter<InT, OutT, K>
     assert outputList.isEmpty();
 
     try {
-      op.processTimer(keyedTimerData, emitter);
+      op.processTimer(keyedTimerData);
     } catch (Exception e) {
       LOG.error("Op {} threw an exception during processing timer", this.getClass().getName(), e);
       throw UserCodeException.wrap(e);

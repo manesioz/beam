@@ -26,6 +26,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import javax.annotation.Nullable;
 import org.apache.beam.runners.core.construction.ReadTranslation;
 import org.apache.beam.runners.direct.StepTransformResult.Builder;
 import org.apache.beam.sdk.io.BoundedSource;
@@ -45,7 +46,6 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterable
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.util.concurrent.MoreExecutors;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.util.concurrent.SettableFuture;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.util.concurrent.ThreadFactoryBuilder;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * A {@link TransformEvaluatorFactory} that produces {@link TransformEvaluator TransformEvaluators}
@@ -88,7 +88,8 @@ final class BoundedReadEvaluatorFactory implements TransformEvaluatorFactory {
 
   @SuppressWarnings({"unchecked", "rawtypes"})
   @Override
-  public @Nullable <InputT> TransformEvaluator<InputT> forApplication(
+  @Nullable
+  public <InputT> TransformEvaluator<InputT> forApplication(
       AppliedPTransform<?, ?, ?> application, CommittedBundle<?> inputBundle) throws IOException {
     return createEvaluator((AppliedPTransform) application);
   }

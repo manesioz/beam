@@ -40,8 +40,8 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
-import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.SerializableCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
@@ -55,7 +55,6 @@ import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PDone;
 import org.bson.types.ObjectId;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 
@@ -113,7 +112,7 @@ import org.joda.time.Instant;
  * used to write the data to the OutputStream. By default, it writes UTF-8 strings to the file
  * separated with line feeds.
  */
-@Experimental(Kind.SOURCE_SINK)
+@Experimental(Experimental.Kind.SOURCE_SINK)
 public class MongoDbGridFSIO {
 
   /** Callback for the parser to use to submit data. */
@@ -178,12 +177,14 @@ public class MongoDbGridFSIO {
   /** Encapsulate the MongoDB GridFS connection logic. */
   @AutoValue
   public abstract static class ConnectionConfiguration implements Serializable {
+    @Nullable
+    abstract String uri();
 
-    abstract @Nullable String uri();
+    @Nullable
+    abstract String database();
 
-    abstract @Nullable String database();
-
-    abstract @Nullable String bucket();
+    @Nullable
+    abstract String bucket();
 
     static ConnectionConfiguration create() {
       return new AutoValue_MongoDbGridFSIO_ConnectionConfiguration(null, null, null);
@@ -209,13 +210,17 @@ public class MongoDbGridFSIO {
 
     abstract ConnectionConfiguration connectionConfiguration();
 
-    abstract @Nullable Parser<T> parser();
+    @Nullable
+    abstract Parser<T> parser();
 
-    abstract @Nullable Coder<T> coder();
+    @Nullable
+    abstract Coder<T> coder();
 
-    abstract @Nullable Duration skew();
+    @Nullable
+    abstract Duration skew();
 
-    abstract @Nullable String filter();
+    @Nullable
+    abstract String filter();
 
     abstract Builder<T> toBuilder();
 
@@ -352,7 +357,7 @@ public class MongoDbGridFSIO {
 
       private Read<?> spec;
 
-      private @Nullable List<ObjectId> objectIds;
+      @Nullable private List<ObjectId> objectIds;
 
       BoundedGridFSSource(Read<?> spec, List<ObjectId> objectIds) {
         this.spec = spec;
@@ -438,7 +443,7 @@ public class MongoDbGridFSIO {
          * files is used directly to avoid having the ObjectId's queried and
          * loaded ahead of time saving time and memory.
          */
-        final @Nullable List<ObjectId> objects;
+        @Nullable final List<ObjectId> objects;
 
         Mongo mongo;
         DBCursor cursor;
@@ -525,11 +530,13 @@ public class MongoDbGridFSIO {
   public abstract static class Write<T> extends PTransform<PCollection<T>, PDone> {
     abstract ConnectionConfiguration connectionConfiguration();
 
-    abstract @Nullable Long chunkSize();
+    @Nullable
+    abstract Long chunkSize();
 
     abstract WriteFn<T> writeFn();
 
-    abstract @Nullable String filename();
+    @Nullable
+    abstract String filename();
 
     abstract Builder<T> toBuilder();
 

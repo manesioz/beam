@@ -26,7 +26,8 @@ import java.util.List;
 import java.util.Map;
 import org.apache.beam.model.pipeline.v1.RunnerApi;
 import org.apache.beam.model.pipeline.v1.RunnerApi.PTransform;
-import org.apache.beam.runners.core.construction.PTransformTranslation;
+import org.apache.beam.model.pipeline.v1.RunnerApi.StandardPTransforms;
+import org.apache.beam.runners.core.construction.BeamUrns;
 import org.apache.beam.runners.core.construction.WindowingStrategyTranslation;
 import org.apache.beam.sdk.function.ThrowingFunction;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
@@ -54,7 +55,7 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Sets;
  * its output. The nonce is represented as an opaque set of bytes.
  */
 public abstract class WindowMergingFnRunner<T, W extends BoundedWindow> {
-  static final String URN = PTransformTranslation.MERGE_WINDOWS_TRANSFORM_URN;
+  static final String URN = BeamUrns.getUrn(StandardPTransforms.Primitives.MERGE_WINDOWS);
 
   /**
    * A registrar which provides a factory to handle merging windows based upon the {@link WindowFn}.
@@ -74,8 +75,8 @@ public abstract class WindowMergingFnRunner<T, W extends BoundedWindow> {
       ThrowingFunction<KV<T, Iterable<W>>, KV<T, KV<Iterable<W>, Iterable<KV<W, Iterable<W>>>>>>
           createMapFunctionForPTransform(String ptransformId, PTransform ptransform)
               throws IOException {
-    RunnerApi.FunctionSpec payload =
-        RunnerApi.FunctionSpec.parseFrom(ptransform.getSpec().getPayload());
+    RunnerApi.SdkFunctionSpec payload =
+        RunnerApi.SdkFunctionSpec.parseFrom(ptransform.getSpec().getPayload());
 
     WindowFn<?, W> windowFn =
         (WindowFn<?, W>) WindowingStrategyTranslation.windowFnFromProto(payload);

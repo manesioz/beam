@@ -28,8 +28,6 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Arrays;
 import java.util.Collection;
 import org.apache.beam.sdk.extensions.sorter.ExternalSorter.Options.SorterType;
-import org.checkerframework.checker.nullness.qual.EnsuresNonNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Rule;
@@ -43,14 +41,7 @@ import org.junit.runners.Parameterized.Parameters;
 @RunWith(Parameterized.class)
 public class ExternalSorterTest {
   @Rule public ExpectedException thrown = ExpectedException.none();
-  private static @Nullable Path tmpLocation;
-
-  public static Path getTmpLocation() {
-    if (tmpLocation == null) {
-      throw new IllegalStateException("getTmpLocation called outside of test context");
-    }
-    return tmpLocation;
-  }
+  private static Path tmpLocation;
 
   public ExternalSorterTest(SorterType sorterType) {
     this.sorterType = sorterType;
@@ -59,7 +50,6 @@ public class ExternalSorterTest {
   private final SorterType sorterType;
 
   @BeforeClass
-  @EnsuresNonNull("tmpLocation")
   public static void setupTempDir() throws IOException {
     tmpLocation = Files.createTempDirectory("tmp");
   }
@@ -67,7 +57,7 @@ public class ExternalSorterTest {
   @AfterClass
   public static void cleanupTempDir() throws IOException {
     Files.walkFileTree(
-        getTmpLocation(),
+        tmpLocation,
         new SimpleFileVisitor<Path>() {
           @Override
           public FileVisitResult visitFile(Path file, BasicFileAttributes attrs)
@@ -95,7 +85,7 @@ public class ExternalSorterTest {
     SorterTestUtils.testEmpty(
         ExternalSorter.create(
             new ExternalSorter.Options()
-                .setTempLocation(getTmpLocation().toString())
+                .setTempLocation(tmpLocation.toString())
                 .setSorterType(sorterType)));
   }
 
@@ -104,7 +94,7 @@ public class ExternalSorterTest {
     SorterTestUtils.testSingleElement(
         ExternalSorter.create(
             new ExternalSorter.Options()
-                .setTempLocation(getTmpLocation().toString())
+                .setTempLocation(tmpLocation.toString())
                 .setSorterType(sorterType)));
   }
 
@@ -113,7 +103,7 @@ public class ExternalSorterTest {
     SorterTestUtils.testEmptyKeyValueElement(
         ExternalSorter.create(
             new ExternalSorter.Options()
-                .setTempLocation(getTmpLocation().toString())
+                .setTempLocation(tmpLocation.toString())
                 .setSorterType(sorterType)));
   }
 
@@ -122,7 +112,7 @@ public class ExternalSorterTest {
     SorterTestUtils.testMultipleIterations(
         ExternalSorter.create(
             new ExternalSorter.Options()
-                .setTempLocation(getTmpLocation().toString())
+                .setTempLocation(tmpLocation.toString())
                 .setSorterType(sorterType)));
   }
 
@@ -132,7 +122,7 @@ public class ExternalSorterTest {
         () ->
             ExternalSorter.create(
                 new ExternalSorter.Options()
-                    .setTempLocation(getTmpLocation().toString())
+                    .setTempLocation(tmpLocation.toString())
                     .setSorterType(sorterType)),
         1,
         1000000);
@@ -143,7 +133,7 @@ public class ExternalSorterTest {
     SorterTestUtils.testAddAfterSort(
         ExternalSorter.create(
             new ExternalSorter.Options()
-                .setTempLocation(getTmpLocation().toString())
+                .setTempLocation(tmpLocation.toString())
                 .setSorterType(sorterType)),
         thrown);
     fail();
@@ -154,7 +144,7 @@ public class ExternalSorterTest {
     SorterTestUtils.testSortTwice(
         ExternalSorter.create(
             new ExternalSorter.Options()
-                .setTempLocation(getTmpLocation().toString())
+                .setTempLocation(tmpLocation.toString())
                 .setSorterType(sorterType)),
         thrown);
     fail();

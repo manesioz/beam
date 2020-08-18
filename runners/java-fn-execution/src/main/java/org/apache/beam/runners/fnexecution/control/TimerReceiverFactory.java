@@ -17,8 +17,6 @@
  */
 package org.apache.beam.runners.fnexecution.control;
 
-import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions.checkNotNull;
-
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.BiConsumer;
@@ -30,98 +28,63 @@ import org.apache.beam.runners.core.construction.Timer;
 import org.apache.beam.runners.fnexecution.control.ProcessBundleDescriptors.TimerSpec;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.fn.data.FnDataReceiver;
+import org.apache.beam.sdk.state.TimeDomain;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
+import org.apache.beam.sdk.util.WindowedValue;
 import org.apache.beam.sdk.values.KV;
+import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * A factory that passes timers to {@link TimerReceiverFactory#timerDataConsumer}.
- *
- * <p>The constructed timers uses {@code len(transformId):transformId:timerId} as the timer id to
- * prevent string collisions. See {@link #encodeToTimerDataTimerId} and {@link
- * #decodeTimerDataTimerId} for functions to aid with encoding and decoding.
- *
- * <p>If the incoming timer is being cleared, the {@link TimerData} sets the fire and hold
- * timestamps to {@link BoundedWindow#TIMESTAMP_MAX_VALUE}.
+ * {@link OutputReceiverFactory} that passes outputs to {@link
+ * TimerReceiverFactory#timerDataConsumer}.
  */
-public class TimerReceiverFactory {
+public class TimerReceiverFactory implements OutputReceiverFactory {
   private static final Logger LOG = LoggerFactory.getLogger(TimerReceiverFactory.class);
 
-  /** (PTransform, Timer Local Name) => TimerReference. */
-  private final HashMap<KV<String, String>, TimerSpec> transformAndTimerIdToSpecMap;
+  /** Timer PCollection id => TimerReference. */
+  private final HashMap<String, TimerSpec> timerOutputIdToSpecMap;
 
-  private final BiConsumer<Timer<?>, TimerData> timerDataConsumer;
+  private final BiConsumer<WindowedValue, TimerData> timerDataConsumer;
   private final Coder windowCoder;
 
   public TimerReceiverFactory(
       StageBundleFactory stageBundleFactory,
-      BiConsumer<Timer<?>, TimerInternals.TimerData> timerDataConsumer,
+      BiConsumer<WindowedValue, TimerInternals.TimerData> timerDataConsumer,
       Coder windowCoder) {
-    this.transformAndTimerIdToSpecMap = new HashMap<>();
-    // Create a lookup map using the transform and timerId as the key.
+    this.timerOutputIdToSpecMap = new HashMap<>();
+    // Gather all timers from all transforms by their output pCollectionId which is unique
     for (Map<String, ProcessBundleDescriptors.TimerSpec> transformTimerMap :
         stageBundleFactory.getProcessBundleDescriptor().getTimerSpecs().values()) {
       for (ProcessBundleDescriptors.TimerSpec timerSpec : transformTimerMap.values()) {
-        transformAndTimerIdToSpecMap.put(
-            KV.of(timerSpec.transformId(), timerSpec.timerId()), timerSpec);
+        timerOutputIdToSpecMap.put(timerSpec.outputCollectionId(), timerSpec);
       }
     }
     this.timerDataConsumer = timerDataConsumer;
     this.windowCoder = windowCoder;
   }
 
-  // @Override
-  public <K> FnDataReceiver<Timer<K>> create(String transformId, String timerFamilyId) {
-    final ProcessBundleDescriptors.TimerSpec timerSpec =
-        transformAndTimerIdToSpecMap.get(KV.of(transformId, timerFamilyId));
+  @Override
+  public <OutputT> FnDataReceiver<OutputT> create(String pCollectionId) {
+    final ProcessBundleDescriptors.TimerSpec timerSpec = timerOutputIdToSpecMap.get(pCollectionId);
 
     return receivedElement -> {
+      WindowedValue windowedValue = (WindowedValue) receivedElement;
       Timer timer =
-          checkNotNull(
-              receivedElement, "Received null Timer from SDK harness: %s", receivedElement);
-      LOG.debug("Timer received: {}", timer);
-      for (Object window : timer.getWindows()) {
+          Preconditions.checkNotNull(
+              (Timer) ((KV) windowedValue.getValue()).getValue(),
+              "Received null Timer from SDK harness: %s",
+              receivedElement);
+      LOG.debug("Timer received: {} {}", pCollectionId, timer);
+      for (Object window : windowedValue.getWindows()) {
         StateNamespace namespace = StateNamespaces.window(windowCoder, (BoundedWindow) window);
+        TimeDomain timeDomain = timerSpec.getTimerSpec().getTimeDomain();
+        String timerId = timerSpec.inputCollectionId();
         TimerInternals.TimerData timerData =
-            TimerInternals.TimerData.of(
-                encodeToTimerDataTimerId(timerSpec.transformId(), timerSpec.timerId()),
-                namespace,
-                timer.getClearBit() ? BoundedWindow.TIMESTAMP_MAX_VALUE : timer.getFireTimestamp(),
-                timer.getClearBit() ? BoundedWindow.TIMESTAMP_MAX_VALUE : timer.getHoldTimestamp(),
-                timerSpec.getTimerSpec().getTimeDomain());
-        timerDataConsumer.accept(timer, timerData);
+            TimerInternals.TimerData.of(timerId, namespace, timer.getTimestamp(), timeDomain);
+        timerDataConsumer.accept(windowedValue, timerData);
       }
     };
-  }
-
-  /**
-   * Encodes transform and timer family ids into a single string which retains the human readable
-   * format {@code len(transformId):transformId:timerId}. See {@link #decodeTimerDataTimerId} for
-   * decoding.
-   */
-  public static String encodeToTimerDataTimerId(String transformId, String timerFamilyId) {
-    return transformId.length() + ":" + transformId + ":" + timerFamilyId;
-  }
-
-  /**
-   * Decodes a string into the transform and timer family ids. See {@link #encodeToTimerDataTimerId}
-   * for encoding.
-   */
-  public static KV<String, String> decodeTimerDataTimerId(String timerDataTimerId) {
-    int transformIdLengthSplit = timerDataTimerId.indexOf(":");
-    if (transformIdLengthSplit <= 0) {
-      throw new IllegalArgumentException(
-          String.format(
-              "Invalid encoding, expected len(transformId):transformId:timerId as the encoding but received %s",
-              timerDataTimerId));
-    }
-    int transformIdLength = Integer.parseInt(timerDataTimerId.substring(0, transformIdLengthSplit));
-    String transformId =
-        timerDataTimerId.substring(
-            transformIdLengthSplit + 1, transformIdLengthSplit + 1 + transformIdLength);
-    String timerFamilyId =
-        timerDataTimerId.substring(transformIdLengthSplit + 1 + transformIdLength + 1);
-    return KV.of(transformId, timerFamilyId);
   }
 }

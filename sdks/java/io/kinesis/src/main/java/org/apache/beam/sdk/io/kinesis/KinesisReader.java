@@ -40,32 +40,26 @@ class KinesisReader extends UnboundedSource.UnboundedReader<KinesisRecord> {
   private final KinesisSource source;
   private final CheckpointGenerator initialCheckpointGenerator;
   private final WatermarkPolicyFactory watermarkPolicyFactory;
-  private final RateLimitPolicyFactory rateLimitPolicyFactory;
   private final Duration upToDateThreshold;
   private final Duration backlogBytesCheckThreshold;
   private CustomOptional<KinesisRecord> currentRecord = CustomOptional.absent();
   private long lastBacklogBytes;
   private Instant backlogBytesLastCheckTime = new Instant(0L);
   private ShardReadersPool shardReadersPool;
-  private final Integer maxCapacityPerShard;
 
   KinesisReader(
       SimplifiedKinesisClient kinesis,
       CheckpointGenerator initialCheckpointGenerator,
       KinesisSource source,
       WatermarkPolicyFactory watermarkPolicyFactory,
-      RateLimitPolicyFactory rateLimitPolicyFactory,
-      Duration upToDateThreshold,
-      Integer maxCapacityPerShard) {
+      Duration upToDateThreshold) {
     this(
         kinesis,
         initialCheckpointGenerator,
         source,
         watermarkPolicyFactory,
-        rateLimitPolicyFactory,
         upToDateThreshold,
-        Duration.standardSeconds(30),
-        maxCapacityPerShard);
+        Duration.standardSeconds(30));
   }
 
   KinesisReader(
@@ -73,19 +67,15 @@ class KinesisReader extends UnboundedSource.UnboundedReader<KinesisRecord> {
       CheckpointGenerator initialCheckpointGenerator,
       KinesisSource source,
       WatermarkPolicyFactory watermarkPolicyFactory,
-      RateLimitPolicyFactory rateLimitPolicyFactory,
       Duration upToDateThreshold,
-      Duration backlogBytesCheckThreshold,
-      Integer maxCapacityPerShard) {
+      Duration backlogBytesCheckThreshold) {
     this.kinesis = checkNotNull(kinesis, "kinesis");
     this.initialCheckpointGenerator =
         checkNotNull(initialCheckpointGenerator, "initialCheckpointGenerator");
     this.watermarkPolicyFactory = watermarkPolicyFactory;
-    this.rateLimitPolicyFactory = rateLimitPolicyFactory;
     this.source = source;
     this.upToDateThreshold = upToDateThreshold;
     this.backlogBytesCheckThreshold = backlogBytesCheckThreshold;
-    this.maxCapacityPerShard = maxCapacityPerShard;
   }
 
   /** Generates initial checkpoint and instantiates iterators for shards. */
@@ -152,68 +142,41 @@ class KinesisReader extends UnboundedSource.UnboundedReader<KinesisRecord> {
   }
 
   /**
-   * Returns total size of all records that remain in Kinesis stream. The size is estimated taking
-   * into account size of the records that were added to the stream after timestamp of the most
-   * recent record returned by the reader. If no records have yet been retrieved from the reader
-   * {@link UnboundedSource.UnboundedReader#BACKLOG_UNKNOWN} is returned. When currently processed
-   * record is not further behind than {@link #upToDateThreshold} then this method returns 0.
-   *
-   * <p>The method can over-estimate size of the records for the split as it reports the backlog
-   * across all shards. This can lead to unnecessary decisions to scale up the number of workers but
-   * will never fail to scale up when this is necessary due to backlog size.
-   *
-   * @see <a href="https://issues.apache.org/jira/browse/BEAM-9439">BEAM-9439</a>
+   * Returns total size of all records that remain in Kinesis stream after current watermark. If the
+   * watermark was not already set then it returns {@link
+   * UnboundedSource.UnboundedReader#BACKLOG_UNKNOWN}. When currently processed record is not
+   * further behind than {@link #upToDateThreshold} then this method returns 0.
    */
   @Override
-  public long getSplitBacklogBytes() {
-    Instant latestRecordTimestamp = shardReadersPool.getLatestRecordTimestamp();
+  public long getTotalBacklogBytes() {
+    Instant watermark = getWatermark();
 
-    if (latestRecordTimestamp.equals(BoundedWindow.TIMESTAMP_MIN_VALUE)) {
-      LOG.debug("Split backlog bytes for stream {} unknown", source.getStreamName());
+    if (watermark.equals(BoundedWindow.TIMESTAMP_MIN_VALUE)) {
       return UnboundedSource.UnboundedReader.BACKLOG_UNKNOWN;
     }
 
-    if (latestRecordTimestamp.plus(upToDateThreshold).isAfterNow()) {
-      LOG.debug(
-          "Split backlog bytes for stream {} with latest record timestamp {}: 0 (latest record timestamp is up-to-date with threshold of {})",
-          source.getStreamName(),
-          latestRecordTimestamp,
-          upToDateThreshold);
+    if (watermark.plus(upToDateThreshold).isAfterNow()) {
       return 0L;
     }
-
     if (backlogBytesLastCheckTime.plus(backlogBytesCheckThreshold).isAfterNow()) {
-      LOG.debug(
-          "Split backlog bytes for {} stream with latest record timestamp {}: {} (cached value)",
-          source.getStreamName(),
-          latestRecordTimestamp,
-          lastBacklogBytes);
       return lastBacklogBytes;
     }
-
     try {
-      lastBacklogBytes = kinesis.getBacklogBytes(source.getStreamName(), latestRecordTimestamp);
+      lastBacklogBytes = kinesis.getBacklogBytes(source.getStreamName(), watermark);
       backlogBytesLastCheckTime = Instant.now();
     } catch (TransientKinesisException e) {
-      LOG.warn(
-          "Transient exception occurred during backlog estimation for stream {}.",
-          source.getStreamName(),
-          e);
+      LOG.warn("Transient exception occurred.", e);
     }
     LOG.info(
-        "Split backlog bytes for {} stream with {} latest record timestamp: {}",
+        "Total backlog bytes for {} stream with {} watermark: {}",
         source.getStreamName(),
-        latestRecordTimestamp,
+        watermark,
         lastBacklogBytes);
     return lastBacklogBytes;
   }
 
   ShardReadersPool createShardReadersPool() throws TransientKinesisException {
     return new ShardReadersPool(
-        kinesis,
-        initialCheckpointGenerator.generate(kinesis),
-        watermarkPolicyFactory,
-        rateLimitPolicyFactory,
-        maxCapacityPerShard);
+        kinesis, initialCheckpointGenerator.generate(kinesis), watermarkPolicyFactory);
   }
 }

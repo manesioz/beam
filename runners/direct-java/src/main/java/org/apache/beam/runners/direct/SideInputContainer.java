@@ -27,13 +27,13 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.annotation.Nullable;
 import org.apache.beam.runners.core.InMemoryMultimapSideInputView;
 import org.apache.beam.runners.core.ReadyCheckingSideInputReader;
 import org.apache.beam.runners.core.SideInputReader;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.KvCoder;
 import org.apache.beam.sdk.transforms.Materializations;
-import org.apache.beam.sdk.transforms.Materializations.IterableView;
 import org.apache.beam.sdk.transforms.Materializations.MultimapView;
 import org.apache.beam.sdk.transforms.ViewFn;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
@@ -49,7 +49,6 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.cache.LoadingCac
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableSet;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterables;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Sets;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * An in-process container for {@link PCollectionView PCollectionViews}, which provides methods for
@@ -57,11 +56,6 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * and writing to a {@link PCollectionView}.
  */
 class SideInputContainer {
-  private static final Set<String> SUPPORTED_MATERIALIZATIONS =
-      ImmutableSet.of(
-          Materializations.ITERABLE_MATERIALIZATION_URN,
-          Materializations.MULTIMAP_MATERIALIZATION_URN);
-
   private final Collection<PCollectionView<?>> containedViews;
   private final LoadingCache<
           PCollectionViewWindow<?>, AtomicReference<Iterable<? extends WindowedValue<?>>>>
@@ -72,11 +66,11 @@ class SideInputContainer {
       final EvaluationContext context, Collection<PCollectionView<?>> containedViews) {
     for (PCollectionView<?> pCollectionView : containedViews) {
       checkArgument(
-          SUPPORTED_MATERIALIZATIONS.contains(
+          Materializations.MULTIMAP_MATERIALIZATION_URN.equals(
               pCollectionView.getViewFn().getMaterialization().getUrn()),
           "This handler is only capable of dealing with %s materializations "
               + "but was asked to handle %s for PCollectionView with tag %s.",
-          SUPPORTED_MATERIALIZATIONS,
+          Materializations.MULTIMAP_MATERIALIZATION_URN,
           pCollectionView.getViewFn().getMaterialization().getUrn(),
           pCollectionView.getTagInternal().getId());
     }
@@ -244,7 +238,8 @@ class SideInputContainer {
     }
 
     @Override
-    public @Nullable <T> T get(final PCollectionView<T> view, final BoundedWindow window) {
+    @Nullable
+    public <T> T get(final PCollectionView<T> view, final BoundedWindow window) {
       checkArgument(
           readerViews.contains(view), "call to get(PCollectionView) with unknown view: %s", view);
       checkArgument(
@@ -260,25 +255,10 @@ class SideInputContainer {
                   viewContents.getUnchecked(PCollectionViewWindow.of(view, window)).get(),
               WindowedValue::getValue);
 
-      switch (view.getViewFn().getMaterialization().getUrn()) {
-        case Materializations.ITERABLE_MATERIALIZATION_URN:
-          {
-            ViewFn<IterableView, T> viewFn = (ViewFn<IterableView, T>) view.getViewFn();
-            return viewFn.apply(() -> elements);
-          }
-        case Materializations.MULTIMAP_MATERIALIZATION_URN:
-          {
-            ViewFn<MultimapView, T> viewFn = (ViewFn<MultimapView, T>) view.getViewFn();
-            Coder<?> keyCoder = ((KvCoder<?, ?>) view.getCoderInternal()).getKeyCoder();
-            return viewFn.apply(
-                InMemoryMultimapSideInputView.fromIterable(keyCoder, (Iterable) elements));
-          }
-        default:
-          throw new IllegalStateException(
-              String.format(
-                  "Unknown side input materialization format requested '%s'",
-                  view.getViewFn().getMaterialization().getUrn()));
-      }
+      ViewFn<MultimapView, T> viewFn = (ViewFn<MultimapView, T>) view.getViewFn();
+      Coder<?> keyCoder = ((KvCoder<?, ?>) view.getCoderInternal()).getKeyCoder();
+      return (T)
+          viewFn.apply(InMemoryMultimapSideInputView.fromIterable(keyCoder, (Iterable) elements));
     }
 
     @Override

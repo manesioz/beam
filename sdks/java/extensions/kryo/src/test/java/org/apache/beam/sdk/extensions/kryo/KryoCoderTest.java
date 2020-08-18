@@ -36,7 +36,6 @@ import org.apache.beam.sdk.coders.VoidCoder;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.values.KV;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.junit.Test;
 
 /** Test targeted at {@link KryoCoder}. */
@@ -234,7 +233,7 @@ public class KryoCoderTest {
     }
 
     @Override
-    public boolean equals(@Nullable Object o) {
+    public boolean equals(Object o) {
       if (this == o) {
         return true;
       }
@@ -263,7 +262,7 @@ public class KryoCoderTest {
     }
 
     @Override
-    public boolean equals(@Nullable Object o) {
+    public boolean equals(Object o) {
       if (this == o) {
         return true;
       }

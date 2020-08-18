@@ -16,6 +16,7 @@
 
 import apache_beam as beam
 
-with beam.Pipeline() as p:
+p = beam.Pipeline()
 
 
+p.run()

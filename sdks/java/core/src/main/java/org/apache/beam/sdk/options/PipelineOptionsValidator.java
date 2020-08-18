@@ -110,7 +110,7 @@ public class PipelineOptionsValidator {
                 + requiredGroup
                 + "]. At least one of the following properties "
                 + Collections2.transform(
-                    requiredGroups.get(requiredGroup), ReflectHelpers::formatMethod)
+                    requiredGroups.get(requiredGroup), ReflectHelpers.METHOD_FORMATTER)
                 + " required. Run with --help="
                 + klass.getSimpleName()
                 + " for more information.");

@@ -17,9 +17,7 @@
  */
 package org.apache.beam.sdk.testing;
 
-import org.apache.beam.sdk.annotations.Internal;
 import org.apache.beam.sdk.state.MapState;
 
 /** Category tag for validation tests which utilize {@link MapState}. */
-@Internal
-public interface UsesMapState extends UsesStatefulParDo {}
+public interface UsesMapState {}

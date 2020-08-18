@@ -303,7 +303,7 @@ public class BoundedSourceSystem {
 
       private <X> X invoke(FnWithMetricsWrapper.SupplierWithException<X> fn) throws Exception {
         if (metricsWrapper != null) {
-          return metricsWrapper.wrap(fn, true);
+          return metricsWrapper.wrap(fn);
         } else {
           return fn.get();
         }

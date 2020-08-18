@@ -34,6 +34,7 @@ import java.util.Queue;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import javax.annotation.Nullable;
 import javax.management.InstanceNotFoundException;
 import javax.management.MBeanException;
 import javax.management.MBeanServer;
@@ -51,7 +52,6 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditio
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableSet;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.io.ByteStreams;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.util.concurrent.AtomicDouble;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -90,6 +90,13 @@ public class MemoryMonitor implements Runnable, StatusDataProvider {
    * The number of periods to take into account when determining if the server is in GC thrashing.
    */
   private static final int NUM_MONITORED_PERIODS = 4; // ie 1 min's worth.
+
+  /**
+   * The GC thrashing threshold (0.00 - 100.00) for every period. If the time spent on garbage
+   * collection in one period exceeds this threshold, that period is considered to be in GC
+   * thrashing.
+   */
+  private static final double GC_THRASHING_PERCENTAGE_PER_PERIOD = 50.0;
 
   /**
    * The <code>(# monitored periods in GC thrashing) / (# monitored
@@ -167,12 +174,6 @@ public class MemoryMonitor implements Runnable, StatusDataProvider {
   /** If true, dump the heap when thrashing or requested. */
   private final boolean canDumpHeap;
 
-  /**
-   * The GC thrashing threshold for every period. If the time spent on garbage collection in one
-   * period exceeds this threshold, that period is considered to be in GC thrashing.
-   */
-  private final double gcThrashingPercentagePerPeriod;
-
   private final AtomicBoolean isThrashing = new AtomicBoolean(false);
 
   private final AtomicBoolean isRunning = new AtomicBoolean(false);
@@ -190,7 +191,7 @@ public class MemoryMonitor implements Runnable, StatusDataProvider {
   /**
    * If non null, if a heap dump is detected during initialization upload it to the given GCS path.
    */
-  private final @Nullable String uploadToGCSPath;
+  @Nullable private final String uploadToGCSPath;
 
   private final File localDumpFolder;
 
@@ -198,14 +199,11 @@ public class MemoryMonitor implements Runnable, StatusDataProvider {
     DataflowPipelineDebugOptions debugOptions = options.as(DataflowPipelineDebugOptions.class);
     String uploadToGCSPath = debugOptions.getSaveHeapDumpsToGcsPath();
     boolean canDumpHeap = uploadToGCSPath != null || debugOptions.getDumpHeapOnOOM();
-    double gcThrashingPercentagePerPeriod = debugOptions.getGCThrashingPercentagePerPeriod();
-
     return new MemoryMonitor(
         new SystemGCStatsProvider(),
         DEFAULT_SLEEP_TIME_MILLIS,
         DEFAULT_SHUT_DOWN_AFTER_NUM_GCTHRASHING,
         canDumpHeap,
-        gcThrashingPercentagePerPeriod,
         uploadToGCSPath,
         getLoggingDir());
   }
@@ -216,7 +214,6 @@ public class MemoryMonitor implements Runnable, StatusDataProvider {
       long sleepTimeMillis,
       int shutDownAfterNumGCThrashing,
       boolean canDumpHeap,
-      double gcThrashingPercentagePerPeriod,
       @Nullable String uploadToGCSPath,
       File localDumpFolder) {
     return new MemoryMonitor(
@@ -224,7 +221,6 @@ public class MemoryMonitor implements Runnable, StatusDataProvider {
         sleepTimeMillis,
         shutDownAfterNumGCThrashing,
         canDumpHeap,
-        gcThrashingPercentagePerPeriod,
         uploadToGCSPath,
         localDumpFolder);
   }
@@ -234,14 +230,12 @@ public class MemoryMonitor implements Runnable, StatusDataProvider {
       long sleepTimeMillis,
       int shutDownAfterNumGCThrashing,
       boolean canDumpHeap,
-      double gcThrashingPercentagePerPeriod,
       @Nullable String uploadToGCSPath,
       File localDumpFolder) {
     this.gcStatsProvider = gcStatsProvider;
     this.sleepTimeMillis = sleepTimeMillis;
     this.shutDownAfterNumGCThrashing = shutDownAfterNumGCThrashing;
     this.canDumpHeap = canDumpHeap;
-    this.gcThrashingPercentagePerPeriod = gcThrashingPercentagePerPeriod;
     this.uploadToGCSPath = uploadToGCSPath;
     this.localDumpFolder = localDumpFolder;
   }
@@ -410,7 +404,7 @@ public class MemoryMonitor implements Runnable, StatusDataProvider {
     maxGCPercentage.set(Math.max(maxGCPercentage.get(), gcPercentage));
     timeInGC = inGC;
 
-    return gcPercentage > this.gcThrashingPercentagePerPeriod;
+    return gcPercentage > GC_THRASHING_PERCENTAGE_PER_PERIOD;
   }
 
   /**
@@ -436,7 +430,8 @@ public class MemoryMonitor implements Runnable, StatusDataProvider {
    *
    * @return The name of the file the heap was dumped to, otherwise {@literal null}.
    */
-  public @Nullable File tryToDumpHeap() {
+  @Nullable
+  public File tryToDumpHeap() {
     if (!canDumpHeap) {
       return null;
     }
@@ -472,14 +467,6 @@ public class MemoryMonitor implements Runnable, StatusDataProvider {
   public void run() {
     synchronized (waitingForStateChange) {
       Preconditions.checkState(!isRunning.getAndSet(true), "already running");
-
-      if (this.gcThrashingPercentagePerPeriod <= 0 || this.gcThrashingPercentagePerPeriod >= 100) {
-        LOG.warn(
-            "gcThrashingPercentagePerPeriod: {} is not valid value. Not starting MemoryMonitor.",
-            this.gcThrashingPercentagePerPeriod);
-        isRunning.set(false);
-      }
-
       waitingForStateChange.notifyAll();
     }
 

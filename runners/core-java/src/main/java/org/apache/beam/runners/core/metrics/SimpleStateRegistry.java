@@ -32,13 +32,6 @@ public class SimpleStateRegistry {
     this.executionStates.add(state);
   }
 
-  /** Reset the registered SimpleExecutionStates. */
-  public void reset() {
-    for (SimpleExecutionState state : executionStates) {
-      state.reset();
-    }
-  }
-
   /** @return Execution Time MonitoringInfos based on the tracked start or finish function. */
   public List<MonitoringInfo> getExecutionTimeMonitoringInfos() {
     List<MonitoringInfo> monitoringInfos = new ArrayList<MonitoringInfo>();
@@ -48,7 +41,7 @@ public class SimpleStateRegistry {
       for (Map.Entry<String, String> entry : state.getLabels().entrySet()) {
         builder.setLabel(entry.getKey(), entry.getValue());
       }
-      builder.setInt64SumValue(state.getTotalMillis());
+      builder.setInt64Value(state.getTotalMillis());
       monitoringInfos.add(builder.build());
     }
     return monitoringInfos;

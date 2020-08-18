@@ -16,8 +16,6 @@
 # limitations under the License.
 #
 
-# pytype: skip-file
-
 from __future__ import absolute_import
 from __future__ import print_function
 
@@ -25,26 +23,30 @@ import unittest
 
 import mock
 
-from apache_beam.examples.snippets.util import assert_matches_stdout
 from apache_beam.testing.test_pipeline import TestPipeline
+from apache_beam.testing.util import assert_that
+from apache_beam.testing.util import equal_to
 
 from . import values
 
 
 def check_plants(actual):
-  expected = '''[START plants]
-Strawberry
-Carrot
-Eggplant
-Tomato
-Potato
-[END plants]'''.splitlines()[1:-1]
-  assert_matches_stdout(actual, expected)
+  # [START plants]
+  plants = [
+      'Strawberry',
+      'Carrot',
+      'Eggplant',
+      'Tomato',
+      'Potato',
+  ]
+  # [END plants]
+  assert_that(actual, equal_to(plants))
 
 
 @mock.patch('apache_beam.Pipeline', TestPipeline)
-@mock.patch(
-    'apache_beam.examples.snippets.transforms.elementwise.values.print', str)
+# pylint: disable=line-too-long
+@mock.patch('apache_beam.examples.snippets.transforms.elementwise.values.print', lambda elem: elem)
+# pylint: enable=line-too-long
 class ValuesTest(unittest.TestCase):
   def test_values(self):
     values.values(check_plants)

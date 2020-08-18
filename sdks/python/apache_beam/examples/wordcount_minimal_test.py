@@ -17,8 +17,6 @@
 
 """Test for the minimal wordcount example."""
 
-# pytype: skip-file
-
 from __future__ import absolute_import
 
 import collections
@@ -47,7 +45,8 @@ class WordCountMinimalTest(unittest.TestCase):
     for word in re.findall(r'\w+', self.SAMPLE_TEXT):
       expected_words[word] += 1
     wordcount_minimal.run(
-        ['--input=%s*' % temp_path, '--output=%s.result' % temp_path],
+        ['--input=%s*' % temp_path,
+         '--output=%s.result' % temp_path],
         save_main_session=False)
     # Parse result file and compare.
     results = []

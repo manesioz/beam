@@ -16,10 +16,10 @@
 package dataflowlib
 
 import (
-	pipepb "github.com/apache/beam/sdks/go/pkg/beam/model/pipeline_v1"
+	pb "github.com/apache/beam/sdks/go/pkg/beam/model/pipeline_v1"
 )
 
 // Fixup proto pipeline with Dataflow quirks.
-func Fixup(p *pipepb.Pipeline) (*pipepb.Pipeline, error) {
+func Fixup(p *pb.Pipeline) (*pb.Pipeline, error) {
 	return p, nil
 }

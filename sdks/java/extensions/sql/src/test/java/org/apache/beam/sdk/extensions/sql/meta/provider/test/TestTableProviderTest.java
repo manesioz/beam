@@ -17,12 +17,8 @@
  */
 package org.apache.beam.sdk.extensions.sql.meta.provider.test;
 
-import static org.apache.beam.sdk.extensions.sql.meta.provider.test.TestTableProvider.PUSH_DOWN_OPTION;
-
-import com.alibaba.fastjson.JSON;
 import org.apache.beam.sdk.extensions.sql.meta.BeamSqlTable;
 import org.apache.beam.sdk.extensions.sql.meta.Table;
-import org.apache.beam.sdk.extensions.sql.meta.provider.test.TestTableProvider.PushDownOptions;
 import org.apache.beam.sdk.schemas.Schema;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
@@ -87,11 +83,11 @@ public class TestTableProviderTest {
         beamSqlTable.buildIOReader(
             pipeline.begin(),
             beamSqlTable.constructFilter(ImmutableList.of()),
-            ImmutableList.of("name", "id"));
+            ImmutableList.of("name", "id")); // Note that order is ignored
 
     // Selected columns are outputted in the same order they are listed in the schema.
     PAssert.that(result)
-        .containsInAnyOrder(row(result.getSchema(), "one", 1), row(result.getSchema(), "two", 2));
+        .containsInAnyOrder(row(result.getSchema(), 1, "one"), row(result.getSchema(), 2, "two"));
 
     pipeline.run().waitUntilFinish(Duration.standardMinutes(2));
   }
@@ -119,9 +115,6 @@ public class TestTableProviderTest {
         .name(name)
         .comment(name + " table")
         .schema(BASIC_SCHEMA)
-        .properties(
-            JSON.parseObject(
-                "{ " + PUSH_DOWN_OPTION + ": " + "\"" + PushDownOptions.BOTH.toString() + "\" }"))
         .type("test")
         .build();
   }

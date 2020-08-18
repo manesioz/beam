@@ -160,23 +160,23 @@ public class MetricsContainerImplTest {
 
     SimpleMonitoringInfoBuilder builder1 = new SimpleMonitoringInfoBuilder();
     builder1
-        .setUrn(MonitoringInfoConstants.Urns.USER_SUM_INT64)
+        .setUrn(MonitoringInfoConstants.Urns.USER_COUNTER)
         .setLabel(MonitoringInfoConstants.Labels.NAMESPACE, "ns")
         .setLabel(MonitoringInfoConstants.Labels.NAME, "name1")
-        .setInt64SumValue(5)
+        .setInt64Value(5)
         .setLabel(MonitoringInfoConstants.Labels.PTRANSFORM, "step1");
 
     SimpleMonitoringInfoBuilder builder2 = new SimpleMonitoringInfoBuilder();
     builder2
-        .setUrn(MonitoringInfoConstants.Urns.USER_SUM_INT64)
+        .setUrn(MonitoringInfoConstants.Urns.USER_COUNTER)
         .setLabel(MonitoringInfoConstants.Labels.NAMESPACE, "ns")
         .setLabel(MonitoringInfoConstants.Labels.NAME, "name2")
-        .setInt64SumValue(4)
+        .setInt64Value(4)
         .setLabel(MonitoringInfoConstants.Labels.PTRANSFORM, "step1");
 
     ArrayList<MonitoringInfo> actualMonitoringInfos = new ArrayList<MonitoringInfo>();
     for (MonitoringInfo mi : testObject.getMonitoringInfos()) {
-      actualMonitoringInfos.add(mi);
+      actualMonitoringInfos.add(SimpleMonitoringInfoBuilder.copyAndClearTimestamp(mi));
     }
 
     assertThat(actualMonitoringInfos, containsInAnyOrder(builder1.build(), builder2.build()));
@@ -192,7 +192,7 @@ public class MetricsContainerImplTest {
 
     SimpleMonitoringInfoBuilder builder1 = new SimpleMonitoringInfoBuilder();
     builder1
-        .setUrn(MonitoringInfoConstants.Urns.USER_DISTRIBUTION_INT64)
+        .setUrn(MonitoringInfoConstants.Urns.USER_DISTRIBUTION_COUNTER)
         .setLabel(MonitoringInfoConstants.Labels.NAMESPACE, "ns")
         .setLabel(MonitoringInfoConstants.Labels.NAME, "name1")
         .setLabel(MonitoringInfoConstants.Labels.PTRANSFORM, "step1")
@@ -200,7 +200,7 @@ public class MetricsContainerImplTest {
 
     SimpleMonitoringInfoBuilder builder2 = new SimpleMonitoringInfoBuilder();
     builder2
-        .setUrn(MonitoringInfoConstants.Urns.USER_DISTRIBUTION_INT64)
+        .setUrn(MonitoringInfoConstants.Urns.USER_DISTRIBUTION_COUNTER)
         .setLabel(MonitoringInfoConstants.Labels.NAMESPACE, "ns")
         .setLabel(MonitoringInfoConstants.Labels.NAME, "name2")
         .setLabel(MonitoringInfoConstants.Labels.PTRANSFORM, "step1")
@@ -208,7 +208,7 @@ public class MetricsContainerImplTest {
 
     ArrayList<MonitoringInfo> actualMonitoringInfos = new ArrayList<MonitoringInfo>();
     for (MonitoringInfo mi : testObject.getMonitoringInfos()) {
-      actualMonitoringInfos.add(mi);
+      actualMonitoringInfos.add(SimpleMonitoringInfoBuilder.copyAndClearTimestamp(mi));
     }
 
     assertThat(actualMonitoringInfos, containsInAnyOrder(builder1.build(), builder2.build()));
@@ -232,7 +232,7 @@ public class MetricsContainerImplTest {
 
     ArrayList<MonitoringInfo> actualMonitoringInfos = new ArrayList<MonitoringInfo>();
     for (MonitoringInfo mi : testObject.getMonitoringInfos()) {
-      actualMonitoringInfos.add(mi);
+      actualMonitoringInfos.add(SimpleMonitoringInfoBuilder.copyAndClearTimestamp(mi));
     }
 
     assertThat(actualMonitoringInfos, containsInAnyOrder(builder1.build()));
@@ -251,11 +251,11 @@ public class MetricsContainerImplTest {
     SimpleMonitoringInfoBuilder builder1 = new SimpleMonitoringInfoBuilder();
     builder1.setUrn(MonitoringInfoConstants.Urns.ELEMENT_COUNT);
     builder1.setLabel(MonitoringInfoConstants.Labels.PCOLLECTION, "pcollection");
-    builder1.setInt64SumValue(2);
+    builder1.setInt64Value(2);
 
     ArrayList<MonitoringInfo> actualMonitoringInfos = new ArrayList<MonitoringInfo>();
     for (MonitoringInfo mi : testObject.getMonitoringInfos()) {
-      actualMonitoringInfos.add(mi);
+      actualMonitoringInfos.add(SimpleMonitoringInfoBuilder.copyAndClearTimestamp(mi));
     }
     assertThat(actualMonitoringInfos, containsInAnyOrder(builder1.build()));
   }

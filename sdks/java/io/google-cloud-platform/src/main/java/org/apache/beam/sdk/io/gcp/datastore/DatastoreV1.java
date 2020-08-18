@@ -61,7 +61,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Set;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.PipelineRunner;
+import org.apache.beam.sdk.annotations.Experimental;
+import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.extensions.gcp.options.GcpOptions;
 import org.apache.beam.sdk.extensions.gcp.util.RetryHttpRequestInitializer;
@@ -93,7 +96,6 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.MoreObjects
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Strings;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableSet;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -277,17 +279,22 @@ public class DatastoreV1 {
      */
     static final int QUERY_BATCH_LIMIT = 500;
 
-    public abstract @Nullable ValueProvider<String> getProjectId();
+    @Nullable
+    public abstract ValueProvider<String> getProjectId();
 
-    public abstract @Nullable Query getQuery();
+    @Nullable
+    public abstract Query getQuery();
 
-    public abstract @Nullable ValueProvider<String> getLiteralGqlQuery();
+    @Nullable
+    public abstract ValueProvider<String> getLiteralGqlQuery();
 
-    public abstract @Nullable ValueProvider<String> getNamespace();
+    @Nullable
+    public abstract ValueProvider<String> getNamespace();
 
     public abstract int getNumQuerySplits();
 
-    public abstract @Nullable String getLocalhost();
+    @Nullable
+    public abstract String getLocalhost();
 
     @Override
     public abstract String toString();
@@ -361,9 +368,18 @@ public class DatastoreV1 {
       return entity.getProperties().get("timestamp").getTimestampValue().getSeconds() * 1000000;
     }
 
-    /** Retrieve latest table statistics for a given kind, namespace, and datastore. */
-    private static Entity getLatestTableStats(
-        String ourKind, @Nullable String namespace, Datastore datastore) throws DatastoreException {
+    /**
+     * Get the estimated size of the data returned by the given query.
+     *
+     * <p>Cloud Datastore provides no way to get a good estimate of how large the result of a query
+     * entity kind being queried, using the __Stat_Kind__ system table, assuming exactly 1 kind is
+     * specified in the query.
+     *
+     * <p>See https://cloud.google.com/datastore/docs/concepts/stats.
+     */
+    static long getEstimatedSizeBytes(Datastore datastore, Query query, @Nullable String namespace)
+        throws DatastoreException {
+      String ourKind = query.getKind(0).getName();
       long latestTimestamp = queryLatestStatisticsTimestamp(datastore, namespace);
       LOG.info("Latest stats timestamp for kind {} is {}", ourKind, latestTimestamp);
 
@@ -390,22 +406,7 @@ public class DatastoreV1 {
         throw new NoSuchElementException(
             "Datastore statistics for kind " + ourKind + " unavailable");
       }
-      return batch.getEntityResults(0).getEntity();
-    }
-
-    /**
-     * Get the estimated size of the data returned by the given query.
-     *
-     * <p>Cloud Datastore provides no way to get a good estimate of how large the result of a query
-     * entity kind being queried, using the __Stat_Kind__ system table, assuming exactly 1 kind is
-     * specified in the query.
-     *
-     * <p>See https://cloud.google.com/datastore/docs/concepts/stats.
-     */
-    static long getEstimatedSizeBytes(Datastore datastore, Query query, @Nullable String namespace)
-        throws DatastoreException {
-      String ourKind = query.getKind(0).getName();
-      Entity entity = getLatestTableStats(ourKind, namespace, datastore);
+      Entity entity = batch.getEntityResults(0).getEntity();
       return entity.getProperties().get("entity_bytes").getIntegerValue();
     }
 
@@ -537,17 +538,19 @@ public class DatastoreV1 {
      * ensure that the query is originated from trusted sources to avoid any security
      * vulnerabilities via SQL Injection.
      *
-     * <p>Cloud Datastore does not a provide a clean way to translate a gql query string to {@link
-     * Query}, so we end up making a query to the service for translation but this may read the
-     * actual data, although it will be a small amount. It needs more validation through production
-     * use cases before marking it as stable.
+     * <p><b><i>Experimental</i></b>: Cloud Datastore does not a provide a clean way to translate a
+     * gql query string to {@link Query}, so we end up making a query to the service for translation
+     * but this may read the actual data, although it will be a small amount. It needs more
+     * validation through production use cases before marking it as stable.
      */
+    @Experimental(Kind.SOURCE_SINK)
     public DatastoreV1.Read withLiteralGqlQuery(String gqlQuery) {
       checkArgument(gqlQuery != null, "gqlQuery can not be null");
       return toBuilder().setLiteralGqlQuery(StaticValueProvider.of(gqlQuery)).build();
     }
 
     /** Same as {@link Read#withLiteralGqlQuery(String)} but with a {@link ValueProvider}. */
+    @Experimental(Kind.SOURCE_SINK)
     public DatastoreV1.Read withLiteralGqlQuery(ValueProvider<String> gqlQuery) {
       checkArgument(gqlQuery != null, "gqlQuery can not be null");
       if (gqlQuery.isAccessible()) {
@@ -595,23 +598,6 @@ public class DatastoreV1 {
      */
     public DatastoreV1.Read withLocalhost(String localhost) {
       return toBuilder().setLocalhost(localhost).build();
-    }
-
-    /** Returns Number of entities available for reading. */
-    public long getNumEntities(
-        PipelineOptions options, String ourKind, @Nullable String namespace) {
-      try {
-        V1Options v1Options = V1Options.from(getProjectId(), getNamespace(), getLocalhost());
-        V1DatastoreFactory datastoreFactory = new V1DatastoreFactory();
-        Datastore datastore =
-            datastoreFactory.getDatastore(
-                options, v1Options.getProjectId(), v1Options.getLocalhost());
-
-        Entity entity = getLatestTableStats(ourKind, namespace, datastore);
-        return entity.getProperties().get("count").getIntegerValue();
-      } catch (Exception e) {
-        return -1;
-      }
     }
 
     @Override
@@ -680,8 +666,8 @@ public class DatastoreV1 {
     @VisibleForTesting
     static class V1Options implements HasDisplayData, Serializable {
       private final ValueProvider<String> project;
-      private final @Nullable ValueProvider<String> namespace;
-      private final @Nullable String localhost;
+      @Nullable private final ValueProvider<String> namespace;
+      @Nullable private final String localhost;
 
       private V1Options(
           ValueProvider<String> project, ValueProvider<String> namespace, String localhost) {
@@ -704,7 +690,8 @@ public class DatastoreV1 {
         return project.get();
       }
 
-      public @Nullable String getNamespace() {
+      @Nullable
+      public String getNamespace() {
         return namespace == null ? null : namespace.get();
       }
 
@@ -712,11 +699,13 @@ public class DatastoreV1 {
         return project;
       }
 
-      public @Nullable ValueProvider<String> getNamespaceValueProvider() {
+      @Nullable
+      public ValueProvider<String> getNamespaceValueProvider() {
         return namespace;
       }
 
-      public @Nullable String getLocalhost() {
+      @Nullable
+      public String getLocalhost() {
         return localhost;
       }
 
@@ -1111,7 +1100,7 @@ public class DatastoreV1 {
    */
   private abstract static class Mutate<T> extends PTransform<PCollection<T>, PDone> {
     protected ValueProvider<String> projectId;
-    protected @Nullable String localhost;
+    @Nullable protected String localhost;
     /** A function that transforms each {@code T} into a mutation. */
     private final SimpleFunction<T, Mutation> mutationFn;
 
@@ -1242,7 +1231,7 @@ public class DatastoreV1 {
   static class DatastoreWriterFn extends DoFn<Mutation, Void> {
     private static final Logger LOG = LoggerFactory.getLogger(DatastoreWriterFn.class);
     private final ValueProvider<String> projectId;
-    private final @Nullable String localhost;
+    @Nullable private final String localhost;
     private transient Datastore datastore;
     private final V1DatastoreFactory datastoreFactory;
     // Current batch of mutations to be written.

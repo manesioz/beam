@@ -29,7 +29,6 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThat;
 
 import com.google.api.client.util.Clock;
-import com.google.protobuf.ByteString;
 import java.io.IOException;
 import java.io.Serializable;
 import java.nio.charset.StandardCharsets;
@@ -65,7 +64,6 @@ import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.MoreObjects;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Lists;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
 import org.junit.After;
@@ -327,7 +325,7 @@ public class PubsubIOTest {
     }
 
     @Override
-    public boolean equals(@Nullable Object other) {
+    public boolean equals(Object other) {
       if (other == null || !(other instanceof GenericClass)) {
         return false;
       }
@@ -393,10 +391,9 @@ public class PubsubIOTest {
                 })
             .map(
                 ba ->
-                    IncomingMessage.of(
-                        com.google.pubsub.v1.PubsubMessage.newBuilder()
-                            .setData(ByteString.copyFrom(ba))
-                            .build(),
+                    new IncomingMessage(
+                        ba,
+                        null,
                         1234L,
                         0,
                         UUID.randomUUID().toString(),

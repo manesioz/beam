@@ -32,7 +32,6 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditio
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.math.LongMath;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.util.concurrent.AtomicDouble;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /** Factory interface for creating counters. */
 public class CounterFactory {
@@ -710,7 +709,7 @@ public class CounterFactory {
     }
 
     @Override
-    public boolean equals(@Nullable Object obj) {
+    public boolean equals(Object obj) {
       if (obj == this) {
         return true;
       } else if (!(obj instanceof LongCounterMean)) {
@@ -765,7 +764,7 @@ public class CounterFactory {
     }
 
     @Override
-    public boolean equals(@Nullable Object obj) {
+    public boolean equals(Object obj) {
       if (obj == this) {
         return true;
       } else if (!(obj instanceof IntegerCounterMean)) {
@@ -820,7 +819,7 @@ public class CounterFactory {
     }
 
     @Override
-    public boolean equals(@Nullable Object obj) {
+    public boolean equals(Object obj) {
       if (obj == this) {
         return true;
       } else if (!(obj instanceof DoubleCounterMean)) {

@@ -18,14 +18,13 @@ package harness
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"runtime"
 	"time"
 
 	"github.com/apache/beam/sdks/go/pkg/beam/internal/errors"
 	"github.com/apache/beam/sdks/go/pkg/beam/log"
-	fnpb "github.com/apache/beam/sdks/go/pkg/beam/model/fnexecution_v1"
+	pb "github.com/apache/beam/sdks/go/pkg/beam/model/fnexecution_v1"
 	"github.com/golang/protobuf/ptypes"
 )
 
@@ -38,7 +37,7 @@ type contextKey string
 
 const instKey contextKey = "beam:inst"
 
-func setInstID(ctx context.Context, id instructionID) context.Context {
+func setInstID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, instKey, id)
 }
 
@@ -47,22 +46,22 @@ func tryGetInstID(ctx context.Context) (string, bool) {
 	if id == nil {
 		return "", false
 	}
-	return string(id.(instructionID)), true
+	return id.(string), true
 }
 
 type logger struct {
-	out chan<- *fnpb.LogEntry
+	out chan<- *pb.LogEntry
 }
 
 func (l *logger) Log(ctx context.Context, sev log.Severity, calldepth int, msg string) {
 	now, _ := ptypes.TimestampProto(time.Now())
 
-	entry := &fnpb.LogEntry{
+	entry := &pb.LogEntry{
 		Timestamp: now,
 		Severity:  convertSeverity(sev),
 		Message:   msg,
 	}
-	if _, file, line, ok := runtime.Caller(calldepth + 1); ok {
+	if _, file, line, ok := runtime.Caller(calldepth); ok {
 		entry.LogLocation = fmt.Sprintf("%v:%v", file, line)
 	}
 	if id, ok := tryGetInstID(ctx); ok {
@@ -78,27 +77,27 @@ func (l *logger) Log(ctx context.Context, sev log.Severity, calldepth int, msg s
 	}
 }
 
-func convertSeverity(sev log.Severity) fnpb.LogEntry_Severity_Enum {
+func convertSeverity(sev log.Severity) pb.LogEntry_Severity_Enum {
 	switch sev {
 	case log.SevDebug:
-		return fnpb.LogEntry_Severity_DEBUG
+		return pb.LogEntry_Severity_DEBUG
 	case log.SevInfo:
-		return fnpb.LogEntry_Severity_INFO
+		return pb.LogEntry_Severity_INFO
 	case log.SevWarn:
-		return fnpb.LogEntry_Severity_WARN
+		return pb.LogEntry_Severity_WARN
 	case log.SevError:
-		return fnpb.LogEntry_Severity_ERROR
+		return pb.LogEntry_Severity_ERROR
 	case log.SevFatal:
-		return fnpb.LogEntry_Severity_CRITICAL
+		return pb.LogEntry_Severity_CRITICAL
 	default:
-		return fnpb.LogEntry_Severity_INFO
+		return pb.LogEntry_Severity_INFO
 	}
 }
 
 // setupRemoteLogging redirects local log messages to FnHarness. It will
 // try to reconnect, if a connection goes bad. Falls back to stdout.
 func setupRemoteLogging(ctx context.Context, endpoint string) {
-	buf := make(chan *fnpb.LogEntry, 2000)
+	buf := make(chan *pb.LogEntry, 2000)
 	log.SetLogger(&logger{out: buf})
 
 	w := &remoteWriter{buf, endpoint}
@@ -106,17 +105,13 @@ func setupRemoteLogging(ctx context.Context, endpoint string) {
 }
 
 type remoteWriter struct {
-	buffer   chan *fnpb.LogEntry
+	buffer   chan *pb.LogEntry
 	endpoint string
 }
 
 func (w *remoteWriter) Run(ctx context.Context) error {
 	for {
 		err := w.connect(ctx)
-		if err == io.EOF {
-			fmt.Fprintf(os.Stderr, "Remote logging shutting down.")
-			return nil
-		}
 
 		fmt.Fprintf(os.Stderr, "Remote logging failed: %v. Retrying in 5 sec ...\n", err)
 		time.Sleep(5 * time.Second)
@@ -130,7 +125,7 @@ func (w *remoteWriter) connect(ctx context.Context) error {
 	}
 	defer conn.Close()
 
-	client, err := fnpb.NewBeamFnLoggingClient(conn).Logging(ctx)
+	client, err := pb.NewBeamFnLoggingClient(conn).Logging(ctx)
 	if err != nil {
 		return err
 	}
@@ -141,18 +136,14 @@ func (w *remoteWriter) connect(ctx context.Context) error {
 
 		// TODO: batch up log messages
 
-		list := &fnpb.LogEntry_List{
-			LogEntries: []*fnpb.LogEntry{msg},
+		list := &pb.LogEntry_List{
+			LogEntries: []*pb.LogEntry{msg},
 		}
 
 		recordLogEntries(list)
 
 		if err := client.Send(list); err != nil {
-			if err == io.EOF {
-				(&log.Standard{}).Log(ctx, log.SevInfo, 0, msg.GetMessage())
-				return io.EOF
-			}
-			fmt.Fprintf(os.Stderr, "Failed to send message: %v\n %v", err, msg.GetMessage())
+			fmt.Fprintf(os.Stderr, "Failed to send message: %v\n%v", err, msg)
 			return err
 		}
 

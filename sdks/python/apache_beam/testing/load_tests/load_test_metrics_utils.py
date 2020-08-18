@@ -27,27 +27,14 @@ Currently it is possible to have following metrics types:
 * total_bytes_count
 """
 
-# pytype: skip-file
-
 from __future__ import absolute_import
 
-import json
 import logging
 import time
 import uuid
-from typing import Any
-from typing import List
-from typing import Mapping
-from typing import Optional
-from typing import Union
-
-import requests
-from requests.auth import HTTPBasicAuth
 
 import apache_beam as beam
 from apache_beam.metrics import Metrics
-from apache_beam.transforms.window import TimestampedValue
-from apache_beam.utils.timestamp import Timestamp
 
 try:
   from google.cloud import bigquery
@@ -66,23 +53,24 @@ SUBMIT_TIMESTAMP_LABEL = 'timestamp'
 METRICS_TYPE_LABEL = 'metric'
 VALUE_LABEL = 'value'
 
-SCHEMA = [{
-    'name': ID_LABEL, 'field_type': 'STRING', 'mode': 'REQUIRED'
-},
-          {
-              'name': SUBMIT_TIMESTAMP_LABEL,
-              'field_type': 'TIMESTAMP',
-              'mode': 'REQUIRED'
-          },
-          {
-              'name': METRICS_TYPE_LABEL,
-              'field_type': 'STRING',
-              'mode': 'REQUIRED'
-          }, {
-              'name': VALUE_LABEL, 'field_type': 'FLOAT', 'mode': 'REQUIRED'
-          }]
-
-_LOGGER = logging.getLogger(__name__)
+SCHEMA = [
+    {'name': ID_LABEL,
+     'field_type': 'STRING',
+     'mode': 'REQUIRED'
+    },
+    {'name': SUBMIT_TIMESTAMP_LABEL,
+     'field_type': 'TIMESTAMP',
+     'mode': 'REQUIRED'
+    },
+    {'name': METRICS_TYPE_LABEL,
+     'field_type': 'STRING',
+     'mode': 'REQUIRED'
+    },
+    {'name': VALUE_LABEL,
+     'field_type': 'FLOAT',
+     'mode': 'REQUIRED'
+    }
+]
 
 
 def parse_step(step_name):
@@ -132,9 +120,11 @@ def get_generic_distributions(generic_dists, metric_id):
   Returns:
     list of dictionaries made from :class:`DistributionMetric`
   """
-  return sum((
-      get_all_distributions_by_type(dist, metric_id) for dist in generic_dists),
-             [])
+  return sum(
+      (get_all_distributions_by_type(dist, metric_id)
+       for dist in generic_dists),
+      []
+  )
 
 
 def get_all_distributions_by_type(dist, metric_id):
@@ -148,9 +138,10 @@ def get_all_distributions_by_type(dist, metric_id):
     list of :class:`DistributionMetric` objects
   """
   submit_timestamp = time.time()
-  dist_types = ['count', 'max', 'min', 'sum']
+  dist_types = ['mean', 'max', 'min', 'sum']
   return [
-      get_distribution_dict(dist_type, submit_timestamp, dist, metric_id)
+      get_distribution_dict(dist_type, submit_timestamp,
+                            dist, metric_id)
       for dist_type in dist_types
   ]
 
@@ -177,40 +168,25 @@ class MetricsReader(object):
   A :class:`MetricsReader` retrieves metrics from pipeline result,
   prepares it for publishers and setup publishers.
   """
-  publishers = []  # type: List[Any]
+  publishers = []
 
-  def __init__(
-      self,
-      project_name=None,
-      bq_table=None,
-      bq_dataset=None,
-      publish_to_bq=False,
-      influxdb_options=None,  # type: Optional[InfluxDBMetricsPublisherOptions]
-      namespace=None,
-      filters=None):
+  def __init__(self, project_name=None, bq_table=None, bq_dataset=None,
+               filters=None):
     """Initializes :class:`MetricsReader` .
 
     Args:
       project_name (str): project with BigQuery where metrics will be saved
       bq_table (str): BigQuery table where metrics will be saved
       bq_dataset (str): BigQuery dataset where metrics will be saved
-      namespace (str): Namespace of the metrics
       filters: MetricFilter to query only filtered metrics
     """
-    self._namespace = namespace
+    self._namespace = bq_table
     self.publishers.append(ConsoleMetricsPublisher())
-
-    check = project_name and bq_table and bq_dataset and publish_to_bq
+    check = project_name and bq_table and bq_dataset
     if check:
       bq_publisher = BigQueryMetricsPublisher(
           project_name, bq_table, bq_dataset)
       self.publishers.append(bq_publisher)
-    if influxdb_options and influxdb_options.validate():
-      self.publishers.append(InfluxDBMetricsPublisher(influxdb_options))
-    else:
-      _LOGGER.info(
-          'Missing InfluxDB options. Metrics will not be published to '
-          'InfluxDB')
     self.filters = filters
 
   def publish_metrics(self, result):
@@ -222,24 +198,9 @@ class MetricsReader(object):
     # required to prepare metrics for publishing purposes. Expected is to have
     # a list of dictionaries matching the schema.
     insert_dicts = self._prepare_all_metrics(metrics)
-    if len(insert_dicts) > 0:
+    if len(insert_dicts):
       for publisher in self.publishers:
         publisher.publish(insert_dicts)
-
-  def publish_values(self, labeled_values):
-    """The method to publish simple labeled values.
-
-    Args:
-      labeled_values (List[Tuple(str, int)]): list of (label, value)
-    """
-    metric_dicts = [
-        Metric(time.time(), uuid.uuid4().hex, value, label=label).as_dict()
-        for label,
-        value in labeled_values
-    ]
-
-    for publisher in self.publishers:
-      publisher.publish(metric_dicts)
 
   def _prepare_all_metrics(self, metrics):
     metric_id = uuid.uuid4().hex
@@ -260,18 +221,18 @@ class MetricsReader(object):
     matching_namsespace, not_matching_namespace = \
       split_metrics_by_namespace_and_name(distributions, self._namespace,
                                           RUNTIME_METRIC)
-    if len(matching_namsespace) > 0:
-      runtime_metric = RuntimeMetric(matching_namsespace, metric_id)
-      rows.append(runtime_metric.as_dict())
-    if len(not_matching_namespace) > 0:
-      rows += get_generic_distributions(not_matching_namespace, metric_id)
+    runtime_metric = RuntimeMetric(matching_namsespace, metric_id)
+    rows.append(runtime_metric.as_dict())
+
+    rows += get_generic_distributions(not_matching_namespace, metric_id)
     return rows
 
 
 class Metric(object):
   """Metric base class in ready-to-save format."""
-  def __init__(
-      self, submit_timestamp, metric_id, value, metric=None, label=None):
+
+  def __init__(self, submit_timestamp, metric_id, value,
+               metric=None, label=None):
     """Initializes :class:`Metric`
 
     Args:
@@ -289,12 +250,11 @@ class Metric(object):
     self.value = value
 
   def as_dict(self):
-    return {
-        SUBMIT_TIMESTAMP_LABEL: self.submit_timestamp,
-        ID_LABEL: self.metric_id,
-        VALUE_LABEL: self.value,
-        METRICS_TYPE_LABEL: self.label
-    }
+    return {SUBMIT_TIMESTAMP_LABEL: self.submit_timestamp,
+            ID_LABEL: self.metric_id,
+            VALUE_LABEL: self.value,
+            METRICS_TYPE_LABEL: self.label
+           }
 
 
 class CounterMetric(Metric):
@@ -306,9 +266,9 @@ class CounterMetric(Metric):
     metric_id (uuid): unique id to identify test run
   """
   def __init__(self, counter_metric, submit_timestamp, metric_id):
-    value = counter_metric.result
-    super(CounterMetric,
-          self).__init__(submit_timestamp, metric_id, value, counter_metric)
+    value = counter_metric.committed
+    super(CounterMetric, self).__init__(submit_timestamp, metric_id,
+                                        value, counter_metric)
 
 
 class DistributionMetric(Metric):
@@ -324,7 +284,7 @@ class DistributionMetric(Metric):
                    '_' + parse_step(dist_metric.key.step) + \
                    '_' + metric_type + \
                    '_' + dist_metric.key.metric.name
-    value = getattr(dist_metric.result, metric_type)
+    value = getattr(dist_metric.committed, metric_type)
     super(DistributionMetric, self) \
       .__init__(submit_timestamp, metric_id, value, dist_metric, custom_label)
 
@@ -344,15 +304,15 @@ class RuntimeMetric(Metric):
     # out of many steps
     label = runtime_list[0].key.metric.namespace + \
             '_' + RUNTIME_METRIC
-    super(RuntimeMetric,
-          self).__init__(submit_timestamp, metric_id, value, None, label)
+    super(RuntimeMetric, self).__init__(submit_timestamp, metric_id,
+                                        value, None, label)
 
   def _prepare_runtime_metrics(self, distributions):
     min_values = []
     max_values = []
     for dist in distributions:
-      min_values.append(dist.result.min)
-      max_values.append(dist.result.max)
+      min_values.append(dist.committed.min)
+      max_values.append(dist.committed.max)
     # finding real start
     min_value = min(min_values)
     # finding real end
@@ -369,13 +329,13 @@ class ConsoleMetricsPublisher(object):
     if len(results) > 0:
       log = "Load test results for test: %s and timestamp: %s:" \
             % (results[0][ID_LABEL], results[0][SUBMIT_TIMESTAMP_LABEL])
-      _LOGGER.info(log)
+      logging.info(log)
       for result in results:
         log = "Metric: %s Value: %d" \
               % (result[METRICS_TYPE_LABEL], result[VALUE_LABEL])
-        _LOGGER.info(log)
+        logging.info(log)
     else:
-      _LOGGER.info("No test results were collected.")
+      logging.info("No test results were collected.")
 
 
 class BigQueryMetricsPublisher(object):
@@ -390,7 +350,7 @@ class BigQueryMetricsPublisher(object):
       for output in outputs:
         errors = output['errors']
         for err in errors:
-          _LOGGER.error(err['message'])
+          logging.error(err['message'])
           raise ValueError(
               'Unable save rows in BigQuery: {}'.format(err['message']))
 
@@ -431,82 +391,12 @@ class BigQueryClient(object):
     except NotFound:
       raise ValueError(
           'Dataset {} does not exist in your project. '
-          'You have to create table first.'.format(dataset_name))
+          'You have to create table first.'
+          .format(dataset_name))
     return bq_dataset
 
   def save(self, results):
     return self._client.insert_rows(self._bq_table, results)
-
-
-class InfluxDBMetricsPublisherOptions(object):
-  def __init__(
-      self,
-      measurement,  # type: str
-      db_name,  # type: str
-      hostname,  # type: str
-      user=None,  # type: Optional[str]
-      password=None  # type: Optional[str]
-    ):
-    self.measurement = measurement
-    self.db_name = db_name
-    self.hostname = hostname
-    self.user = user
-    self.password = password
-
-  def validate(self):
-    # type: () -> bool
-    return bool(self.measurement) and bool(self.db_name)
-
-  def http_auth_enabled(self):
-    # type: () -> bool
-    return self.user is not None and self.password is not None
-
-
-class InfluxDBMetricsPublisher(object):
-  """Publishes collected metrics to InfluxDB database."""
-  def __init__(
-      self,
-      options  # type: InfluxDBMetricsPublisherOptions
-  ):
-    self.options = options
-
-  def publish(self, results):
-    # type: (List[Mapping[str, Union[float, str, int]]]) -> None
-    url = '{}/write'.format(self.options.hostname)
-    payload = self._build_payload(results)
-    query_str = {'db': self.options.db_name, 'precision': 's'}
-
-    auth = HTTPBasicAuth(self.options.user, self.options.password) if \
-      self.options.http_auth_enabled() else None
-
-    try:
-      response = requests.post(url, params=query_str, data=payload, auth=auth)
-    except requests.exceptions.RequestException as e:
-      _LOGGER.warning('Failed to publish metrics to InfluxDB: ' + str(e))
-    else:
-      if response.status_code != 204:
-        content = json.loads(response.content)
-        _LOGGER.warning(
-            'Failed to publish metrics to InfluxDB. Received status code %s '
-            'with an error message: %s' %
-            (response.status_code, content['error']))
-
-  def _build_payload(self, results):
-    # type: (List[Mapping[str, Union[float, str, int]]]) -> str
-    def build_kv(mapping, key):
-      return '{}={}'.format(key, mapping[key])
-
-    points = []
-    for result in results:
-      comma_separated = [
-          self.options.measurement,
-          build_kv(result, METRICS_TYPE_LABEL),
-          build_kv(result, ID_LABEL),
-      ]
-      point = ','.join(comma_separated) + ' ' + build_kv(result, VALUE_LABEL) \
-              + ' ' + str(int(result[SUBMIT_TIMESTAMP_LABEL]))
-      points.append(point)
-    return '\n'.join(points)
 
 
 class MeasureTime(beam.DoFn):
@@ -561,36 +451,3 @@ class CountMessages(beam.DoFn):
   def process(self, element):
     self.counter.inc(1)
     yield element
-
-
-class MeasureLatency(beam.DoFn):
-  """A distribution metric which captures the latency based on the timestamps
-  of the processed elements."""
-  LABEL = 'latency'
-
-  def __init__(self, namespace):
-    """Initializes :class:`MeasureLatency`.
-
-      namespace(str): namespace of  metric
-    """
-    self.namespace = namespace
-    self.latency_ms = Metrics.distribution(self.namespace, self.LABEL)
-    self.time_fn = time.time
-
-  def process(self, element, timestamp=beam.DoFn.TimestampParam):
-    self.latency_ms.update(
-        int(self.time_fn() * 1000) - (timestamp.micros // 1000))
-    yield element
-
-
-class AssignTimestamps(beam.DoFn):
-  """DoFn to assigned timestamps to elements."""
-  def __init__(self):
-    # Avoid having to use save_main_session
-    self.time_fn = time.time
-    self.timestamp_val_fn = TimestampedValue
-    self.timestamp_fn = Timestamp
-
-  def process(self, element):
-    yield self.timestamp_val_fn(
-        element, self.timestamp_fn(micros=int(self.time_fn() * 1000000)))

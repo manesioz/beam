@@ -23,6 +23,7 @@ import static org.apache.beam.sdk.transforms.Requirements.requiresSideInputs;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.Never;
@@ -31,7 +32,6 @@ import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Lists;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Sets;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Delays processing of each window in a {@link PCollection} until signaled.
@@ -126,7 +126,7 @@ public class Wait {
   }
 
   private static class CollectWindowsFn<T> extends DoFn<T, Void> {
-    private @Nullable Set<BoundedWindow> windows;
+    @Nullable private Set<BoundedWindow> windows;
 
     @StartBundle
     public void startBundle() {

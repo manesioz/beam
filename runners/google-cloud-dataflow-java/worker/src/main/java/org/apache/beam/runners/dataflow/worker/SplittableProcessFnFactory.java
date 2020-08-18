@@ -22,7 +22,6 @@ import static org.apache.beam.runners.dataflow.util.CloudObjects.coderFromCloudO
 import static org.apache.beam.runners.dataflow.util.Structs.getBytes;
 import static org.apache.beam.runners.dataflow.util.Structs.getObject;
 import static org.apache.beam.sdk.util.SerializableUtils.deserializeFromByteArray;
-import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions.checkState;
 
 import java.util.Collection;
 import java.util.List;
@@ -48,6 +47,7 @@ import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.StreamingOptions;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.DoFnSchemaInformation;
+import org.apache.beam.sdk.transforms.splittabledofn.RestrictionTracker;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.PaneInfo;
 import org.apache.beam.sdk.util.DoFnInfo;
@@ -75,22 +75,15 @@ class SplittableProcessFnFactory {
           (DoFnInfo<?, ?>)
               deserializeFromByteArray(
                   getBytes(cloudUserFn, PropertyNames.SERIALIZED_FN), "Serialized DoFnInfo");
-      Coder restrictionAndStateCoder =
+      Coder restrictionCoder =
           coderFromCloudObject(
               fromSpec(getObject(cloudUserFn, WorkerPropertyNames.RESTRICTION_CODER)));
-      checkState(
-          restrictionAndStateCoder instanceof KvCoder,
-          "Expected pair coder with restriction as key coder and watermark estimator state as value coder, but received %s.",
-          restrictionAndStateCoder);
-      Coder restrictionCoder = ((KvCoder) restrictionAndStateCoder).getKeyCoder();
-      Coder watermarkEstimatorStateCoder = ((KvCoder) restrictionAndStateCoder).getValueCoder();
 
       ProcessFn processFn =
           new ProcessFn(
               doFnInfo.getDoFn(),
               doFnInfo.getInputCoder(),
               restrictionCoder,
-              watermarkEstimatorStateCoder,
               doFnInfo.getWindowingStrategy());
 
       return DoFnInfo.forFn(
@@ -109,7 +102,11 @@ class SplittableProcessFnFactory {
   }
 
   private static class SplittableDoFnRunnerFactory<
-          InputT, OutputT, RestrictionT, PositionT, WatermarkEstimatorStateT>
+          InputT,
+          OutputT,
+          RestrictionT,
+          PositionT,
+          TrackerT extends RestrictionTracker<RestrictionT, PositionT>>
       implements DoFnRunnerFactory<KeyedWorkItem<byte[], KV<InputT, RestrictionT>>, OutputT> {
     @Override
     public DoFnRunner<KeyedWorkItem<byte[], KV<InputT, RestrictionT>>, OutputT> createRunner(
@@ -127,8 +124,8 @@ class SplittableProcessFnFactory {
         OutputManager outputManager,
         DoFnSchemaInformation doFnSchemaInformation,
         Map<String, PCollectionView<?>> sideInputMapping) {
-      ProcessFn<InputT, OutputT, RestrictionT, PositionT, WatermarkEstimatorStateT> processFn =
-          (ProcessFn<InputT, OutputT, RestrictionT, PositionT, WatermarkEstimatorStateT>) fn;
+      ProcessFn<InputT, OutputT, RestrictionT, TrackerT> processFn =
+          (ProcessFn<InputT, OutputT, RestrictionT, TrackerT>) fn;
       processFn.setStateInternalsFactory(key -> (StateInternals) stepContext.stateInternals());
       processFn.setTimerInternalsFactory(key -> stepContext.timerInternals());
       processFn.setProcessElementInvoker(
@@ -162,11 +159,7 @@ class SplittableProcessFnFactory {
               // advancing smoothly, and ensures that not too much work will have to be reprocessed
               // in the event of a crash.
               10000,
-              Duration.standardSeconds(10),
-              () -> {
-                throw new UnsupportedOperationException(
-                    "BundleFinalizer unsupported by non-portable Dataflow.");
-              }));
+              Duration.standardSeconds(10)));
       DoFnRunner<KeyedWorkItem<byte[], KV<InputT, RestrictionT>>, OutputT> simpleRunner =
           new SimpleDoFnRunner<>(
               options,

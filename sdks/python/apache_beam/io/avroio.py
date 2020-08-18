@@ -14,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-
 """``PTransforms`` for reading from and writing to Avro files.
 
 Provides two read ``PTransform``s, ``ReadFromAvro`` and ``ReadAllFromAvro``,
@@ -42,8 +41,6 @@ Additionally, this module provides a write ``PTransform`` ``WriteToAvro``
 that can be used to write a given ``PCollection`` of Python objects to an
 Avro file.
 """
-# pytype: skip-file
-
 from __future__ import absolute_import
 
 import io
@@ -70,10 +67,11 @@ from apache_beam.transforms import PTransform
 
 # pylint: disable=wrong-import-order, wrong-import-position, ungrouped-imports
 try:
-  from avro.schema import Parse  # avro-python3 library for python3
+  from avro.schema import Parse # avro-python3 library for python3
 except ImportError:
-  from avro.schema import parse as Parse  # avro library for python2
+  from avro.schema import parse as Parse # avro library for python2
 # pylint: enable=wrong-import-order, wrong-import-position, ungrouped-imports
+
 
 __all__ = ['ReadFromAvro', 'ReadAllFromAvro', 'WriteToAvro']
 
@@ -85,12 +83,9 @@ def _use_fastavro():
 class ReadFromAvro(PTransform):
   """A :class:`~apache_beam.transforms.ptransform.PTransform` for reading avro
   files."""
-  def __init__(
-      self,
-      file_pattern=None,
-      min_bundle_size=0,
-      validate=True,
-      use_fastavro=_use_fastavro()):
+
+  def __init__(self, file_pattern=None, min_bundle_size=0, validate=True,
+               use_fastavro=_use_fastavro()):
     """Initializes :class:`ReadFromAvro`.
 
     Uses source :class:`~apache_beam.io._AvroSource` to read a set of Avro
@@ -113,7 +108,7 @@ class ReadFromAvro(PTransform):
 
       Traceback (most recent call last):
        ...
-      OSError: No files found based on the file pattern
+      IOError: No files found based on the file pattern
 
     Each record of this :class:`~apache_beam.pvalue.PCollection` will contain
     a single record read from a source. Records that are of simple types will be
@@ -159,16 +154,16 @@ class ReadFromAvro(PTransform):
         is significantly faster, and will likely become the default
     """
     if sys.version_info[0] >= 3 and not use_fastavro:
-      warnings.warn(
-          "Due to a known issue in avro-python3 package, it is "
-          "recommended to use fastavro with Beam Avro IO on "
-          "Python 3 until BEAM-6522 is addressed.")
+      warnings.warn("Due to a known issue in avro-python3 package, it is "
+                    "recommended to use fastavro with Beam Avro IO on "
+                    "Python 3 until BEAM-6522 is addressed.")
     super(ReadFromAvro, self).__init__()
     self._source = _create_avro_source(
         file_pattern,
         min_bundle_size,
         validate=validate,
-        use_fastavro=use_fastavro)
+        use_fastavro=use_fastavro
+    )
 
   def expand(self, pvalue):
     return pvalue.pipeline | Read(self._source)
@@ -186,12 +181,10 @@ class ReadAllFromAvro(PTransform):
 
   DEFAULT_DESIRED_BUNDLE_SIZE = 64 * 1024 * 1024  # 64MB
 
-  def __init__(
-      self,
-      min_bundle_size=0,
-      desired_bundle_size=DEFAULT_DESIRED_BUNDLE_SIZE,
-      use_fastavro=_use_fastavro(),
-      label='ReadAllFiles'):
+  def __init__(self, min_bundle_size=0,
+               desired_bundle_size=DEFAULT_DESIRED_BUNDLE_SIZE,
+               use_fastavro=_use_fastavro(),
+               label='ReadAllFiles'):
     """Initializes ``ReadAllFromAvro``.
 
     Args:
@@ -201,19 +194,16 @@ class ReadAllFromAvro(PTransform):
                        splitting the input into bundles.
     """
     if sys.version_info[0] >= 3 and not use_fastavro:
-      warnings.warn(
-          "Due to a known issue in avro-python3 package, it is "
-          "recommended to use fastavro with Beam Avro IO on "
-          "Python 3 until BEAM-6522 is addressed.")
+      warnings.warn("Due to a known issue in avro-python3 package, it is "
+                    "recommended to use fastavro with Beam Avro IO on "
+                    "Python 3 until BEAM-6522 is addressed.")
     source_from_file = partial(
         _create_avro_source,
         min_bundle_size=min_bundle_size,
-        use_fastavro=use_fastavro)
+        use_fastavro=use_fastavro
+    )
     self._read_all_files = filebasedsource.ReadAllFiles(
-        True,
-        CompressionTypes.AUTO,
-        desired_bundle_size,
-        min_bundle_size,
+        True, CompressionTypes.AUTO, desired_bundle_size, min_bundle_size,
         source_from_file)
 
     self.label = label
@@ -223,6 +213,7 @@ class ReadAllFromAvro(PTransform):
 
 
 class _AvroUtils(object):
+
   @staticmethod
   def read_meta_data_from_file(f):
     """Reads metadata from a given Avro file.
@@ -240,12 +231,12 @@ class _AvroUtils(object):
     if f.tell() > 0:
       f.seek(0)
     decoder = avroio.BinaryDecoder(f)
-    header = avroio.DatumReader().read_data(
-        datafile.META_SCHEMA, datafile.META_SCHEMA, decoder)
+    header = avroio.DatumReader().read_data(datafile.META_SCHEMA,
+                                            datafile.META_SCHEMA, decoder)
     if header.get('magic') != datafile.MAGIC:
-      raise ValueError(
-          'Not an Avro file. File header should start with %s but'
-          'started with %s instead.' % (datafile.MAGIC, header.get('magic')))
+      raise ValueError('Not an Avro file. File header should start with %s but'
+                       'started with %s instead.'
+                       % (datafile.MAGIC, header.get('magic')))
 
     meta = header['meta']
 
@@ -284,10 +275,9 @@ class _AvroUtils(object):
     block_bytes = decoder.read(block_size)
     sync_marker = decoder.read(len(expected_sync_marker))
     if sync_marker != expected_sync_marker:
-      raise ValueError(
-          'Unexpected sync marker (actual "%s" vs expected "%s"). '
-          'Maybe the underlying avro file is corrupted?' %
-          (sync_marker, expected_sync_marker))
+      raise ValueError('Unexpected sync marker (actual "%s" vs expected "%s"). '
+                       'Maybe the underlying avro file is corrupted?'
+                       % (sync_marker, expected_sync_marker))
     size = f.tell() - offset
     return _AvroBlock(block_bytes, num_records, codec, schema, offset, size)
 
@@ -314,11 +304,10 @@ class _AvroUtils(object):
         data = f.read(buf_size)
 
 
-def _create_avro_source(
-    file_pattern=None,
-    min_bundle_size=0,
-    validate=False,
-    use_fastavro=_use_fastavro()):
+def _create_avro_source(file_pattern=None,
+                        min_bundle_size=0,
+                        validate=False,
+                        use_fastavro=_use_fastavro()):
   return \
       _FastAvroSource(
           file_pattern=file_pattern,
@@ -336,8 +325,9 @@ def _create_avro_source(
 
 class _AvroBlock(object):
   """Represents a block of an Avro file."""
-  def __init__(
-      self, block_bytes, num_records, codec, schema_string, offset, size):
+
+  def __init__(self, block_bytes, num_records, codec, schema_string,
+               offset, size):
     # Decompress data early on (if needed) and thus decrease the number of
     # parallel copies of the data in memory at any given time during block
     # iteration.
@@ -383,7 +373,8 @@ class _AvroBlock(object):
     return self._num_records
 
   def records(self):
-    decoder = avroio.BinaryDecoder(io.BytesIO(self._decompressed_block_bytes))
+    decoder = avroio.BinaryDecoder(
+        io.BytesIO(self._decompressed_block_bytes))
 
     writer_schema = self._schema
     reader_schema = self._schema
@@ -404,6 +395,7 @@ class _AvroSource(filebasedsource.FileBasedSource):
   file-based sources such as file-pattern expansion and splitting into bundles
   for parallel processing.
   """
+
   def read_records(self, file_name, range_tracker):
     next_block_start = -1
 
@@ -435,8 +427,8 @@ class _AvroSource(filebasedsource.FileBasedSource):
       next_block_start = f.tell()
 
       while range_tracker.try_claim(next_block_start):
-        block = _AvroUtils.read_block_from_file(
-            f, codec, schema_string, sync_marker)
+        block = _AvroUtils.read_block_from_file(f, codec, schema_string,
+                                                sync_marker)
         next_block_start = block.offset() + block.size()
         for record in block.records():
           yield record
@@ -454,6 +446,7 @@ class _FastAvroSource(filebasedsource.FileBasedSource):
   TODO: remove ``_AvroSource`` in favor of using ``_FastAvroSource``
   everywhere once it has been more widely tested
   """
+
   def read_records(self, file_name, range_tracker):
     next_block_start = -1
 
@@ -493,16 +486,16 @@ class _FastAvroSource(filebasedsource.FileBasedSource):
 
 class WriteToAvro(beam.transforms.PTransform):
   """A ``PTransform`` for writing avro files."""
-  def __init__(
-      self,
-      file_path_prefix,
-      schema,
-      codec='deflate',
-      file_name_suffix='',
-      num_shards=0,
-      shard_name_template=None,
-      mime_type='application/x-avro',
-      use_fastavro=_use_fastavro()):
+
+  def __init__(self,
+               file_path_prefix,
+               schema,
+               codec='deflate',
+               file_name_suffix='',
+               num_shards=0,
+               shard_name_template=None,
+               mime_type='application/x-avro',
+               use_fastavro=_use_fastavro()):
     """Initialize a WriteToAvro transform.
 
     Args:
@@ -553,15 +546,14 @@ class WriteToAvro(beam.transforms.PTransform):
     return {'sink_dd': self._sink}
 
 
-def _create_avro_sink(
-    file_path_prefix,
-    schema,
-    codec,
-    file_name_suffix,
-    num_shards,
-    shard_name_template,
-    mime_type,
-    use_fastavro):
+def _create_avro_sink(file_path_prefix,
+                      schema,
+                      codec,
+                      file_name_suffix,
+                      num_shards,
+                      shard_name_template,
+                      mime_type,
+                      use_fastavro):
   return \
       _FastAvroSink(
           file_path_prefix,
@@ -587,15 +579,14 @@ def _create_avro_sink(
 
 class _BaseAvroSink(filebasedsink.FileBasedSink):
   """A base for a sink for avro files. """
-  def __init__(
-      self,
-      file_path_prefix,
-      schema,
-      codec,
-      file_name_suffix,
-      num_shards,
-      shard_name_template,
-      mime_type):
+  def __init__(self,
+               file_path_prefix,
+               schema,
+               codec,
+               file_name_suffix,
+               num_shards,
+               shard_name_template,
+               mime_type):
     super(_BaseAvroSink, self).__init__(
         file_path_prefix,
         file_name_suffix=file_name_suffix,

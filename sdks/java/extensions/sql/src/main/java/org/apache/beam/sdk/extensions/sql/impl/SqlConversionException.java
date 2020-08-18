@@ -17,17 +17,11 @@
  */
 package org.apache.beam.sdk.extensions.sql.impl;
 
-import org.checkerframework.checker.nullness.qual.Nullable;
-
 /** Exception thrown when BeamSQL cannot convert sql to BeamRelNode. */
 public class SqlConversionException extends RuntimeException {
 
-  public SqlConversionException(@Nullable Throwable cause) {
+  public SqlConversionException(Throwable cause) {
     super(cause);
-  }
-
-  public SqlConversionException(String message) {
-    super(message);
   }
 
   public SqlConversionException(String message, Throwable cause) {

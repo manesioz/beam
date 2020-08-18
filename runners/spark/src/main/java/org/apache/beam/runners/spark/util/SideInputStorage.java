@@ -23,7 +23,6 @@ import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.cache.Cache;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.cache.CacheBuilder;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Cache deserialized side inputs for executor so every task doesn't need to deserialize them again.
@@ -56,7 +55,7 @@ class SideInputStorage {
     }
 
     @Override
-    public boolean equals(@Nullable Object o) {
+    public boolean equals(Object o) {
       if (this == o) {
         return true;
       }

@@ -16,12 +16,5 @@
  * limitations under the License.
  */
 
-/**
- * <b>For internal use only; no backwards compatibility guarantees.</b>
- *
- * <p>Defines utilities that can be used by Beam runners.
- */
-@Internal
+/** Defines utilities that can be used by Beam runners. */
 package org.apache.beam.sdk.util;
-
-import org.apache.beam.sdk.annotations.Internal;

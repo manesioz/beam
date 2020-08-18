@@ -22,6 +22,7 @@ import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Prec
 import java.util.BitSet;
 import java.util.Collection;
 import java.util.Map;
+import javax.annotation.Nullable;
 import org.apache.beam.runners.core.MergingStateAccessor;
 import org.apache.beam.runners.core.StateAccessor;
 import org.apache.beam.runners.core.StateTag;
@@ -32,7 +33,6 @@ import org.apache.beam.sdk.state.ValueState;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.annotations.VisibleForTesting;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableMap;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Instant;
 
 /**

@@ -17,8 +17,7 @@
  */
 /** Defines annotations used across the SDK. */
 @DefaultAnnotation(NonNull.class)
-@Internal
 package org.apache.beam.sdk.annotations;
 
 import edu.umd.cs.findbugs.annotations.DefaultAnnotation;
-import org.checkerframework.checker.nullness.qual.NonNull;
+import edu.umd.cs.findbugs.annotations.NonNull;

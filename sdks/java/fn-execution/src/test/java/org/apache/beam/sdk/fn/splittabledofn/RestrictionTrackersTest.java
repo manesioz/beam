@@ -26,8 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.apache.beam.sdk.fn.splittabledofn.RestrictionTrackers.ClaimObserver;
 import org.apache.beam.sdk.transforms.splittabledofn.RestrictionTracker;
-import org.apache.beam.sdk.transforms.splittabledofn.RestrictionTracker.HasProgress;
-import org.apache.beam.sdk.transforms.splittabledofn.SplitResult;
+import org.apache.beam.sdk.transforms.splittabledofn.Sizes;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -51,18 +50,13 @@ public class RestrictionTrackersTest {
           }
 
           @Override
-          public SplitResult<Object> trySplit(double fractionOfRemainder) {
+          public Object checkpoint() {
             throw new UnsupportedOperationException();
           }
 
           @Override
           public void checkDone() throws IllegalStateException {
             throw new UnsupportedOperationException();
-          }
-
-          @Override
-          public IsBounded isBounded() {
-            return IsBounded.BOUNDED;
           }
         };
 
@@ -90,12 +84,12 @@ public class RestrictionTrackersTest {
     assertThat(positionsObserved, contains("goodClaim", "badClaim"));
   }
 
-  private static class RestrictionTrackerWithProgress extends RestrictionTracker<Object, Object>
-      implements HasProgress {
+  private static class RestrictionTrackerWithSize extends RestrictionTracker<Object, Object>
+      implements Sizes.HasSize {
 
     @Override
-    public Progress getProgress() {
-      return RestrictionTracker.Progress.from(2.0, 3.0);
+    public double getSize() {
+      return 1;
     }
 
     @Override
@@ -109,23 +103,18 @@ public class RestrictionTrackersTest {
     }
 
     @Override
-    public SplitResult<Object> trySplit(double fractionOfRemainder) {
+    public Object checkpoint() {
       return null;
     }
 
     @Override
     public void checkDone() throws IllegalStateException {}
-
-    @Override
-    public IsBounded isBounded() {
-      return IsBounded.BOUNDED;
-    }
   }
 
   @Test
   public void testClaimObserversMaintainBacklogInterfaces() {
     RestrictionTracker hasSize =
-        RestrictionTrackers.observe(new RestrictionTrackerWithProgress(), null);
-    assertThat(hasSize, instanceOf(HasProgress.class));
+        RestrictionTrackers.observe(new RestrictionTrackerWithSize(), null);
+    assertThat(hasSize, instanceOf(Sizes.HasSize.class));
   }
 }

@@ -20,6 +20,7 @@ package org.apache.beam.examples.kotlin.cookbook
 import com.google.api.services.bigquery.model.TableFieldSchema
 import com.google.api.services.bigquery.model.TableRow
 import com.google.api.services.bigquery.model.TableSchema
+import com.google.cloud.bigquery.storage.v1beta1.ReadOptions.TableReadOptions
 import org.apache.beam.sdk.Pipeline
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO.TypedRead.Method
@@ -89,8 +90,8 @@ object BigQueryTornadoes {
         @ProcessElement
         fun processElement(c: ProcessContext) {
             val row = TableRow()
-                    .set("month", c.element().key)
-                    .set("tornado_count", c.element().value)
+                    .set("month", c.element().getKey())
+                    .set("tornado_count", c.element().getValue())
             c.output(row)
         }
     }
@@ -156,12 +157,16 @@ object BigQueryTornadoes {
         val rowsFromBigQuery: PCollection<TableRow>
 
         if (options.readMethod == Method.DIRECT_READ) {
+            // Build the read options proto for the read operation.
+            val tableReadOptions = TableReadOptions.newBuilder()
+                    .addAllSelectedFields(Lists.newArrayList("month", "tornado"))
+                    .build()
 
             rowsFromBigQuery = p.apply(
                     BigQueryIO.readTableRows()
                             .from(options.input)
                             .withMethod(Method.DIRECT_READ)
-                            .withSelectedFields(Lists.newArrayList("month", "tornado")))
+                            .withReadOptions(tableReadOptions))
         } else {
             rowsFromBigQuery = p.apply(
                     BigQueryIO.readTableRows()

@@ -43,9 +43,6 @@ cdef class StateSampler(object):
 
   cdef int32_t current_state_index
 
-  cpdef ScopedState current_state(self)
-  cdef inline ScopedState current_state_c(self)
-
   cpdef _scoped_state(
       self, counter_name, name_context, output_counter, metrics_container)
 
@@ -59,7 +56,7 @@ cdef class ScopedState(object):
   cdef readonly object name_context
   cdef readonly int64_t _nsecs
   cdef int32_t old_state_index
-  cdef readonly MetricsContainer metrics_container
+  cdef readonly MetricsContainer _metrics_container
 
   cpdef __enter__(self)
 

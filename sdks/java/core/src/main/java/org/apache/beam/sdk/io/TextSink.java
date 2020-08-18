@@ -22,10 +22,10 @@ import java.io.OutputStreamWriter;
 import java.nio.channels.Channels;
 import java.nio.channels.WritableByteChannel;
 import java.nio.charset.StandardCharsets;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.io.fs.ResourceId;
 import org.apache.beam.sdk.options.ValueProvider;
 import org.apache.beam.sdk.util.MimeTypes;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Implementation detail of {@link TextIO.Write}.
@@ -35,8 +35,8 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * last) is terminated.
  */
 class TextSink<UserT, DestinationT> extends FileBasedSink<UserT, DestinationT, String> {
-  private final @Nullable String header;
-  private final @Nullable String footer;
+  @Nullable private final String header;
+  @Nullable private final String footer;
   private final char[] delimiter;
 
   TextSink(
@@ -60,8 +60,8 @@ class TextSink<UserT, DestinationT> extends FileBasedSink<UserT, DestinationT, S
   /** A {@link WriteOperation WriteOperation} for text files. */
   private static class TextWriteOperation<DestinationT>
       extends WriteOperation<DestinationT, String> {
-    private final @Nullable String header;
-    private final @Nullable String footer;
+    @Nullable private final String header;
+    @Nullable private final String footer;
     private final char[] delimiter;
 
     private TextWriteOperation(
@@ -80,12 +80,12 @@ class TextSink<UserT, DestinationT> extends FileBasedSink<UserT, DestinationT, S
 
   /** A {@link Writer Writer} for text files. */
   private static class TextWriter<DestinationT> extends Writer<DestinationT, String> {
-    private final @Nullable String header;
-    private final @Nullable String footer;
+    @Nullable private final String header;
+    @Nullable private final String footer;
     private final char[] delimiter;
 
     // Initialized in prepareWrite
-    private @Nullable OutputStreamWriter out;
+    @Nullable private OutputStreamWriter out;
 
     public TextWriter(
         WriteOperation<DestinationT, String> writeOperation,

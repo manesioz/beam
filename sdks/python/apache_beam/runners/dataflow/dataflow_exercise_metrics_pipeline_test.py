@@ -17,8 +17,6 @@
 
 """A word-counting workflow."""
 
-# pytype: skip-file
-
 from __future__ import absolute_import
 
 import argparse
@@ -34,6 +32,7 @@ from apache_beam.testing.test_pipeline import TestPipeline
 
 
 class ExerciseMetricsPipelineTest(unittest.TestCase):
+
   def run_pipeline(self, **opts):
     test_pipeline = TestPipeline(is_integration_test=True)
     argv = test_pipeline.get_full_options_as_args(**opts)

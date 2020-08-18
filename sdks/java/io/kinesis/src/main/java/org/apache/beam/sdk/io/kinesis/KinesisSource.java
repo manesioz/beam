@@ -38,10 +38,8 @@ class KinesisSource extends UnboundedSource<KinesisRecord, KinesisReaderCheckpoi
   private final String streamName;
   private final Duration upToDateThreshold;
   private final WatermarkPolicyFactory watermarkPolicyFactory;
-  private final RateLimitPolicyFactory rateLimitPolicyFactory;
   private CheckpointGenerator initialCheckpointGenerator;
   private final Integer limit;
-  private final Integer maxCapacityPerShard;
 
   KinesisSource(
       AWSClientsProvider awsClientsProvider,
@@ -49,18 +47,14 @@ class KinesisSource extends UnboundedSource<KinesisRecord, KinesisReaderCheckpoi
       StartingPoint startingPoint,
       Duration upToDateThreshold,
       WatermarkPolicyFactory watermarkPolicyFactory,
-      RateLimitPolicyFactory rateLimitPolicyFactory,
-      Integer limit,
-      Integer maxCapacityPerShard) {
+      Integer limit) {
     this(
         awsClientsProvider,
         new DynamicCheckpointGenerator(streamName, startingPoint),
         streamName,
         upToDateThreshold,
         watermarkPolicyFactory,
-        rateLimitPolicyFactory,
-        limit,
-        maxCapacityPerShard);
+        limit);
   }
 
   private KinesisSource(
@@ -69,17 +63,13 @@ class KinesisSource extends UnboundedSource<KinesisRecord, KinesisReaderCheckpoi
       String streamName,
       Duration upToDateThreshold,
       WatermarkPolicyFactory watermarkPolicyFactory,
-      RateLimitPolicyFactory rateLimitPolicyFactory,
-      Integer limit,
-      Integer maxCapacityPerShard) {
+      Integer limit) {
     this.awsClientsProvider = awsClientsProvider;
     this.initialCheckpointGenerator = initialCheckpoint;
     this.streamName = streamName;
     this.upToDateThreshold = upToDateThreshold;
     this.watermarkPolicyFactory = watermarkPolicyFactory;
-    this.rateLimitPolicyFactory = rateLimitPolicyFactory;
     this.limit = limit;
-    this.maxCapacityPerShard = maxCapacityPerShard;
     validate();
   }
 
@@ -103,9 +93,7 @@ class KinesisSource extends UnboundedSource<KinesisRecord, KinesisReaderCheckpoi
               streamName,
               upToDateThreshold,
               watermarkPolicyFactory,
-              rateLimitPolicyFactory,
-              limit,
-              maxCapacityPerShard));
+              limit));
     }
     return sources;
   }
@@ -132,9 +120,7 @@ class KinesisSource extends UnboundedSource<KinesisRecord, KinesisReaderCheckpoi
         checkpointGenerator,
         this,
         watermarkPolicyFactory,
-        rateLimitPolicyFactory,
-        upToDateThreshold,
-        maxCapacityPerShard);
+        upToDateThreshold);
   }
 
   @Override
@@ -146,8 +132,6 @@ class KinesisSource extends UnboundedSource<KinesisRecord, KinesisReaderCheckpoi
   public void validate() {
     checkNotNull(awsClientsProvider);
     checkNotNull(initialCheckpointGenerator);
-    checkNotNull(watermarkPolicyFactory);
-    checkNotNull(rateLimitPolicyFactory);
   }
 
   @Override

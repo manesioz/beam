@@ -31,10 +31,6 @@ import static org.junit.Assert.assertThrows;
 import com.google.api.services.bigquery.model.TableFieldSchema;
 import com.google.api.services.bigquery.model.TableRow;
 import com.google.api.services.bigquery.model.TableSchema;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.time.LocalDate;
-import java.time.LocalTime;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collections;
@@ -42,8 +38,6 @@ import java.util.List;
 import org.apache.avro.generic.GenericData;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryUtils.ConversionOptions.TruncateTimestamps;
 import org.apache.beam.sdk.schemas.Schema;
-import org.apache.beam.sdk.schemas.Schema.FieldType;
-import org.apache.beam.sdk.schemas.logicaltypes.SqlTypes;
 import org.apache.beam.sdk.schemas.utils.AvroUtils;
 import org.apache.beam.sdk.values.Row;
 import org.joda.time.DateTime;
@@ -415,14 +409,21 @@ public class BigQueryUtilsTest {
     assertThrows(
         "precision",
         IllegalArgumentException.class,
-        () -> BigQueryUtils.convertAvroFormat(FieldType.DATETIME, 1000000001L, REJECT_OPTIONS));
+        () ->
+            BigQueryUtils.convertAvroFormat(
+                Schema.Field.of("dummy", Schema.FieldType.DATETIME).getType(),
+                1000000001L,
+                REJECT_OPTIONS));
   }
 
   @Test
   public void testMilliPrecisionOk() {
     long millis = 123456789L;
     assertThat(
-        BigQueryUtils.convertAvroFormat(FieldType.DATETIME, millis * 1000, REJECT_OPTIONS),
+        BigQueryUtils.convertAvroFormat(
+            Schema.Field.of("dummy", Schema.FieldType.DATETIME).getType(),
+            millis * 1000,
+            REJECT_OPTIONS),
         equalTo(new Instant(millis)));
   }
 
@@ -430,34 +431,69 @@ public class BigQueryUtilsTest {
   public void testSubMilliPrecisionTruncated() {
     long millis = 123456789L;
     assertThat(
-        BigQueryUtils.convertAvroFormat(FieldType.DATETIME, millis * 1000 + 123, TRUNCATE_OPTIONS),
+        BigQueryUtils.convertAvroFormat(
+            Schema.Field.of("dummy", Schema.FieldType.DATETIME).getType(),
+            millis * 1000 + 123,
+            TRUNCATE_OPTIONS),
         equalTo(new Instant(millis)));
   }
 
   @Test
-  public void testDateType() {
-    LocalDate d = LocalDate.parse("2020-06-04");
-    assertThat(
-        BigQueryUtils.convertAvroFormat(
-            FieldType.logicalType(SqlTypes.DATE), (int) d.toEpochDay(), REJECT_OPTIONS),
-        equalTo(d));
+  public void testSubMilliPrecisionLogicalTypeRejected() {
+    assertThrows(
+        "precision",
+        IllegalArgumentException.class,
+        () ->
+            BigQueryUtils.convertAvroFormat(
+                Schema.Field.of("dummy", Schema.FieldType.logicalType(new FakeSqlTimeType()))
+                    .getType(),
+                1000000001L,
+                REJECT_OPTIONS));
   }
 
   @Test
-  public void testMicroPrecisionTimeType() {
-    LocalTime t = LocalTime.parse("12:34:56.789876");
+  public void testMilliPrecisionOkLogicaltype() {
+    long millis = 123456789L;
     assertThat(
         BigQueryUtils.convertAvroFormat(
-            FieldType.logicalType(SqlTypes.TIME), t.toNanoOfDay() / 1000, REJECT_OPTIONS),
-        equalTo(t));
+            Schema.Field.of("dummy", Schema.FieldType.logicalType(new FakeSqlTimeType())).getType(),
+            millis * 1000,
+            REJECT_OPTIONS),
+        equalTo(new Instant(millis)));
   }
 
   @Test
-  public void testBytesType() {
-    byte[] bytes = "hello".getBytes(StandardCharsets.UTF_8);
+  public void testMilliPrecisionTruncatedLogicaltype() {
+    long millis = 123456789L;
     assertThat(
-        BigQueryUtils.convertAvroFormat(FieldType.BYTES, ByteBuffer.wrap(bytes), REJECT_OPTIONS),
-        equalTo(bytes));
+        BigQueryUtils.convertAvroFormat(
+            Schema.Field.of("dummy", Schema.FieldType.logicalType(new FakeSqlTimeType())).getType(),
+            millis * 1000 + 123,
+            TRUNCATE_OPTIONS),
+        equalTo(new Instant(millis)));
+  }
+
+  private static class FakeSqlTimeType implements Schema.LogicalType<Long, Instant> {
+    @Override
+    public String getIdentifier() {
+      return "SqlTimeType";
+    }
+
+    @Override
+    public Schema.FieldType getBaseType() {
+      return Schema.FieldType.DATETIME;
+    }
+
+    @Override
+    public Instant toBaseType(Long input) {
+      // Already converted to millis outside this constructor
+      return new Instant((long) input);
+    }
+
+    @Override
+    public Long toInputType(Instant base) {
+      return base.getMillis();
+    }
   }
 
   @Test

@@ -19,7 +19,6 @@ package org.apache.beam.sdk.extensions.euphoria.core.client.util;
 
 import java.util.Objects;
 import org.apache.beam.sdk.extensions.euphoria.core.annotation.audience.Audience;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /** Triple of any types. */
 @Audience(Audience.Type.CLIENT)
@@ -51,7 +50,7 @@ public final class Triple<T1, T2, T3> {
   }
 
   @Override
-  public boolean equals(@Nullable Object o) {
+  public boolean equals(Object o) {
     if (o instanceof Triple) {
       Triple<?, ?, ?> triple = (Triple<?, ?, ?>) o;
       return Objects.equals(first, triple.first)

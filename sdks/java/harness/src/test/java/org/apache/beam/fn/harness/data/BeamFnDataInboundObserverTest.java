@@ -28,15 +28,15 @@ import static org.junit.Assert.assertTrue;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.concurrent.ExecutionException;
+import org.apache.beam.model.fnexecution.v1.BeamFnApi;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.fn.data.BeamFnDataInboundObserver;
 import org.apache.beam.sdk.fn.data.CompletableFutureInboundDataClient;
 import org.apache.beam.sdk.fn.data.InboundDataClient;
-import org.apache.beam.sdk.fn.data.LogicalEndpoint;
 import org.apache.beam.sdk.transforms.windowing.GlobalWindow;
 import org.apache.beam.sdk.util.WindowedValue;
-import org.apache.beam.vendor.grpc.v1p26p0.com.google.protobuf.ByteString;
+import org.apache.beam.vendor.grpc.v1p21p0.com.google.protobuf.ByteString;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
@@ -48,7 +48,6 @@ import org.junit.runners.JUnit4;
 public class BeamFnDataInboundObserverTest {
   private static final Coder<WindowedValue<String>> CODER =
       WindowedValue.getFullCoder(StringUtf8Coder.of(), GlobalWindow.Coder.INSTANCE);
-  private static final LogicalEndpoint DATA_ENDPOINT = LogicalEndpoint.data("777L", "999L");
 
   @Rule public ExpectedException thrown = ExpectedException.none();
 
@@ -57,10 +56,10 @@ public class BeamFnDataInboundObserverTest {
     Collection<WindowedValue<String>> values = new ArrayList<>();
     InboundDataClient readFuture = CompletableFutureInboundDataClient.create();
     BeamFnDataInboundObserver<WindowedValue<String>> observer =
-        new BeamFnDataInboundObserver<>(DATA_ENDPOINT, CODER, values::add, readFuture);
+        new BeamFnDataInboundObserver<>(CODER, values::add, readFuture);
 
     // Test decoding multiple messages
-    observer.accept(dataWith("ABC", "DEF", "GHI"), false);
+    observer.accept(dataWith("ABC", "DEF", "GHI"));
     assertThat(
         values,
         contains(
@@ -69,11 +68,11 @@ public class BeamFnDataInboundObserverTest {
 
     // Test empty message signaling end of stream
     assertFalse(readFuture.isDone());
-    observer.accept(ByteString.EMPTY, true);
+    observer.accept(dataWith());
     assertTrue(readFuture.isDone());
 
     // Test messages after stream is finished are discarded
-    observer.accept(dataWith("ABC", "DEF", "GHI"), false);
+    observer.accept(dataWith("ABC", "DEF", "GHI"));
     assertThat(values, empty());
   }
 
@@ -81,10 +80,10 @@ public class BeamFnDataInboundObserverTest {
   public void testConsumptionFailureCompletesReadFutureAndDiscardsMessages() throws Exception {
     InboundDataClient readClient = CompletableFutureInboundDataClient.create();
     BeamFnDataInboundObserver<WindowedValue<String>> observer =
-        new BeamFnDataInboundObserver<>(DATA_ENDPOINT, CODER, this::throwOnDefValue, readClient);
+        new BeamFnDataInboundObserver<>(CODER, this::throwOnDefValue, readClient);
 
     assertFalse(readClient.isDone());
-    observer.accept(dataWith("ABC", "DEF", "GHI"), false);
+    observer.accept(dataWith("ABC", "DEF", "GHI"));
     assertTrue(readClient.isDone());
 
     thrown.expect(ExecutionException.class);
@@ -99,11 +98,14 @@ public class BeamFnDataInboundObserverTest {
     }
   }
 
-  private ByteString dataWith(String... values) throws Exception {
+  private BeamFnApi.Elements.Data dataWith(String... values) throws Exception {
+    BeamFnApi.Elements.Data.Builder builder =
+        BeamFnApi.Elements.Data.newBuilder().setInstructionId("777L").setTransformId("999L");
     ByteString.Output output = ByteString.newOutput();
     for (String value : values) {
       CODER.encode(valueInGlobalWindow(value), output);
     }
-    return output.toByteString();
+    builder.setData(output.toByteString());
+    return builder.build();
   }
 }

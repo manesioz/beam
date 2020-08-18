@@ -20,8 +20,8 @@ package org.apache.beam.sdk.extensions.sql.meta;
 import com.alibaba.fastjson.JSONObject;
 import com.google.auto.value.AutoValue;
 import java.io.Serializable;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.schemas.Schema;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /** Represents the metadata of a {@code BeamSqlTable}. */
 @AutoValue
@@ -33,9 +33,11 @@ public abstract class Table implements Serializable {
 
   public abstract Schema getSchema();
 
-  public abstract @Nullable String getComment();
+  @Nullable
+  public abstract String getComment();
 
-  public abstract @Nullable String getLocation();
+  @Nullable
+  public abstract String getLocation();
 
   public abstract JSONObject getProperties();
 

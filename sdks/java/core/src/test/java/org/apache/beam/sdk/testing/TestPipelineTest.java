@@ -40,7 +40,6 @@ import org.apache.beam.sdk.transforms.MapElements;
 import org.apache.beam.sdk.transforms.SimpleFunction;
 import org.apache.beam.sdk.util.common.ReflectHelpers;
 import org.apache.beam.sdk.values.PCollection;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.hamcrest.BaseMatcher;
 import org.hamcrest.Description;
 import org.junit.Rule;
@@ -133,7 +132,7 @@ public class TestPipelineTest implements Serializable {
       }
 
       @Override
-      public boolean equals(@Nullable Object obj) {
+      public boolean equals(Object obj) {
         if (!(obj instanceof TestMatcher)) {
           return false;
         }

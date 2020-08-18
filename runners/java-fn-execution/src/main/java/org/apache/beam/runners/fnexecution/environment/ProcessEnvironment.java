@@ -29,6 +29,7 @@ public class ProcessEnvironment implements RemoteEnvironment {
   private final RunnerApi.Environment environment;
   private final String workerId;
   private final InstructionRequestHandler instructionHandler;
+  private final Object lock = new Object();
 
   private boolean isClosed;
 
@@ -63,28 +64,13 @@ public class ProcessEnvironment implements RemoteEnvironment {
   }
 
   @Override
-  public synchronized void close() throws Exception {
-    if (isClosed) {
-      return;
-    }
-    Exception exception = null;
-    try {
-      processManager.stopProcess(workerId);
-    } catch (Exception e) {
-      exception = e;
-    }
-    try {
-      instructionHandler.close();
-    } catch (Exception e) {
-      if (exception != null) {
-        exception.addSuppressed(e);
-      } else {
-        exception = e;
+  public void close() throws Exception {
+    synchronized (lock) {
+      if (!isClosed) {
+        instructionHandler.close();
+        processManager.stopProcess(workerId);
+        isClosed = true;
       }
-    }
-    isClosed = true;
-    if (exception != null) {
-      throw exception;
     }
   }
 }

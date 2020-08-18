@@ -17,8 +17,6 @@
  */
 package org.apache.beam.sdk.io.hcatalog;
 
-import org.apache.beam.sdk.annotations.Experimental;
-import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.schemas.Schema;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.PTransform;
@@ -29,7 +27,6 @@ import org.apache.beam.sdk.values.Row;
 import org.apache.hive.hcatalog.data.HCatRecord;
 
 /** Utilities to convert {@link HCatRecord HCatRecords} to {@link Row Rows}. */
-@Experimental(Kind.SCHEMAS)
 public class HCatToRow {
 
   /**
@@ -71,7 +68,7 @@ public class HCatToRow {
    * <p>Gets all values from the records, uses them to create a row. Values/schema are validated in
    * the row builder.
    */
-  private static class HCatToRowFn extends DoFn<HCatRecord, Row> {
+  static class HCatToRowFn extends DoFn<HCatRecord, Row> {
     private final Schema schema;
 
     HCatToRowFn(Schema schema) {

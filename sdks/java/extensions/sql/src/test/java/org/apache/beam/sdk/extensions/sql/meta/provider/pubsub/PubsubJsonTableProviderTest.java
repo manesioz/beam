@@ -75,30 +75,53 @@ public class PubsubJsonTableProviderTest {
   }
 
   @Test
-  public void testCreatesTableWithJustTimestamp() {
+  public void testThrowsIfAttributesFieldNotProvided() {
     PubsubJsonTableProvider provider = new PubsubJsonTableProvider();
-    Schema messageSchema = Schema.builder().addDateTimeField("event_timestamp").build();
+    Schema messageSchema =
+        Schema.builder()
+            .addDateTimeField("event_timestamp")
+            .addRowField("payload", Schema.builder().build())
+            .build();
 
     Table tableDefinition = tableDefinition().schema(messageSchema).build();
 
-    BeamSqlTable pubsubTable = provider.buildBeamSqlTable(tableDefinition);
-
-    assertNotNull(pubsubTable);
-    assertEquals(messageSchema, pubsubTable.getSchema());
+    thrown.expectMessage("Unsupported");
+    thrown.expectMessage("'attributes'");
+    provider.buildBeamSqlTable(tableDefinition);
   }
 
   @Test
-  public void testCreatesFlatTable() {
+  public void testThrowsIfPayloadFieldNotProvided() {
     PubsubJsonTableProvider provider = new PubsubJsonTableProvider();
     Schema messageSchema =
-        Schema.builder().addDateTimeField("event_timestamp").addStringField("someField").build();
+        Schema.builder()
+            .addDateTimeField("event_timestamp")
+            .addMapField("attributes", VARCHAR, VARCHAR)
+            .build();
 
     Table tableDefinition = tableDefinition().schema(messageSchema).build();
 
-    BeamSqlTable pubsubTable = provider.buildBeamSqlTable(tableDefinition);
+    thrown.expectMessage("Unsupported");
+    thrown.expectMessage("'payload'");
+    provider.buildBeamSqlTable(tableDefinition);
+  }
 
-    assertNotNull(pubsubTable);
-    assertEquals(messageSchema, pubsubTable.getSchema());
+  @Test
+  public void testThrowsIfExtraFieldsExist() {
+    PubsubJsonTableProvider provider = new PubsubJsonTableProvider();
+    Schema messageSchema =
+        Schema.builder()
+            .addDateTimeField("event_timestamp")
+            .addMapField("attributes", VARCHAR, VARCHAR)
+            .addStringField("someField")
+            .addRowField("payload", Schema.builder().build())
+            .build();
+
+    Table tableDefinition = tableDefinition().schema(messageSchema).build();
+
+    thrown.expectMessage("Unsupported");
+    thrown.expectMessage("'event_timestamp'");
+    provider.buildBeamSqlTable(tableDefinition);
   }
 
   private static Table.Builder tableDefinition() {

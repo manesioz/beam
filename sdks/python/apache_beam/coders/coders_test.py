@@ -14,8 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# pytype: skip-file
-
 from __future__ import absolute_import
 
 import base64
@@ -30,6 +28,7 @@ from apache_beam.coders.typecoders import registry as coders_registry
 
 
 class PickleCoderTest(unittest.TestCase):
+
   def test_basics(self):
     v = ('a' * 10, 'b' * 90)
     pickler = coders.PickleCoder()
@@ -43,15 +42,17 @@ class PickleCoderTest(unittest.TestCase):
   def test_equality(self):
     self.assertEqual(coders.PickleCoder(), coders.PickleCoder())
     self.assertEqual(coders.Base64PickleCoder(), coders.Base64PickleCoder())
-    self.assertNotEqual(coders.Base64PickleCoder(), coders.PickleCoder())
-    self.assertNotEqual(coders.Base64PickleCoder(), object())
+    self.assertNotEquals(coders.Base64PickleCoder(), coders.PickleCoder())
+    self.assertNotEquals(coders.Base64PickleCoder(), object())
 
 
 class CodersTest(unittest.TestCase):
+
   def test_str_utf8_coder(self):
     real_coder = coders_registry.get_coder(bytes)
     expected_coder = coders.BytesCoder()
-    self.assertEqual(real_coder.encode(b'abc'), expected_coder.encode(b'abc'))
+    self.assertEqual(
+        real_coder.encode(b'abc'), expected_coder.encode(b'abc'))
     self.assertEqual(b'abc', real_coder.decode(real_coder.encode(b'abc')))
 
 
@@ -71,6 +72,7 @@ class CodersTest(unittest.TestCase):
 # TODO(vikasrk): The proto file should be placed in a common directory
 # that can be shared between java and python.
 class ProtoCoderTest(unittest.TestCase):
+
   def test_proto_coder(self):
     ma = test_message.MessageA()
     mb = ma.field2.add()
@@ -84,15 +86,15 @@ class ProtoCoderTest(unittest.TestCase):
 
 
 class DeterministicProtoCoderTest(unittest.TestCase):
+
   def test_deterministic_proto_coder(self):
     ma = test_message.MessageA()
     mb = ma.field2.add()
     mb.field1 = True
     ma.field1 = u'hello world'
     expected_coder = coders.DeterministicProtoCoder(ma.__class__)
-    real_coder = (
-        coders_registry.get_coder(
-            ma.__class__).as_deterministic_coder(step_label='unused'))
+    real_coder = (coders_registry.get_coder(ma.__class__)
+                  .as_deterministic_coder(step_label='unused'))
     self.assertTrue(real_coder.is_deterministic())
     self.assertEqual(expected_coder, real_coder)
     self.assertEqual(real_coder.encode(ma), expected_coder.encode(ma))
@@ -111,7 +113,7 @@ class DeterministicProtoCoderTest(unittest.TestCase):
       self.assertEqual(coder.encode(mm_forward), coder.encode(mm_reverse))
 
 
-class AvroTestCoder(coders.AvroGenericCoder):
+class AvroTestCoder(coders.AvroCoder):
   SCHEMA = """
   {
     "type": "record", "name": "testrecord",
@@ -134,26 +136,23 @@ coders_registry.register_coder(AvroTestRecord, AvroTestCoder)
 
 
 class AvroCoderTest(unittest.TestCase):
+
   def test_avro_record_coder(self):
     real_coder = coders_registry.get_coder(AvroTestRecord)
     expected_coder = AvroTestCoder()
     self.assertEqual(
         real_coder.encode(
-            AvroTestRecord({
-                "name": "Daenerys targaryen", "age": 23
-            })),
+            AvroTestRecord({"name": "Daenerys targaryen", "age": 23})),
         expected_coder.encode(
-            AvroTestRecord({
-                "name": "Daenerys targaryen", "age": 23
-            })))
+            AvroTestRecord({"name": "Daenerys targaryen", "age": 23}))
+    )
     self.assertEqual(
-        AvroTestRecord({
-            "name": "Jon Snow", "age": 23
-        }),
+        AvroTestRecord({"name": "Jon Snow", "age": 23}),
         real_coder.decode(
-            real_coder.encode(AvroTestRecord({
-                "name": "Jon Snow", "age": 23
-            }))))
+            real_coder.encode(
+                AvroTestRecord({"name": "Jon Snow", "age": 23}))
+        )
+    )
 
 
 class DummyClass(object):
@@ -175,6 +174,7 @@ class DummyClass(object):
 
 
 class FallbackCoderTest(unittest.TestCase):
+
   def test_default_fallback_path(self):
     """Test fallback path picks a matching coder if no coder is registered."""
 

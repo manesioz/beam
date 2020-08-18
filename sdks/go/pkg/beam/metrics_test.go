@@ -29,9 +29,14 @@ var ctx = context.Background()
 
 func ctxWithPtransformID(id string) context.Context {
 	ctx := context.Background()
-	ctx = metrics.SetBundleID(ctx, "exampleBundle")
 	ctx = metrics.SetPTransformID(ctx, id)
+	ctx = metrics.SetBundleID(ctx, "exampleBundle")
 	return ctx
+}
+
+func dumpAndClearMetrics() {
+	metrics.DumpToOut()
+	metrics.Clear()
 }
 
 var (
@@ -56,15 +61,15 @@ func Example_metricsDeclaredAnywhere() {
 	extractWordsDofn(ctx, "this has six words in it", func(string) {})
 	extractWordsDofn(ctx, "this has seven words in it, see?", func(string) {})
 
-	metrics.DumpToOutFromContext(ctx)
-	// Output: PTransformID: "example"
+	dumpAndClearMetrics()
+	// Output: Bundle: "exampleBundle" - PTransformID: "example"
 	//	example.namespace.characters - count: 13 sum: 43 min: 2 max: 5
 	//	example.namespace.count - value: 13
 }
 
 func Example_metricsReusable() {
 
-	// Metric proxies can be used in multiple DoFns
+	// Metrics can be used in multiple DoFns
 	c := beam.NewCounter("example.reusable", "count")
 
 	extractWordsDofn := func(ctx context.Context, line string, emit func(string)) {
@@ -80,15 +85,14 @@ func Example_metricsReusable() {
 			c.Inc(ctx, 1)
 		}
 	}
-	ctx = metrics.SetBundleID(ctx, "exampleBundle")
-	extractWordsDofn(metrics.SetPTransformID(ctx, "extract1"), "this has six words in it", func(string) {})
+	extractWordsDofn(ctxWithPtransformID("extract1"), "this has six words in it", func(string) {})
 
-	extractRunesDofn(metrics.SetPTransformID(ctx, "extract2"), "seven thousand", func(rune) {})
+	extractRunesDofn(ctxWithPtransformID("extract2"), "seven thousand", func(rune) {})
 
-	metrics.DumpToOutFromContext(ctx)
-	// Output: PTransformID: "extract1"
+	dumpAndClearMetrics()
+	// Output: Bundle: "exampleBundle" - PTransformID: "extract1"
 	//	example.reusable.count - value: 6
-	// PTransformID: "extract2"
+	// Bundle: "exampleBundle" - PTransformID: "extract2"
 	//	example.reusable.count - value: 14
 }
 

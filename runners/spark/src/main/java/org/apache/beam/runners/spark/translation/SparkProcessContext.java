@@ -161,14 +161,7 @@ class SparkProcessContext<FnInputT, FnOutputT, OutputT> {
       StateNamespace namespace = timer.getNamespace();
       checkArgument(namespace instanceof StateNamespaces.WindowNamespace);
       BoundedWindow window = ((StateNamespaces.WindowNamespace) namespace).getWindow();
-      doFnRunner.onTimer(
-          timer.getTimerId(),
-          timer.getTimerFamilyId(),
-          null,
-          window,
-          timer.getTimestamp(),
-          timer.getOutputTimestamp(),
-          timer.getDomain());
+      doFnRunner.onTimer(timer.getTimerId(), window, timer.getTimestamp(), timer.getDomain());
     }
   }
 }

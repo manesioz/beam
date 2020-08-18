@@ -17,14 +17,9 @@
 
 """Unit tests for the PValue and PCollection classes."""
 
-# pytype: skip-file
-
 from __future__ import absolute_import
 
 import unittest
-
-# patches unittest.TestCase to be python3 compatible
-import future.tests.base  # pylint: disable=unused-import
 
 from apache_beam.pvalue import AsSingleton
 from apache_beam.pvalue import PValue
@@ -33,13 +28,14 @@ from apache_beam.testing.test_pipeline import TestPipeline
 
 
 class PValueTest(unittest.TestCase):
+
   def test_pvalue_expected_arguments(self):
     pipeline = TestPipeline()
     value = PValue(pipeline)
     self.assertEqual(pipeline, value.pipeline)
 
   def test_assingleton_multi_element(self):
-    with self.assertRaisesRegex(
+    with self.assertRaisesRegexp(
         ValueError,
         'PCollection of size 2 with more than one element accessed as a '
         'singleton view. First two elements encountered are \"1\", \"2\".'):
@@ -47,8 +43,9 @@ class PValueTest(unittest.TestCase):
 
 
 class TaggedValueTest(unittest.TestCase):
+
   def test_passed_tuple_as_tag(self):
-    with self.assertRaisesRegex(
+    with self.assertRaisesRegexp(
         TypeError,
         r'Attempting to create a TaggedOutput with non-string tag \(1, 2, 3\)'):
       TaggedOutput((1, 2, 3), 'value')

@@ -20,6 +20,7 @@ package org.apache.beam.sdk.extensions.sql.zetasql.translation;
 import com.google.zetasql.resolvedast.ResolvedNodes.ResolvedSingleRowScan;
 import java.util.List;
 import org.apache.beam.vendor.calcite.v1_20_0.org.apache.calcite.rel.RelNode;
+import org.apache.beam.vendor.calcite.v1_20_0.org.apache.calcite.rel.logical.LogicalValues;
 
 /** Converts a single row value. */
 class SingleRowScanConverter extends RelConverter<ResolvedSingleRowScan> {
@@ -35,6 +36,6 @@ class SingleRowScanConverter extends RelConverter<ResolvedSingleRowScan> {
 
   @Override
   public RelNode convert(ResolvedSingleRowScan zetaNode, List<RelNode> inputs) {
-    return createOneRow(getCluster());
+    return LogicalValues.createOneRow(getCluster());
   }
 }

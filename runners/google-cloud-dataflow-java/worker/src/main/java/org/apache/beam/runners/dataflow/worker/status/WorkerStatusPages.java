@@ -18,8 +18,7 @@
 package org.apache.beam.runners.dataflow.worker.status;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collection;
+import java.util.Arrays;
 import java.util.List;
 import java.util.function.BooleanSupplier;
 import javax.servlet.ServletException;
@@ -40,7 +39,6 @@ public class WorkerStatusPages {
   private static final Logger LOG = LoggerFactory.getLogger(WorkerStatusPages.class);
 
   private final Server statusServer;
-  private final List<Capturable> capturePages;
   private final StatuszServlet statuszServlet = new StatuszServlet();
   private final ThreadzServlet threadzServlet = new ThreadzServlet();
   private final ServletHandler servletHandler = new ServletHandler();
@@ -48,7 +46,6 @@ public class WorkerStatusPages {
   @VisibleForTesting
   WorkerStatusPages(Server server, MemoryMonitor memoryMonitor, BooleanSupplier healthyIndicator) {
     this.statusServer = server;
-    this.capturePages = new ArrayList<>();
     this.statusServer.setHandler(servletHandler);
 
     // Install the default servlets (threadz, healthz, heapz, statusz)
@@ -57,9 +54,6 @@ public class WorkerStatusPages {
     addServlet(new HeapzServlet(memoryMonitor));
     addServlet(statuszServlet);
 
-    // Add default capture pages (threadz, statusz)
-    this.capturePages.add(threadzServlet);
-    this.capturePages.add(statuszServlet);
     // Add some status pages
     addStatusDataProvider("resources", "Resources", memoryMonitor);
   }
@@ -113,12 +107,8 @@ public class WorkerStatusPages {
   }
 
   /** Returns the set of pages than should be captured by DebugCapture. */
-  public Collection<Capturable> getDebugCapturePages() {
-    return this.capturePages;
-  }
-
-  public void addCapturePage(Capturable page) {
-    this.capturePages.add(page);
+  public List<Capturable> getDebugCapturePages() {
+    return Arrays.asList(threadzServlet, statuszServlet);
   }
 
   /** Redirect all invalid pages to /statusz. */

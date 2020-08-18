@@ -17,5 +17,4 @@
 from __future__ import absolute_import
 
 from apache_beam.coders.coders import *
-from apache_beam.coders.row_coder import *
 from apache_beam.coders.typecoders import registry

@@ -29,7 +29,6 @@ import org.apache.beam.sdk.coders.CustomCoder;
 import org.apache.beam.sdk.nexmark.NexmarkUtils;
 import org.apache.beam.sdk.nexmark.queries.WinningBids;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Objects;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /** Result of {@link WinningBids} transform. */
 public class AuctionBid implements KnownSize, Serializable {
@@ -85,7 +84,7 @@ public class AuctionBid implements KnownSize, Serializable {
   }
 
   @Override
-  public boolean equals(@Nullable Object o) {
+  public boolean equals(Object o) {
     if (this == o) {
       return true;
     }

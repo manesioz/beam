@@ -37,73 +37,47 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.stream.Collectors;
-import org.apache.beam.sdk.annotations.Internal;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.schemas.FieldAccessDescriptor;
-import org.apache.beam.sdk.state.BagState;
-import org.apache.beam.sdk.state.MapState;
-import org.apache.beam.sdk.state.OrderedListState;
-import org.apache.beam.sdk.state.ReadableState;
-import org.apache.beam.sdk.state.SetState;
 import org.apache.beam.sdk.state.State;
 import org.apache.beam.sdk.state.StateSpec;
 import org.apache.beam.sdk.state.TimeDomain;
 import org.apache.beam.sdk.state.Timer;
-import org.apache.beam.sdk.state.TimerMap;
 import org.apache.beam.sdk.state.TimerSpec;
-import org.apache.beam.sdk.state.ValueState;
-import org.apache.beam.sdk.state.WatermarkHoldState;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.DoFn.MultiOutputReceiver;
 import org.apache.beam.sdk.transforms.DoFn.OutputReceiver;
 import org.apache.beam.sdk.transforms.DoFn.SideInput;
 import org.apache.beam.sdk.transforms.DoFn.StateId;
 import org.apache.beam.sdk.transforms.DoFn.TimerId;
-import org.apache.beam.sdk.transforms.DoFn.TruncateRestriction;
 import org.apache.beam.sdk.transforms.reflect.DoFnSignature.FieldAccessDeclaration;
-import org.apache.beam.sdk.transforms.reflect.DoFnSignature.GetInitialRestrictionMethod;
-import org.apache.beam.sdk.transforms.reflect.DoFnSignature.GetInitialWatermarkEstimatorStateMethod;
 import org.apache.beam.sdk.transforms.reflect.DoFnSignature.Parameter;
-import org.apache.beam.sdk.transforms.reflect.DoFnSignature.Parameter.PipelineOptionsParameter;
-import org.apache.beam.sdk.transforms.reflect.DoFnSignature.Parameter.RestrictionParameter;
 import org.apache.beam.sdk.transforms.reflect.DoFnSignature.Parameter.RestrictionTrackerParameter;
 import org.apache.beam.sdk.transforms.reflect.DoFnSignature.Parameter.SchemaElementParameter;
 import org.apache.beam.sdk.transforms.reflect.DoFnSignature.Parameter.StateParameter;
-import org.apache.beam.sdk.transforms.reflect.DoFnSignature.Parameter.TimerFamilyParameter;
 import org.apache.beam.sdk.transforms.reflect.DoFnSignature.Parameter.TimerParameter;
-import org.apache.beam.sdk.transforms.reflect.DoFnSignature.Parameter.WatermarkEstimatorParameter;
-import org.apache.beam.sdk.transforms.reflect.DoFnSignature.Parameter.WatermarkEstimatorStateParameter;
 import org.apache.beam.sdk.transforms.reflect.DoFnSignature.Parameter.WindowParameter;
 import org.apache.beam.sdk.transforms.reflect.DoFnSignature.StateDeclaration;
 import org.apache.beam.sdk.transforms.reflect.DoFnSignature.TimerDeclaration;
-import org.apache.beam.sdk.transforms.reflect.DoFnSignature.TimerFamilyDeclaration;
 import org.apache.beam.sdk.transforms.splittabledofn.HasDefaultTracker;
-import org.apache.beam.sdk.transforms.splittabledofn.HasDefaultWatermarkEstimator;
-import org.apache.beam.sdk.transforms.splittabledofn.ManualWatermarkEstimator;
 import org.apache.beam.sdk.transforms.splittabledofn.RestrictionTracker;
-import org.apache.beam.sdk.transforms.splittabledofn.RestrictionTracker.TruncateResult;
-import org.apache.beam.sdk.transforms.splittabledofn.WatermarkEstimator;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.PaneInfo;
 import org.apache.beam.sdk.util.common.ReflectHelpers;
-import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.Row;
 import org.apache.beam.sdk.values.TypeDescriptor;
-import org.apache.beam.sdk.values.TypeDescriptors;
 import org.apache.beam.sdk.values.TypeParameter;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.annotations.VisibleForTesting;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Predicates;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableMap;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Maps;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Instant;
 
 /** Utilities for working with {@link DoFnSignature}. See {@link #getSignature}. */
-@Internal
 public class DoFnSignatures {
 
   private DoFnSignatures() {}
@@ -124,15 +98,11 @@ public class DoFnSignatures {
               Parameter.PipelineOptionsParameter.class,
               Parameter.TimerParameter.class,
               Parameter.StateParameter.class,
-              Parameter.SideInputParameter.class,
-              Parameter.TimerFamilyParameter.class,
-              Parameter.BundleFinalizerParameter.class);
+              Parameter.SideInputParameter.class);
 
   private static final ImmutableList<Class<? extends Parameter>>
       ALLOWED_SPLITTABLE_PROCESS_ELEMENT_PARAMETERS =
           ImmutableList.of(
-              Parameter.WindowParameter.class,
-              Parameter.PaneInfoParameter.class,
               Parameter.PipelineOptionsParameter.class,
               Parameter.ElementParameter.class,
               Parameter.TimestampParameter.class,
@@ -140,21 +110,7 @@ public class DoFnSignatures {
               Parameter.TaggedOutputReceiverParameter.class,
               Parameter.ProcessContextParameter.class,
               Parameter.RestrictionTrackerParameter.class,
-              Parameter.WatermarkEstimatorParameter.class,
-              Parameter.SideInputParameter.class,
-              Parameter.BundleFinalizerParameter.class);
-
-  private static final ImmutableList<Class<? extends Parameter>> ALLOWED_START_BUNDLE_PARAMETERS =
-      ImmutableList.of(
-          Parameter.PipelineOptionsParameter.class,
-          Parameter.StartBundleContextParameter.class,
-          Parameter.BundleFinalizerParameter.class);
-
-  private static final ImmutableList<Class<? extends Parameter>> ALLOWED_FINISH_BUNDLE_PARAMETERS =
-      ImmutableList.of(
-          Parameter.PipelineOptionsParameter.class,
-          Parameter.FinishBundleContextParameter.class,
-          Parameter.BundleFinalizerParameter.class);
+              Parameter.SideInputParameter.class);
 
   private static final ImmutableList<Class<? extends Parameter>> ALLOWED_ON_TIMER_PARAMETERS =
       ImmutableList.of(
@@ -166,25 +122,7 @@ public class DoFnSignatures {
           Parameter.OutputReceiverParameter.class,
           Parameter.TaggedOutputReceiverParameter.class,
           Parameter.TimerParameter.class,
-          Parameter.StateParameter.class,
-          Parameter.TimerFamilyParameter.class,
-          Parameter.TimerIdParameter.class,
-          Parameter.KeyParameter.class);
-
-  private static final ImmutableList<Class<? extends Parameter>>
-      ALLOWED_ON_TIMER_FAMILY_PARAMETERS =
-          ImmutableList.of(
-              Parameter.OnTimerContextParameter.class,
-              Parameter.TimestampParameter.class,
-              Parameter.TimeDomainParameter.class,
-              Parameter.WindowParameter.class,
-              Parameter.PipelineOptionsParameter.class,
-              Parameter.OutputReceiverParameter.class,
-              Parameter.TaggedOutputReceiverParameter.class,
-              Parameter.TimerParameter.class,
-              Parameter.StateParameter.class,
-              Parameter.TimerFamilyParameter.class,
-              Parameter.TimerIdParameter.class);
+          Parameter.StateParameter.class);
 
   private static final Collection<Class<? extends Parameter>>
       ALLOWED_ON_WINDOW_EXPIRATION_PARAMETERS =
@@ -193,79 +131,7 @@ public class DoFnSignatures {
               Parameter.PipelineOptionsParameter.class,
               Parameter.OutputReceiverParameter.class,
               Parameter.TaggedOutputReceiverParameter.class,
-              Parameter.StateParameter.class,
-              Parameter.TimestampParameter.class,
-              Parameter.KeyParameter.class);
-
-  private static final Collection<Class<? extends Parameter>>
-      ALLOWED_GET_INITIAL_RESTRICTION_PARAMETERS =
-          ImmutableList.of(
-              Parameter.ElementParameter.class,
-              Parameter.WindowParameter.class,
-              Parameter.TimestampParameter.class,
-              Parameter.PaneInfoParameter.class,
-              Parameter.PipelineOptionsParameter.class);
-
-  private static final Collection<Class<? extends Parameter>> ALLOWED_SPLIT_RESTRICTION_PARAMETERS =
-      ImmutableList.of(
-          Parameter.ElementParameter.class,
-          Parameter.RestrictionParameter.class,
-          Parameter.RestrictionTrackerParameter.class,
-          Parameter.OutputReceiverParameter.class,
-          Parameter.WindowParameter.class,
-          Parameter.TimestampParameter.class,
-          Parameter.PaneInfoParameter.class,
-          Parameter.PipelineOptionsParameter.class);
-
-  private static final Collection<Class<? extends Parameter>>
-      ALLOWED_TRUNCATE_RESTRICTION_PARAMETERS =
-          ImmutableList.of(
-              Parameter.ElementParameter.class,
-              Parameter.RestrictionParameter.class,
-              Parameter.RestrictionTrackerParameter.class,
-              Parameter.WindowParameter.class,
-              Parameter.TimestampParameter.class,
-              Parameter.PaneInfoParameter.class,
-              Parameter.PipelineOptionsParameter.class);
-
-  private static final Collection<Class<? extends Parameter>> ALLOWED_NEW_TRACKER_PARAMETERS =
-      ImmutableList.of(
-          Parameter.ElementParameter.class,
-          Parameter.RestrictionParameter.class,
-          Parameter.WindowParameter.class,
-          Parameter.TimestampParameter.class,
-          Parameter.PaneInfoParameter.class,
-          Parameter.PipelineOptionsParameter.class);
-
-  private static final Collection<Class<? extends Parameter>> ALLOWED_GET_SIZE_PARAMETERS =
-      ImmutableList.of(
-          Parameter.ElementParameter.class,
-          Parameter.RestrictionParameter.class,
-          Parameter.WindowParameter.class,
-          Parameter.TimestampParameter.class,
-          Parameter.PaneInfoParameter.class,
-          Parameter.PipelineOptionsParameter.class);
-
-  private static final Collection<Class<? extends Parameter>>
-      ALLOWED_GET_INITIAL_WATERMARK_ESTIMATOR_STATE_PARAMETERS =
-          ImmutableList.of(
-              Parameter.ElementParameter.class,
-              Parameter.RestrictionParameter.class,
-              Parameter.WindowParameter.class,
-              Parameter.TimestampParameter.class,
-              Parameter.PaneInfoParameter.class,
-              Parameter.PipelineOptionsParameter.class);
-
-  private static final Collection<Class<? extends Parameter>>
-      ALLOWED_NEW_WATERMARK_ESTIMATOR_PARAMETERS =
-          ImmutableList.of(
-              Parameter.WatermarkEstimatorStateParameter.class,
-              Parameter.ElementParameter.class,
-              Parameter.RestrictionParameter.class,
-              Parameter.WindowParameter.class,
-              Parameter.TimestampParameter.class,
-              Parameter.PaneInfoParameter.class,
-              Parameter.PipelineOptionsParameter.class);
+              Parameter.StateParameter.class);
 
   /** @return the {@link DoFnSignature} for the given {@link DoFn} instance. */
   public static <FnT extends DoFn<?, ?>> DoFnSignature signatureForDoFn(FnT fn) {
@@ -288,7 +154,6 @@ public class DoFnSignatures {
 
     private final Map<String, StateDeclaration> stateDeclarations = new HashMap<>();
     private final Map<String, TimerDeclaration> timerDeclarations = new HashMap<>();
-    private final Map<String, TimerFamilyDeclaration> timerFamilyDeclarations = new HashMap<>();
     private final Map<String, FieldAccessDeclaration> fieldAccessDeclarations = new HashMap<>();
 
     private FnAnalysisContext() {}
@@ -308,16 +173,9 @@ public class DoFnSignatures {
       return Collections.unmodifiableMap(timerDeclarations);
     }
 
-    /**
-     * TimerMap parameters declared in this context, keyed by {@link
-     * org.apache.beam.sdk.transforms.DoFn.TimerFamily}. Unmodifiable.
-     */
-    public Map<String, TimerFamilyDeclaration> getTimerFamilyDeclarations() {
-      return Collections.unmodifiableMap(timerFamilyDeclarations);
-    }
-
     /** Field access declaration declared in this context. */
-    public @Nullable Map<String, FieldAccessDeclaration> getFieldAccessDeclarations() {
+    @Nullable
+    public Map<String, FieldAccessDeclaration> getFieldAccessDeclarations() {
       return fieldAccessDeclarations;
     }
 
@@ -335,19 +193,9 @@ public class DoFnSignatures {
       timerDeclarations.put(decl.id(), decl);
     }
 
-    public void addTimerFamilyDeclaration(TimerFamilyDeclaration decl) {
-      timerFamilyDeclarations.put(decl.id(), decl);
-    }
-
     public void addTimerDeclarations(Iterable<TimerDeclaration> decls) {
       for (TimerDeclaration decl : decls) {
         addTimerDeclaration(decl);
-      }
-    }
-
-    public void addTimerFamilyDeclarations(Iterable<TimerFamilyDeclaration> decls) {
-      for (TimerFamilyDeclaration decl : decls) {
-        addTimerFamilyDeclaration(decl);
       }
     }
 
@@ -372,38 +220,33 @@ public class DoFnSignatures {
 
     private final Map<String, StateParameter> stateParameters = new HashMap<>();
     private final Map<String, TimerParameter> timerParameters = new HashMap<>();
-    private final Map<String, TimerFamilyParameter> timerFamilyParameters = new HashMap<>();
     private final List<Parameter> extraParameters = new ArrayList<>();
+
+    @Nullable private TypeDescriptor<? extends BoundedWindow> windowT;
 
     private MethodAnalysisContext() {}
 
-    /** Indicates whether the specified {@link Parameter} is known in this context. */
-    public boolean hasParameter(Class<? extends Parameter> type) {
-      return extraParameters.stream().anyMatch(Predicates.instanceOf(type)::apply);
+    /** Indicates whether a {@link RestrictionTrackerParameter} is known in this context. */
+    public boolean hasRestrictionTrackerParameter() {
+      return extraParameters.stream()
+          .anyMatch(Predicates.instanceOf(RestrictionTrackerParameter.class)::apply);
     }
 
-    /**
-     * Returns the specified {@link Parameter} if it is known in this context. Throws {@link
-     * IllegalStateException} if there is more than one instance of the parameter.
-     */
-    public @Nullable <T extends Parameter> Optional<T> findParameter(Class<T> type) {
-      List<T> parameters = findParameters(type);
-      switch (parameters.size()) {
-        case 0:
-          return Optional.empty();
-        case 1:
-          return Optional.of(parameters.get(0));
-        default:
-          throw new IllegalStateException(
-              String.format(
-                  "Expected to have found at most one parameter of type %s but found %s.",
-                  type, parameters));
-      }
+    /** Indicates whether a {@link WindowParameter} is known in this context. */
+    public boolean hasWindowParameter() {
+      return extraParameters.stream().anyMatch(Predicates.instanceOf(WindowParameter.class)::apply);
     }
 
-    public <T extends Parameter> List<T> findParameters(Class<T> type) {
-      return (List<T>)
-          extraParameters.stream().filter(Predicates.instanceOf(type)).collect(Collectors.toList());
+    /** Indicates whether a {@link Parameter.PipelineOptionsParameter} is known in this context. */
+    public boolean hasPipelineOptionsParamter() {
+      return extraParameters.stream()
+          .anyMatch(Predicates.instanceOf(Parameter.PipelineOptionsParameter.class)::apply);
+    }
+
+    /** The window type, if any, used by this method. */
+    @Nullable
+    public TypeDescriptor<? extends BoundedWindow> getWindowType() {
+      return windowT;
     }
 
     /** State parameters declared in this context, keyed by {@link StateId}. */
@@ -414,13 +257,6 @@ public class DoFnSignatures {
     /** Timer parameters declared in this context, keyed by {@link TimerId}. */
     public Map<String, TimerParameter> getTimerParameters() {
       return Collections.unmodifiableMap(timerParameters);
-    }
-    /**
-     * TimerMap parameters declared in this context, keyed by {@link
-     * org.apache.beam.sdk.transforms.DoFn.TimerFamily}.
-     */
-    public Map<String, TimerFamilyParameter> getTimerFamilyParameters() {
-      return Collections.unmodifiableMap(timerFamilyParameters);
     }
     /** Extra parameters in their entirety. Unmodifiable. */
     public List<Parameter> getExtraParameters() {
@@ -445,10 +281,6 @@ public class DoFnSignatures {
       if (param instanceof TimerParameter) {
         TimerParameter timerParameter = (TimerParameter) param;
         timerParameters.put(timerParameter.referent().id(), timerParameter);
-      }
-      if (param instanceof TimerFamilyParameter) {
-        TimerFamilyParameter timerFamilyParameter = (TimerFamilyParameter) param;
-        timerFamilyParameters.put(timerFamilyParameter.referent().id(), timerFamilyParameter);
       }
     }
 
@@ -508,7 +340,6 @@ public class DoFnSignatures {
     FnAnalysisContext fnContext = FnAnalysisContext.create();
     fnContext.addStateDeclarations(analyzeStateDeclarations(errors, fnClass).values());
     fnContext.addTimerDeclarations(analyzeTimerDeclarations(errors, fnClass).values());
-    fnContext.addTimerFamilyDeclarations(analyzeTimerFamilyDeclarations(errors, fnClass).values());
     fnContext.addFieldAccessDeclarations(analyzeFieldAccessDeclaration(errors, fnClass).values());
 
     Method processElementMethod =
@@ -524,25 +355,16 @@ public class DoFnSignatures {
         findAnnotatedMethod(errors, DoFn.GetInitialRestriction.class, fnClass, false);
     Method splitRestrictionMethod =
         findAnnotatedMethod(errors, DoFn.SplitRestriction.class, fnClass, false);
-    Method truncateRestrictionMethod =
-        findAnnotatedMethod(errors, TruncateRestriction.class, fnClass, false);
     Method getRestrictionCoderMethod =
         findAnnotatedMethod(errors, DoFn.GetRestrictionCoder.class, fnClass, false);
     Method newTrackerMethod = findAnnotatedMethod(errors, DoFn.NewTracker.class, fnClass, false);
-    Method getSizeMethod = findAnnotatedMethod(errors, DoFn.GetSize.class, fnClass, false);
-    Method getWatermarkEstimatorStateCoderMethod =
-        findAnnotatedMethod(errors, DoFn.GetWatermarkEstimatorStateCoder.class, fnClass, false);
-    Method getInitialWatermarkEstimatorStateMethod =
-        findAnnotatedMethod(errors, DoFn.GetInitialWatermarkEstimatorState.class, fnClass, false);
-    Method newWatermarkEstimatorMethod =
-        findAnnotatedMethod(errors, DoFn.NewWatermarkEstimator.class, fnClass, false);
 
     Collection<Method> onTimerMethods =
         declaredMethodsWithAnnotation(DoFn.OnTimer.class, fnClass, DoFn.class);
     HashMap<String, DoFnSignature.OnTimerMethod> onTimerMethodMap =
         Maps.newHashMapWithExpectedSize(onTimerMethods.size());
     for (Method onTimerMethod : onTimerMethods) {
-      String id = TimerDeclaration.PREFIX + onTimerMethod.getAnnotation(DoFn.OnTimer.class).value();
+      String id = onTimerMethod.getAnnotation(DoFn.OnTimer.class).value();
       errors.checkArgument(
           fnContext.getTimerDeclarations().containsKey(id),
           "Callback %s is for undeclared timer %s",
@@ -563,55 +385,13 @@ public class DoFnSignatures {
     }
     signatureBuilder.setOnTimerMethods(onTimerMethodMap);
 
-    // Check for TimerFamily
-    Collection<Method> onTimerFamilyMethods =
-        declaredMethodsWithAnnotation(DoFn.OnTimerFamily.class, fnClass, DoFn.class);
-    HashMap<String, DoFnSignature.OnTimerFamilyMethod> onTimerFamilyMethodMap =
-        Maps.newHashMapWithExpectedSize(onTimerFamilyMethods.size());
-
-    for (Method onTimerFamilyMethod : onTimerFamilyMethods) {
-      String id =
-          TimerFamilyDeclaration.PREFIX
-              + onTimerFamilyMethod.getAnnotation(DoFn.OnTimerFamily.class).value();
-      errors.checkArgument(
-          fnContext.getTimerFamilyDeclarations().containsKey(id),
-          "Callback %s is for undeclared timerFamily %s",
-          onTimerFamilyMethod,
-          id);
-
-      TimerFamilyDeclaration timerDecl = fnContext.getTimerFamilyDeclarations().get(id);
-      errors.checkArgument(
-          timerDecl.field().getDeclaringClass().equals(getDeclaringClass(onTimerFamilyMethod)),
-          "Callback %s is for timerFamily %s declared in a different class %s."
-              + " TimerFamily callbacks must be declared in the same lexical scope as their timer",
-          onTimerFamilyMethod,
-          id,
-          timerDecl.field().getDeclaringClass().getCanonicalName());
-
-      onTimerFamilyMethodMap.put(
-          id,
-          analyzeOnTimerFamilyMethod(
-              errors, fnT, onTimerFamilyMethod, id, inputT, outputT, fnContext));
-    }
-    signatureBuilder.setOnTimerFamilyMethods(onTimerFamilyMethodMap);
-
     // Check the converse - that all timers have a callback. This could be relaxed to only
     // those timers used in methods, once method parameter lists support timers.
     for (TimerDeclaration decl : fnContext.getTimerDeclarations().values()) {
       errors.checkArgument(
           onTimerMethodMap.containsKey(decl.id()),
           "No callback registered via %s for timer %s",
-          format(DoFn.OnTimer.class),
-          decl.id());
-    }
-
-    // Check the converse - that all timer family have a callback.
-
-    for (TimerFamilyDeclaration decl : fnContext.getTimerFamilyDeclarations().values()) {
-      errors.checkArgument(
-          onTimerFamilyMethodMap.containsKey(decl.id()),
-          "No callback registered via %s for timerFamily %s",
-          format(DoFn.OnTimerFamily.class),
+          DoFn.OnTimer.class.getSimpleName(),
           decl.id());
     }
 
@@ -625,16 +405,14 @@ public class DoFnSignatures {
     if (startBundleMethod != null) {
       ErrorReporter startBundleErrors = errors.forMethod(DoFn.StartBundle.class, startBundleMethod);
       signatureBuilder.setStartBundle(
-          analyzeStartBundleMethod(
-              startBundleErrors, fnT, startBundleMethod, inputT, outputT, fnContext));
+          analyzeStartBundleMethod(startBundleErrors, fnT, startBundleMethod, inputT, outputT));
     }
 
     if (finishBundleMethod != null) {
       ErrorReporter finishBundleErrors =
           errors.forMethod(DoFn.FinishBundle.class, finishBundleMethod);
       signatureBuilder.setFinishBundle(
-          analyzeFinishBundleMethod(
-              finishBundleErrors, fnT, finishBundleMethod, inputT, outputT, fnContext));
+          analyzeFinishBundleMethod(finishBundleErrors, fnT, finishBundleMethod, inputT, outputT));
     }
 
     if (setupMethod != null) {
@@ -654,177 +432,41 @@ public class DoFnSignatures {
               errors, fnT, onWindowExpirationMethod, inputT, outputT, fnContext));
     }
 
-    if (processElement.isSplittable()) {
-      ErrorReporter getInitialRestrictionErrors =
+    ErrorReporter getInitialRestrictionErrors;
+    if (getInitialRestrictionMethod != null) {
+      getInitialRestrictionErrors =
           errors.forMethod(DoFn.GetInitialRestriction.class, getInitialRestrictionMethod);
-      getInitialRestrictionErrors.checkNotNull(
-          getInitialRestrictionMethod,
-          "Splittable, but does not define the required @%s method.",
-          DoFnSignatures.format(DoFn.GetInitialRestriction.class));
-
-      GetInitialRestrictionMethod initialRestrictionMethod =
+      signatureBuilder.setGetInitialRestriction(
           analyzeGetInitialRestrictionMethod(
-              errors.forMethod(DoFn.GetInitialRestriction.class, getInitialRestrictionMethod),
-              fnT,
-              getInitialRestrictionMethod,
-              inputT,
-              outputT,
-              fnContext);
+              getInitialRestrictionErrors, fnT, getInitialRestrictionMethod, inputT));
+    }
 
-      signatureBuilder.setGetInitialRestriction(initialRestrictionMethod);
-      TypeDescriptor<?> restrictionT = initialRestrictionMethod.restrictionT();
+    if (splitRestrictionMethod != null) {
+      ErrorReporter splitRestrictionErrors =
+          errors.forMethod(DoFn.SplitRestriction.class, splitRestrictionMethod);
+      signatureBuilder.setSplitRestriction(
+          analyzeSplitRestrictionMethod(
+              splitRestrictionErrors, fnT, splitRestrictionMethod, inputT));
+    }
 
-      TypeDescriptor<?> watermarkEstimatorStateT = TypeDescriptors.voids();
-      if (getInitialWatermarkEstimatorStateMethod != null) {
-        GetInitialWatermarkEstimatorStateMethod initialWatermarkEstimatorStateMethod =
-            analyzeGetInitialWatermarkEstimatorStateMethod(
-                errors.forMethod(
-                    DoFn.GetInitialWatermarkEstimatorState.class,
-                    getInitialWatermarkEstimatorStateMethod),
-                fnT,
-                getInitialWatermarkEstimatorStateMethod,
-                inputT,
-                outputT,
-                fnContext);
-        watermarkEstimatorStateT = initialWatermarkEstimatorStateMethod.watermarkEstimatorStateT();
-        signatureBuilder.setGetInitialWatermarkEstimatorState(initialWatermarkEstimatorStateMethod);
-      }
+    if (getRestrictionCoderMethod != null) {
+      ErrorReporter getRestrictionCoderErrors =
+          errors.forMethod(DoFn.GetRestrictionCoder.class, getRestrictionCoderMethod);
+      signatureBuilder.setGetRestrictionCoder(
+          analyzeGetRestrictionCoderMethod(
+              getRestrictionCoderErrors, fnT, getRestrictionCoderMethod));
+    }
 
-      if (newTrackerMethod != null) {
-        signatureBuilder.setNewTracker(
-            analyzeNewTrackerMethod(
-                errors.forMethod(DoFn.NewTracker.class, newTrackerMethod),
-                fnT,
-                newTrackerMethod,
-                inputT,
-                outputT,
-                restrictionT,
-                fnContext));
-      } else {
-        errors
-            .forMethod(DoFn.NewTracker.class, null)
-            .checkArgument(
-                restrictionT.isSubtypeOf(TypeDescriptor.of(HasDefaultTracker.class)),
-                "Splittable, either @%s method must be defined or %s must implement %s.",
-                format(DoFn.NewTracker.class),
-                format(restrictionT),
-                format(HasDefaultTracker.class));
-      }
-
-      if (splitRestrictionMethod != null) {
-        signatureBuilder.setSplitRestriction(
-            analyzeSplitRestrictionMethod(
-                errors.forMethod(DoFn.SplitRestriction.class, splitRestrictionMethod),
-                fnT,
-                splitRestrictionMethod,
-                inputT,
-                outputT,
-                restrictionT,
-                fnContext));
-      }
-
-      if (truncateRestrictionMethod != null) {
-        signatureBuilder.setTruncateRestriction(
-            analyzeTruncateRestrictionMethod(
-                errors.forMethod(TruncateRestriction.class, truncateRestrictionMethod),
-                fnT,
-                truncateRestrictionMethod,
-                inputT,
-                restrictionT,
-                fnContext));
-      }
-
-      if (getSizeMethod != null) {
-        signatureBuilder.setGetSize(
-            analyzeGetSizeMethod(
-                errors.forMethod(DoFn.GetSize.class, getSizeMethod),
-                fnT,
-                getSizeMethod,
-                inputT,
-                outputT,
-                restrictionT,
-                fnContext));
-      }
-
-      if (getRestrictionCoderMethod != null) {
-        signatureBuilder.setGetRestrictionCoder(
-            analyzeGetRestrictionCoderMethod(
-                errors.forMethod(DoFn.GetRestrictionCoder.class, getRestrictionCoderMethod),
-                fnT,
-                getRestrictionCoderMethod));
-      }
-
-      if (getWatermarkEstimatorStateCoderMethod != null) {
-        signatureBuilder.setGetWatermarkEstimatorStateCoder(
-            analyzeGetWatermarkEstimatorStateCoderMethod(
-                errors.forMethod(
-                    DoFn.GetWatermarkEstimatorStateCoder.class,
-                    getWatermarkEstimatorStateCoderMethod),
-                fnT,
-                getWatermarkEstimatorStateCoderMethod));
-      }
-
-      if (newWatermarkEstimatorMethod != null) {
-        signatureBuilder.setNewWatermarkEstimator(
-            analyzeNewWatermarkEstimatorMethod(
-                errors.forMethod(DoFn.NewWatermarkEstimator.class, newWatermarkEstimatorMethod),
-                fnT,
-                newWatermarkEstimatorMethod,
-                inputT,
-                outputT,
-                restrictionT,
-                watermarkEstimatorStateT,
-                fnContext));
-      } else if (getInitialWatermarkEstimatorStateMethod != null) {
-        errors
-            .forMethod(DoFn.NewWatermarkEstimator.class, null)
-            .checkArgument(
-                watermarkEstimatorStateT.isSubtypeOf(
-                    TypeDescriptor.of(HasDefaultWatermarkEstimator.class)),
-                "Splittable, either @%s method must be defined or %s must implement %s.",
-                format(DoFn.NewWatermarkEstimator.class),
-                format(watermarkEstimatorStateT),
-                format(HasDefaultWatermarkEstimator.class));
-      }
-    } else {
-      // Validate that none of the splittable DoFn only methods have been declared.
-      List<String> forbiddenMethods = new ArrayList<>();
-      if (getInitialRestrictionMethod != null) {
-        forbiddenMethods.add("@" + format(DoFn.GetInitialRestriction.class));
-      }
-      if (splitRestrictionMethod != null) {
-        forbiddenMethods.add("@" + format(DoFn.SplitRestriction.class));
-      }
-      if (truncateRestrictionMethod != null) {
-        forbiddenMethods.add("@" + format(TruncateRestriction.class));
-      }
-      if (newTrackerMethod != null) {
-        forbiddenMethods.add("@" + format(DoFn.NewTracker.class));
-      }
-      if (getRestrictionCoderMethod != null) {
-        forbiddenMethods.add("@" + format(DoFn.GetRestrictionCoder.class));
-      }
-      if (getSizeMethod != null) {
-        forbiddenMethods.add("@" + format(DoFn.GetSize.class));
-      }
-      if (getInitialWatermarkEstimatorStateMethod != null) {
-        forbiddenMethods.add("@" + format(DoFn.GetInitialWatermarkEstimatorState.class));
-      }
-      if (getWatermarkEstimatorStateCoderMethod != null) {
-        forbiddenMethods.add("@" + format(DoFn.GetWatermarkEstimatorStateCoder.class));
-      }
-      if (newWatermarkEstimatorMethod != null) {
-        forbiddenMethods.add("@" + format(DoFn.NewWatermarkEstimator.class));
-      }
-      errors.checkArgument(
-          forbiddenMethods.isEmpty(), "Non-splittable, but defines methods: %s", forbiddenMethods);
+    if (newTrackerMethod != null) {
+      ErrorReporter newTrackerErrors = errors.forMethod(DoFn.NewTracker.class, newTrackerMethod);
+      signatureBuilder.setNewTracker(
+          analyzeNewTrackerMethod(newTrackerErrors, fnT, newTrackerMethod));
     }
 
     signatureBuilder.setIsBoundedPerElement(inferBoundedness(fnT, processElement, errors));
 
     signatureBuilder.setStateDeclarations(fnContext.getStateDeclarations());
     signatureBuilder.setTimerDeclarations(fnContext.getTimerDeclarations());
-    signatureBuilder.setTimerFamilyDeclarations(fnContext.getTimerFamilyDeclarations());
     signatureBuilder.setFieldAccessDeclarations(fnContext.getFieldAccessDeclarations());
 
     DoFnSignature signature = signatureBuilder.build();
@@ -832,6 +474,8 @@ public class DoFnSignatures {
     // Additional validation for splittable DoFn's.
     if (processElement.isSplittable()) {
       verifySplittableMethods(signature, errors);
+    } else {
+      verifyUnsplittableMethods(errors, signature);
     }
 
     return signature;
@@ -873,8 +517,8 @@ public class DoFnSignatures {
         errors.checkArgument(
             isBounded == null,
             "Both @%s and @%s specified",
-            format(DoFn.BoundedPerElement.class),
-            format(DoFn.UnboundedPerElement.class));
+            DoFn.BoundedPerElement.class.getSimpleName(),
+            DoFn.UnboundedPerElement.class.getSimpleName());
         isBounded =
             supertype.getRawType().isAnnotationPresent(DoFn.BoundedPerElement.class)
                 ? PCollection.IsBounded.BOUNDED
@@ -893,8 +537,8 @@ public class DoFnSignatures {
           isBounded == null,
           "Non-splittable, but annotated as @"
               + ((isBounded == PCollection.IsBounded.BOUNDED)
-                  ? format(DoFn.BoundedPerElement.class)
-                  : format(DoFn.UnboundedPerElement.class)));
+                  ? DoFn.BoundedPerElement.class.getSimpleName()
+                  : DoFn.UnboundedPerElement.class.getSimpleName()));
       checkState(!processElement.hasReturnValue(), "Should have been inferred splittable");
       isBounded = PCollection.IsBounded.BOUNDED;
     }
@@ -918,79 +562,95 @@ public class DoFnSignatures {
         signature.getInitialRestriction();
     DoFnSignature.NewTrackerMethod newTracker = signature.newTracker();
     DoFnSignature.GetRestrictionCoderMethod getRestrictionCoder = signature.getRestrictionCoder();
-    DoFnSignature.GetInitialWatermarkEstimatorStateMethod getInitialWatermarkEstimatorState =
-        signature.getInitialWatermarkEstimatorState();
-    DoFnSignature.GetWatermarkEstimatorStateCoderMethod getWatermarkEstimatorStateCoder =
-        signature.getWatermarkEstimatorStateCoder();
+    DoFnSignature.SplitRestrictionMethod splitRestriction = signature.splitRestriction();
 
     ErrorReporter processElementErrors =
         errors.forMethod(DoFn.ProcessElement.class, processElement.targetMethod());
 
-    TypeDescriptor<?> restrictionT = getInitialRestriction.restrictionT();
-    TypeDescriptor<?> watermarkEstimatorStateT =
-        getInitialWatermarkEstimatorState == null
-            ? TypeDescriptors.voids()
-            : getInitialWatermarkEstimatorState.watermarkEstimatorStateT();
-
+    List<String> missingRequiredMethods = new ArrayList<>();
+    if (getInitialRestriction == null) {
+      missingRequiredMethods.add("@" + DoFn.GetInitialRestriction.class.getSimpleName());
+    }
     if (newTracker == null) {
-      ErrorReporter newTrackerErrors = errors.forMethod(DoFn.NewTracker.class, null);
-      newTrackerErrors.checkArgument(
-          restrictionT.isSubtypeOf(TypeDescriptor.of(HasDefaultTracker.class)),
-          "Splittable, but does not define @%s method or %s does not implement %s.",
-          format(DoFn.NewTracker.class),
-          format(restrictionT),
-          format(HasDefaultTracker.class));
+      if (getInitialRestriction != null
+          && getInitialRestriction
+              .restrictionT()
+              .isSubtypeOf(TypeDescriptor.of(HasDefaultTracker.class))) {
+        // no-op we are using the annotation @HasDefaultTracker
+      } else {
+        missingRequiredMethods.add("@" + DoFn.NewTracker.class.getSimpleName());
+      }
+    } else {
+      ErrorReporter getInitialRestrictionErrors =
+          errors.forMethod(DoFn.GetInitialRestriction.class, getInitialRestriction.targetMethod());
+      TypeDescriptor<?> restrictionT = getInitialRestriction.restrictionT();
+      getInitialRestrictionErrors.checkArgument(
+          restrictionT.equals(newTracker.restrictionT()),
+          "Uses restriction type %s, but @%s method %s uses restriction type %s",
+          formatType(restrictionT),
+          DoFn.NewTracker.class.getSimpleName(),
+          format(newTracker.targetMethod()),
+          formatType(newTracker.restrictionT()));
     }
 
+    if (!missingRequiredMethods.isEmpty()) {
+      processElementErrors.throwIllegalArgument(
+          "Splittable, but does not define the following required methods: %s",
+          missingRequiredMethods);
+    }
+
+    ErrorReporter getInitialRestrictionErrors =
+        errors.forMethod(DoFn.GetInitialRestriction.class, getInitialRestriction.targetMethod());
+    TypeDescriptor<?> restrictionT = getInitialRestriction.restrictionT();
     processElementErrors.checkArgument(
         processElement.trackerT().getRawType().equals(RestrictionTracker.class),
         "Has tracker type %s, but the DoFn's tracker type must be of type RestrictionTracker.",
-        format(processElement.trackerT()));
-
-    if (processElement.watermarkEstimatorT() != null) {
-      processElementErrors.checkArgument(
-          processElement.watermarkEstimatorT().getRawType().equals(WatermarkEstimator.class)
-              || processElement
-                  .watermarkEstimatorT()
-                  .getRawType()
-                  .equals(ManualWatermarkEstimator.class),
-          "Has watermark estimator type %s, but the DoFn's watermark estimator type must be one of [WatermarkEstimator, ManualWatermarkEstimator] types.",
-          format(processElement.watermarkEstimatorT()));
-    }
+        formatType(processElement.trackerT()));
 
     if (getRestrictionCoder != null) {
-      ErrorReporter getInitialRestrictionErrors =
-          errors.forMethod(DoFn.GetInitialRestriction.class, getInitialRestriction.targetMethod());
       getInitialRestrictionErrors.checkArgument(
           getRestrictionCoder.coderT().isSubtypeOf(coderTypeOf(restrictionT)),
           "Uses restriction type %s, but @%s method %s returns %s "
               + "which is not a subtype of %s",
-          format(restrictionT),
-          format(DoFn.GetRestrictionCoder.class),
+          formatType(restrictionT),
+          DoFn.GetRestrictionCoder.class.getSimpleName(),
           format(getRestrictionCoder.targetMethod()),
-          format(getRestrictionCoder.coderT()),
-          format(coderTypeOf(restrictionT)));
+          formatType(getRestrictionCoder.coderT()),
+          formatType(coderTypeOf(restrictionT)));
     }
 
-    if (getWatermarkEstimatorStateCoder != null) {
-      ErrorReporter getInitialWatermarkEstimatorStateReporter =
-          errors.forMethod(
-              DoFn.GetInitialWatermarkEstimatorState.class,
-              getInitialWatermarkEstimatorState == null
-                  ? null
-                  : getInitialWatermarkEstimatorState.targetMethod());
-      getInitialWatermarkEstimatorStateReporter.checkArgument(
-          getWatermarkEstimatorStateCoder
-              .coderT()
-              .isSubtypeOf(coderTypeOf(watermarkEstimatorStateT)),
-          "Uses watermark estimator state type %s, but @%s method %s returns %s "
-              + "which is not a subtype of %s",
-          format(watermarkEstimatorStateT),
-          format(DoFn.GetInitialWatermarkEstimatorState.class),
-          format(getWatermarkEstimatorStateCoder.targetMethod()),
-          format(getWatermarkEstimatorStateCoder.coderT()),
-          format(coderTypeOf(watermarkEstimatorStateT)));
+    if (splitRestriction != null) {
+      getInitialRestrictionErrors.checkArgument(
+          splitRestriction.restrictionT().equals(restrictionT),
+          "Uses restriction type %s, but @%s method %s uses restriction type %s",
+          formatType(restrictionT),
+          DoFn.SplitRestriction.class.getSimpleName(),
+          format(splitRestriction.targetMethod()),
+          formatType(splitRestriction.restrictionT()));
     }
+  }
+
+  /**
+   * Verifies that a non-splittable {@link DoFn} does not declare any methods that only make sense
+   * for splittable {@link DoFn}: {@link DoFn.GetInitialRestriction}, {@link DoFn.SplitRestriction},
+   * {@link DoFn.NewTracker}, {@link DoFn.GetRestrictionCoder}.
+   */
+  private static void verifyUnsplittableMethods(ErrorReporter errors, DoFnSignature signature) {
+    List<String> forbiddenMethods = new ArrayList<>();
+    if (signature.getInitialRestriction() != null) {
+      forbiddenMethods.add("@" + DoFn.GetInitialRestriction.class.getSimpleName());
+    }
+    if (signature.splitRestriction() != null) {
+      forbiddenMethods.add("@" + DoFn.SplitRestriction.class.getSimpleName());
+    }
+    if (signature.newTracker() != null) {
+      forbiddenMethods.add("@" + DoFn.NewTracker.class.getSimpleName());
+    }
+    if (signature.getRestrictionCoder() != null) {
+      forbiddenMethods.add("@" + DoFn.GetRestrictionCoder.class.getSimpleName());
+    }
+    errors.checkArgument(
+        forbiddenMethods.isEmpty(), "Non-splittable, but defines methods: %s", forbiddenMethods);
   }
 
   /**
@@ -1041,19 +701,6 @@ public class DoFnSignatures {
         .where(new TypeParameter<OutputT>() {}, outputT);
   }
 
-  /**
-   * Generates a {@link TypeDescriptor} for {@code DoFn<InputT, OutputT>.Context} given {@code
-   * InputT} and {@code OutputT}.
-   */
-  private static <InputT, OutputT>
-      TypeDescriptor<DoFn<InputT, OutputT>.OnWindowExpirationContext>
-          doFnOnWindowExpirationContextTypeOf(
-              TypeDescriptor<InputT> inputT, TypeDescriptor<OutputT> outputT) {
-    return new TypeDescriptor<DoFn<InputT, OutputT>.OnWindowExpirationContext>() {}.where(
-            new TypeParameter<InputT>() {}, inputT)
-        .where(new TypeParameter<OutputT>() {}, outputT);
-  }
-
   @VisibleForTesting
   static DoFnSignature.OnTimerMethod analyzeOnTimerMethod(
       ErrorReporter errors,
@@ -1073,7 +720,7 @@ public class DoFnSignatures {
 
     @Nullable TypeDescriptor<? extends BoundedWindow> windowT = getWindowType(fnClass, m);
 
-    List<Parameter> extraParameters = new ArrayList<>();
+    List<DoFnSignature.Parameter> extraParameters = new ArrayList<>();
     ErrorReporter onTimerErrors = errors.forMethod(DoFn.OnTimer.class, m);
     for (int i = 0; i < params.length; ++i) {
       Parameter parameter =
@@ -1100,51 +747,6 @@ public class DoFnSignatures {
   }
 
   @VisibleForTesting
-  static DoFnSignature.OnTimerFamilyMethod analyzeOnTimerFamilyMethod(
-      ErrorReporter errors,
-      TypeDescriptor<? extends DoFn<?, ?>> fnClass,
-      Method m,
-      String timerFamilyId,
-      TypeDescriptor<?> inputT,
-      TypeDescriptor<?> outputT,
-      FnAnalysisContext fnContext) {
-    errors.checkArgument(void.class.equals(m.getReturnType()), "Must return void");
-
-    Type[] params = m.getGenericParameterTypes();
-
-    MethodAnalysisContext methodContext = MethodAnalysisContext.create();
-
-    boolean requiresStableInput = m.isAnnotationPresent(DoFn.RequiresStableInput.class);
-
-    @Nullable TypeDescriptor<? extends BoundedWindow> windowT = getWindowType(fnClass, m);
-
-    List<DoFnSignature.Parameter> extraParameters = new ArrayList<>();
-    ErrorReporter onTimerErrors = errors.forMethod(DoFn.OnTimerFamily.class, m);
-    for (int i = 0; i < params.length; ++i) {
-      Parameter parameter =
-          analyzeExtraParameter(
-              onTimerErrors,
-              fnContext,
-              methodContext,
-              fnClass,
-              ParameterDescription.of(
-                  m,
-                  i,
-                  fnClass.resolveType(params[i]),
-                  Arrays.asList(m.getParameterAnnotations()[i])),
-              inputT,
-              outputT);
-
-      checkParameterOneOf(errors, parameter, ALLOWED_ON_TIMER_FAMILY_PARAMETERS);
-
-      extraParameters.add(parameter);
-    }
-
-    return DoFnSignature.OnTimerFamilyMethod.create(
-        m, timerFamilyId, requiresStableInput, windowT, extraParameters);
-  }
-
-  @VisibleForTesting
   static DoFnSignature.OnWindowExpirationMethod analyzeOnWindowExpirationMethod(
       ErrorReporter errors,
       TypeDescriptor<? extends DoFn<?, ?>> fnClass,
@@ -1162,7 +764,7 @@ public class DoFnSignatures {
 
     @Nullable TypeDescriptor<? extends BoundedWindow> windowT = getWindowType(fnClass, m);
 
-    List<Parameter> extraParameters = new ArrayList<>();
+    List<DoFnSignature.Parameter> extraParameters = new ArrayList<>();
     ErrorReporter onWindowExpirationErrors = errors.forMethod(DoFn.OnWindowExpiration.class, m);
     for (int i = 0; i < params.length; ++i) {
       Parameter parameter =
@@ -1200,16 +802,16 @@ public class DoFnSignatures {
         void.class.equals(m.getReturnType())
             || DoFn.ProcessContinuation.class.equals(m.getReturnType()),
         "Must return void or %s",
-        format(DoFn.ProcessContinuation.class));
+        DoFn.ProcessContinuation.class.getSimpleName());
 
     MethodAnalysisContext methodContext = MethodAnalysisContext.create();
 
     boolean requiresStableInput = m.isAnnotationPresent(DoFn.RequiresStableInput.class);
-    boolean requiresTimeSortedInput = m.isAnnotationPresent(DoFn.RequiresTimeSortedInput.class);
-
-    TypeDescriptor<? extends BoundedWindow> windowT = getWindowType(fnClass, m);
 
     Type[] params = m.getGenericParameterTypes();
+
+    TypeDescriptor<?> trackerT = getTrackerType(fnClass, m);
+    TypeDescriptor<? extends BoundedWindow> windowT = getWindowType(fnClass, m);
     for (int i = 0; i < params.length; ++i) {
       Parameter extraParam =
           analyzeExtraParameter(
@@ -1238,19 +840,8 @@ public class DoFnSignatures {
       }
     }
 
-    TypeDescriptor<?> trackerT =
-        methodContext
-            .findParameter(RestrictionTrackerParameter.class)
-            .map(p -> p.trackerT())
-            .orElse(null);
-    TypeDescriptor<?> watermarkEstimatorT =
-        methodContext
-            .findParameter(WatermarkEstimatorParameter.class)
-            .map(p -> p.estimatorT())
-            .orElse(null);
-
     // The allowed parameters depend on whether this DoFn is splittable
-    if (trackerT != null) {
+    if (methodContext.hasRestrictionTrackerParameter()) {
       for (Parameter parameter : methodContext.getExtraParameters()) {
         checkParameterOneOf(errors, parameter, ALLOWED_SPLITTABLE_PROCESS_ELEMENT_PARAMETERS);
       }
@@ -1264,9 +855,7 @@ public class DoFnSignatures {
         m,
         methodContext.getExtraParameters(),
         requiresStableInput,
-        requiresTimeSortedInput,
         trackerT,
-        watermarkEstimatorT,
         windowT,
         DoFn.ProcessContinuation.class.equals(m.getReturnType()));
   }
@@ -1296,11 +885,7 @@ public class DoFnSignatures {
       TypeDescriptor<?> outputT) {
 
     TypeDescriptor<?> expectedProcessContextT = doFnProcessContextTypeOf(inputT, outputT);
-    TypeDescriptor<?> expectedStartBundleContextT = doFnStartBundleContextTypeOf(inputT, outputT);
-    TypeDescriptor<?> expectedFinishBundleContextT = doFnFinishBundleContextTypeOf(inputT, outputT);
     TypeDescriptor<?> expectedOnTimerContextT = doFnOnTimerContextTypeOf(inputT, outputT);
-    TypeDescriptor<?> expectedOnWindowExpirationContextT =
-        doFnOnWindowExpirationContextTypeOf(inputT, outputT);
 
     TypeDescriptor<?> paramT = param.getType();
     Class<?> rawType = paramT.getRawType();
@@ -1310,77 +895,41 @@ public class DoFnSignatures {
     String fieldAccessString = getFieldAccessId(param.getAnnotations());
     if (fieldAccessString != null) {
       return Parameter.schemaElementParameter(paramT, fieldAccessString, param.getIndex());
-    } else if (hasAnnotation(DoFn.Element.class, param.getAnnotations())) {
+    } else if (hasElementAnnotation(param.getAnnotations())) {
       return (paramT.equals(inputT))
           ? Parameter.elementParameter(paramT)
           : Parameter.schemaElementParameter(paramT, null, param.getIndex());
-    } else if (hasAnnotation(DoFn.Restriction.class, param.getAnnotations())) {
-      return Parameter.restrictionParameter(paramT);
-    } else if (hasAnnotation(DoFn.WatermarkEstimatorState.class, param.getAnnotations())) {
-      return Parameter.watermarkEstimatorState(paramT);
-    } else if (hasAnnotation(DoFn.Timestamp.class, param.getAnnotations())) {
+    } else if (hasTimestampAnnotation(param.getAnnotations())) {
       methodErrors.checkArgument(
           rawType.equals(Instant.class),
           "@Timestamp argument must have type org.joda.time.Instant.");
       return Parameter.timestampParameter();
-    } else if (hasAnnotation(DoFn.Key.class, param.getAnnotations())) {
-      methodErrors.checkArgument(
-          KV.class.equals(inputT.getRawType()),
-          "@Key argument is expected to be use with input element of type KV.");
-
-      Type keyType = ((ParameterizedType) inputT.getType()).getActualTypeArguments()[0];
-      methodErrors.checkArgument(
-          TypeDescriptor.of(keyType).equals(paramT),
-          "@Key argument is expected to be type of %s, but found %s.",
-          keyType,
-          rawType);
-      return Parameter.keyT(paramT);
     } else if (rawType.equals(TimeDomain.class)) {
       return Parameter.timeDomainParameter();
-    } else if (hasAnnotation(DoFn.SideInput.class, param.getAnnotations())) {
+    } else if (hasSideInputAnnotation(param.getAnnotations())) {
       String sideInputId = getSideInputId(param.getAnnotations());
       paramErrors.checkArgument(
-          sideInputId != null, "%s missing %s annotation", format(SideInput.class));
+          sideInputId != null, "%s missing %s annotation", SideInput.class.getSimpleName());
       return Parameter.sideInputParameter(paramT, sideInputId);
     } else if (rawType.equals(PaneInfo.class)) {
       return Parameter.paneInfoParameter();
-    } else if (rawType.equals(DoFn.BundleFinalizer.class)) {
-      return Parameter.bundleFinalizer();
     } else if (rawType.equals(DoFn.ProcessContext.class)) {
       paramErrors.checkArgument(
           paramT.equals(expectedProcessContextT),
           "ProcessContext argument must have type %s",
-          format(expectedProcessContextT));
+          formatType(expectedProcessContextT));
       return Parameter.processContext();
-    } else if (rawType.equals(DoFn.StartBundleContext.class)) {
-      paramErrors.checkArgument(
-          paramT.equals(expectedStartBundleContextT),
-          "StartBundleContext argument must have type %s",
-          format(expectedProcessContextT));
-      return Parameter.startBundleContext();
-    } else if (rawType.equals(DoFn.FinishBundleContext.class)) {
-      paramErrors.checkArgument(
-          paramT.equals(expectedFinishBundleContextT),
-          "FinishBundleContext argument must have type %s",
-          format(expectedProcessContextT));
-      return Parameter.finishBundleContext();
     } else if (rawType.equals(DoFn.OnTimerContext.class)) {
       paramErrors.checkArgument(
           paramT.equals(expectedOnTimerContextT),
           "OnTimerContext argument must have type %s",
-          format(expectedOnTimerContextT));
+          formatType(expectedOnTimerContextT));
       return Parameter.onTimerContext();
-    } else if (rawType.equals(DoFn.OnWindowExpirationContext.class)) {
-      paramErrors.checkArgument(
-          paramT.equals(expectedOnWindowExpirationContextT),
-          "OnWindowExpirationContext argument must have type %s",
-          format(expectedOnWindowExpirationContextT));
-      return Parameter.onWindowExpirationContext();
     } else if (BoundedWindow.class.isAssignableFrom(rawType)) {
       methodErrors.checkArgument(
-          !methodContext.hasParameter(WindowParameter.class),
+          !methodContext.hasWindowParameter(),
           "Multiple %s parameters",
-          format(BoundedWindow.class));
+          BoundedWindow.class.getSimpleName());
       return Parameter.boundedWindow((TypeDescriptor<? extends BoundedWindow>) paramT);
     } else if (rawType.equals(OutputReceiver.class)) {
       // It's a schema row receiver if it's an OutputReceiver<Row> _and_ the output type is not
@@ -1400,95 +949,60 @@ public class DoFnSignatures {
       return Parameter.taggedOutputReceiverParameter();
     } else if (PipelineOptions.class.equals(rawType)) {
       methodErrors.checkArgument(
-          !methodContext.hasParameter(PipelineOptionsParameter.class),
+          !methodContext.hasPipelineOptionsParamter(),
           "Multiple %s parameters",
-          format(PipelineOptions.class));
+          PipelineOptions.class.getSimpleName());
       return Parameter.pipelineOptions();
     } else if (RestrictionTracker.class.isAssignableFrom(rawType)) {
       methodErrors.checkArgument(
-          !methodContext.hasParameter(RestrictionTrackerParameter.class),
+          !methodContext.hasRestrictionTrackerParameter(),
           "Multiple %s parameters",
-          format(RestrictionTracker.class));
+          RestrictionTracker.class.getSimpleName());
       return Parameter.restrictionTracker(paramT);
-    } else if (WatermarkEstimator.class.isAssignableFrom(rawType)) {
-      methodErrors.checkArgument(
-          !methodContext.hasParameter(WatermarkEstimatorParameter.class),
-          "Multiple %s parameters",
-          format(WatermarkEstimator.class));
-      return Parameter.watermarkEstimator(paramT);
+
     } else if (rawType.equals(Timer.class)) {
       // m.getParameters() is not available until Java 8
       String id = getTimerId(param.getAnnotations());
 
       paramErrors.checkArgument(
-          id != null, "%s missing %s annotation", format(Timer.class), format(TimerId.class));
+          id != null,
+          "%s missing %s annotation",
+          Timer.class.getSimpleName(),
+          TimerId.class.getSimpleName());
 
       paramErrors.checkArgument(
           !methodContext.getTimerParameters().containsKey(id),
           "duplicate %s: \"%s\"",
-          format(TimerId.class),
+          TimerId.class.getSimpleName(),
           id);
 
       TimerDeclaration timerDecl = fnContext.getTimerDeclarations().get(id);
       paramErrors.checkArgument(
-          timerDecl != null, "reference to undeclared %s: \"%s\"", format(TimerId.class), id);
+          timerDecl != null,
+          "reference to undeclared %s: \"%s\"",
+          TimerId.class.getSimpleName(),
+          id);
 
       paramErrors.checkArgument(
           timerDecl.field().getDeclaringClass().equals(getDeclaringClass(param.getMethod())),
           "%s %s declared in a different class %s."
               + " Timers may be referenced only in the lexical scope where they are declared.",
-          format(TimerId.class),
+          TimerId.class.getSimpleName(),
           id,
           timerDecl.field().getDeclaringClass().getName());
 
       return Parameter.timerParameter(timerDecl);
 
-    } else if (hasAnnotation(DoFn.TimerId.class, param.getAnnotations())) {
-      boolean isValidTimerIdForTimerFamily =
-          fnContext.getTimerFamilyDeclarations().size() > 0 && rawType.equals(String.class);
-      paramErrors.checkArgument(
-          isValidTimerIdForTimerFamily, "%s not allowed here", format(DoFn.TimerId.class));
-      return Parameter.timerIdParameter();
-    } else if (rawType.equals(TimerMap.class)) {
-      String id = getTimerFamilyId(param.getAnnotations());
-
-      paramErrors.checkArgument(
-          id != null,
-          "%s missing %s annotation",
-          format(TimerMap.class),
-          format(DoFn.TimerFamily.class));
-
-      paramErrors.checkArgument(
-          !methodContext.getTimerFamilyParameters().containsKey(id),
-          "duplicate %s: \"%s\"",
-          format(DoFn.TimerFamily.class),
-          id);
-
-      TimerFamilyDeclaration timerDecl = fnContext.getTimerFamilyDeclarations().get(id);
-      paramErrors.checkArgument(
-          timerDecl != null,
-          "reference to undeclared %s: \"%s\"",
-          format(DoFn.TimerFamily.class),
-          id);
-
-      paramErrors.checkArgument(
-          timerDecl.field().getDeclaringClass().equals(getDeclaringClass(param.getMethod())),
-          "%s %s declared in a different class %s."
-              + " Timers may be referenced only in the lexical scope where they are declared.",
-          format(DoFn.TimerFamily.class),
-          id,
-          timerDecl.field().getDeclaringClass().getName());
-
-      return Parameter.timerFamilyParameter(timerDecl);
     } else if (State.class.isAssignableFrom(rawType)) {
       // m.getParameters() is not available until Java 8
       String id = getStateId(param.getAnnotations());
-      paramErrors.checkArgument(id != null, "missing %s annotation", format(DoFn.StateId.class));
+      paramErrors.checkArgument(
+          id != null, "missing %s annotation", DoFn.StateId.class.getSimpleName());
 
       paramErrors.checkArgument(
           !methodContext.getStateParameters().containsKey(id),
           "duplicate %s: \"%s\"",
-          format(DoFn.StateId.class),
+          DoFn.StateId.class.getSimpleName(),
           id);
 
       // By static typing this is already a well-formed State subclass
@@ -1496,79 +1010,97 @@ public class DoFnSignatures {
 
       StateDeclaration stateDecl = fnContext.getStateDeclarations().get(id);
       paramErrors.checkArgument(
-          stateDecl != null, "reference to undeclared %s: \"%s\"", format(DoFn.StateId.class), id);
+          stateDecl != null,
+          "reference to undeclared %s: \"%s\"",
+          DoFn.StateId.class.getSimpleName(),
+          id);
 
       paramErrors.checkArgument(
           stateDecl.stateType().isSubtypeOf(stateType),
           "data type of reference to %s %s must be a supertype of %s",
-          format(StateId.class),
+          StateId.class.getSimpleName(),
           id,
-          format(stateDecl.stateType()));
+          formatType(stateDecl.stateType()));
 
       paramErrors.checkArgument(
           stateDecl.field().getDeclaringClass().equals(getDeclaringClass(param.getMethod())),
           "%s %s declared in a different class %s."
               + " State may be referenced only in the class where it is declared.",
-          format(StateId.class),
+          StateId.class.getSimpleName(),
           id,
           stateDecl.field().getDeclaringClass().getName());
 
-      boolean alwaysFetched = getStateAlwaysFetched(param.getAnnotations());
-      if (alwaysFetched) {
-        paramErrors.checkArgument(
-            ReadableState.class.isAssignableFrom(rawType),
-            "@AlwaysFetched can only be used on ReadableStates. It cannot be used on %s",
-            format(stateDecl.stateType()));
-      }
-      return Parameter.stateParameter(stateDecl, alwaysFetched);
+      return Parameter.stateParameter(stateDecl);
     } else {
-      paramErrors.throwIllegalArgument("%s is not a valid context parameter.", format(paramT));
+      List<String> allowedParamTypes =
+          Arrays.asList(
+              formatType(new TypeDescriptor<BoundedWindow>() {}),
+              formatType(new TypeDescriptor<RestrictionTracker<?, ?>>() {}));
+      paramErrors.throwIllegalArgument(
+          "%s is not a valid context parameter. Should be one of %s",
+          formatType(paramT), allowedParamTypes);
       // Unreachable
       return null;
     }
   }
 
-  private static @Nullable String getTimerId(List<Annotation> annotations) {
-    DoFn.TimerId timerId = findFirstOfType(annotations, DoFn.TimerId.class);
-    return timerId != null ? TimerDeclaration.PREFIX + timerId.value() : null;
+  @Nullable
+  private static String getTimerId(List<Annotation> annotations) {
+    DoFn.TimerId stateId = findFirstOfType(annotations, DoFn.TimerId.class);
+    return stateId != null ? stateId.value() : null;
   }
 
-  private static @Nullable String getTimerFamilyId(List<Annotation> annotations) {
-    DoFn.TimerFamily timerFamilyId = findFirstOfType(annotations, DoFn.TimerFamily.class);
-    return timerFamilyId != null ? TimerFamilyDeclaration.PREFIX + timerFamilyId.value() : null;
-  }
-
-  private static @Nullable String getStateId(List<Annotation> annotations) {
+  @Nullable
+  private static String getStateId(List<Annotation> annotations) {
     DoFn.StateId stateId = findFirstOfType(annotations, DoFn.StateId.class);
     return stateId != null ? stateId.value() : null;
   }
 
-  private static boolean getStateAlwaysFetched(List<Annotation> annotations) {
-    DoFn.AlwaysFetched alwaysFetched = findFirstOfType(annotations, DoFn.AlwaysFetched.class);
-    return alwaysFetched != null;
-  }
-
-  private static @Nullable String getFieldAccessId(List<Annotation> annotations) {
+  @Nullable
+  private static String getFieldAccessId(List<Annotation> annotations) {
     DoFn.FieldAccess access = findFirstOfType(annotations, DoFn.FieldAccess.class);
     return access != null ? access.value() : null;
   }
 
-  private static @Nullable String getSideInputId(List<Annotation> annotations) {
+  @Nullable
+  private static String getSideInputId(List<Annotation> annotations) {
     DoFn.SideInput sideInputId = findFirstOfType(annotations, DoFn.SideInput.class);
     return sideInputId != null ? sideInputId.value() : null;
   }
 
-  static @Nullable <T> T findFirstOfType(List<Annotation> annotations, Class<T> clazz) {
+  @Nullable
+  static <T> T findFirstOfType(List<Annotation> annotations, Class<T> clazz) {
     Optional<Annotation> annotation =
         annotations.stream().filter(a -> a.annotationType().equals(clazz)).findFirst();
     return annotation.isPresent() ? (T) annotation.get() : null;
   }
 
-  private static boolean hasAnnotation(Class<?> annotation, List<Annotation> annotations) {
-    return annotations.stream().anyMatch(a -> a.annotationType().equals(annotation));
+  private static boolean hasElementAnnotation(List<Annotation> annotations) {
+    return annotations.stream().anyMatch(a -> a.annotationType().equals(DoFn.Element.class));
   }
 
-  private static @Nullable TypeDescriptor<? extends BoundedWindow> getWindowType(
+  private static boolean hasTimestampAnnotation(List<Annotation> annotations) {
+    return annotations.stream().anyMatch(a -> a.annotationType().equals(DoFn.Timestamp.class));
+  }
+
+  private static boolean hasSideInputAnnotation(List<Annotation> annotations) {
+    return annotations.stream().anyMatch(a -> a.annotationType().equals(DoFn.SideInput.class));
+  }
+
+  @Nullable
+  private static TypeDescriptor<?> getTrackerType(TypeDescriptor<?> fnClass, Method method) {
+    Type[] params = method.getGenericParameterTypes();
+    for (Type param : params) {
+      TypeDescriptor<?> paramT = fnClass.resolveType(param);
+      if (RestrictionTracker.class.isAssignableFrom(paramT.getRawType())) {
+        return paramT;
+      }
+    }
+    return null;
+  }
+
+  @Nullable
+  private static TypeDescriptor<? extends BoundedWindow> getWindowType(
       TypeDescriptor<?> fnClass, Method method) {
     Type[] params = method.getGenericParameterTypes();
     for (Type param : params) {
@@ -1586,30 +1118,16 @@ public class DoFnSignatures {
       TypeDescriptor<? extends DoFn<?, ?>> fnT,
       Method m,
       TypeDescriptor<?> inputT,
-      TypeDescriptor<?> outputT,
-      FnAnalysisContext fnContext) {
+      TypeDescriptor<?> outputT) {
     errors.checkArgument(void.class.equals(m.getReturnType()), "Must return void");
+    TypeDescriptor<?> expectedContextT = doFnStartBundleContextTypeOf(inputT, outputT);
     Type[] params = m.getGenericParameterTypes();
-    MethodAnalysisContext methodContext = MethodAnalysisContext.create();
-    for (int i = 0; i < params.length; ++i) {
-      Parameter extraParam =
-          analyzeExtraParameter(
-              errors,
-              fnContext,
-              methodContext,
-              fnT,
-              ParameterDescription.of(
-                  m, i, fnT.resolveType(params[i]), Arrays.asList(m.getParameterAnnotations()[i])),
-              inputT,
-              outputT);
-      methodContext.addParameter(extraParam);
-    }
-
-    for (Parameter parameter : methodContext.getExtraParameters()) {
-      checkParameterOneOf(errors, parameter, ALLOWED_START_BUNDLE_PARAMETERS);
-    }
-
-    return DoFnSignature.BundleMethod.create(m, methodContext.extraParameters);
+    errors.checkArgument(
+        params.length == 0
+            || (params.length == 1 && fnT.resolveType(params[0]).equals(expectedContextT)),
+        "Must take a single argument of type %s",
+        formatType(expectedContextT));
+    return DoFnSignature.BundleMethod.create(m);
   }
 
   @VisibleForTesting
@@ -1618,30 +1136,16 @@ public class DoFnSignatures {
       TypeDescriptor<? extends DoFn<?, ?>> fnT,
       Method m,
       TypeDescriptor<?> inputT,
-      TypeDescriptor<?> outputT,
-      FnAnalysisContext fnContext) {
+      TypeDescriptor<?> outputT) {
     errors.checkArgument(void.class.equals(m.getReturnType()), "Must return void");
+    TypeDescriptor<?> expectedContextT = doFnFinishBundleContextTypeOf(inputT, outputT);
     Type[] params = m.getGenericParameterTypes();
-    MethodAnalysisContext methodContext = MethodAnalysisContext.create();
-    for (int i = 0; i < params.length; ++i) {
-      Parameter extraParam =
-          analyzeExtraParameter(
-              errors,
-              fnContext,
-              methodContext,
-              fnT,
-              ParameterDescription.of(
-                  m, i, fnT.resolveType(params[i]), Arrays.asList(m.getParameterAnnotations()[i])),
-              inputT,
-              outputT);
-      methodContext.addParameter(extraParam);
-    }
-
-    for (Parameter parameter : methodContext.getExtraParameters()) {
-      checkParameterOneOf(errors, parameter, ALLOWED_FINISH_BUNDLE_PARAMETERS);
-    }
-
-    return DoFnSignature.BundleMethod.create(m, methodContext.extraParameters);
+    errors.checkArgument(
+        params.length == 0
+            || (params.length == 1 && fnT.resolveType(params[0]).equals(expectedContextT)),
+        "Must take a single argument of type %s",
+        formatType(expectedContextT));
+    return DoFnSignature.BundleMethod.create(m);
   }
 
   private static DoFnSignature.LifecycleMethod analyzeLifecycleMethod(
@@ -1654,93 +1158,19 @@ public class DoFnSignatures {
   @VisibleForTesting
   static DoFnSignature.GetInitialRestrictionMethod analyzeGetInitialRestrictionMethod(
       ErrorReporter errors,
-      TypeDescriptor<? extends DoFn<?, ?>> fnT,
+      TypeDescriptor<? extends DoFn> fnT,
       Method m,
-      TypeDescriptor<?> inputT,
-      TypeDescriptor<?> outputT,
-      FnAnalysisContext fnContext) {
+      TypeDescriptor<?> inputT) {
     // Method is of the form:
     // @GetInitialRestriction
-    // RestrictionT getInitialRestriction(... parameters ...);
-
+    // RestrictionT getInitialRestriction(InputT element);
     Type[] params = m.getGenericParameterTypes();
-    MethodAnalysisContext methodContext = MethodAnalysisContext.create();
-    TypeDescriptor<? extends BoundedWindow> windowT = getWindowType(fnT, m);
-    for (int i = 0; i < params.length; ++i) {
-      Parameter extraParam =
-          analyzeExtraParameter(
-              errors,
-              fnContext,
-              methodContext,
-              fnT,
-              ParameterDescription.of(
-                  m, i, fnT.resolveType(params[i]), Arrays.asList(m.getParameterAnnotations()[i])),
-              inputT,
-              outputT);
-      if (extraParam instanceof SchemaElementParameter) {
-        errors.throwIllegalArgument(
-            "Schema @%s are not supported for @%s method. Found %s, did you mean to use %s?",
-            format(DoFn.Element.class),
-            format(DoFn.GetInitialRestriction.class),
-            format(((SchemaElementParameter) extraParam).elementT()),
-            format(inputT));
-      }
-      methodContext.addParameter(extraParam);
-    }
-
-    for (Parameter parameter : methodContext.getExtraParameters()) {
-      checkParameterOneOf(errors, parameter, ALLOWED_GET_INITIAL_RESTRICTION_PARAMETERS);
-    }
-
+    errors.checkArgument(
+        params.length == 1 && fnT.resolveType(params[0]).equals(inputT),
+        "Must take a single argument of type %s",
+        formatType(inputT));
     return DoFnSignature.GetInitialRestrictionMethod.create(
-        m, fnT.resolveType(m.getGenericReturnType()), windowT, methodContext.extraParameters);
-  }
-
-  @VisibleForTesting
-  static DoFnSignature.GetInitialWatermarkEstimatorStateMethod
-      analyzeGetInitialWatermarkEstimatorStateMethod(
-          ErrorReporter errors,
-          TypeDescriptor<? extends DoFn<?, ?>> fnT,
-          Method m,
-          TypeDescriptor<?> inputT,
-          TypeDescriptor<?> outputT,
-          FnAnalysisContext fnContext) {
-    // Method is of the form:
-    // @GetInitialWatermarkEstimatorState
-    // WatermarkEstimatorStateT getInitialWatermarkEstimatorState(... parameters ...);
-
-    Type[] params = m.getGenericParameterTypes();
-    MethodAnalysisContext methodContext = MethodAnalysisContext.create();
-    TypeDescriptor<? extends BoundedWindow> windowT = getWindowType(fnT, m);
-    for (int i = 0; i < params.length; ++i) {
-      Parameter extraParam =
-          analyzeExtraParameter(
-              errors,
-              fnContext,
-              methodContext,
-              fnT,
-              ParameterDescription.of(
-                  m, i, fnT.resolveType(params[i]), Arrays.asList(m.getParameterAnnotations()[i])),
-              inputT,
-              outputT);
-      if (extraParam instanceof SchemaElementParameter) {
-        errors.throwIllegalArgument(
-            "Schema @%s are not supported for @%s method. Found %s, did you mean to use %s?",
-            format(DoFn.Element.class),
-            format(DoFn.GetInitialWatermarkEstimatorState.class),
-            format(((SchemaElementParameter) extraParam).elementT()),
-            format(inputT));
-      }
-      methodContext.addParameter(extraParam);
-    }
-
-    for (Parameter parameter : methodContext.getExtraParameters()) {
-      checkParameterOneOf(
-          errors, parameter, ALLOWED_GET_INITIAL_WATERMARK_ESTIMATOR_STATE_PARAMETERS);
-    }
-
-    return DoFnSignature.GetInitialWatermarkEstimatorStateMethod.create(
-        m, fnT.resolveType(m.getGenericReturnType()), windowT, methodContext.extraParameters);
+        m, fnT.resolveType(m.getGenericReturnType()));
   }
 
   /**
@@ -1756,123 +1186,31 @@ public class DoFnSignatures {
   @VisibleForTesting
   static DoFnSignature.SplitRestrictionMethod analyzeSplitRestrictionMethod(
       ErrorReporter errors,
-      TypeDescriptor<? extends DoFn<?, ?>> fnT,
+      TypeDescriptor<? extends DoFn> fnT,
       Method m,
-      TypeDescriptor<?> inputT,
-      TypeDescriptor<?> outputT,
-      TypeDescriptor<?> restrictionT,
-      FnAnalysisContext fnContext) {
+      TypeDescriptor<?> inputT) {
     // Method is of the form:
     // @SplitRestriction
-    // void splitRestriction(... parameters ...);
+    // void splitRestriction(InputT element, RestrictionT restriction);
     errors.checkArgument(void.class.equals(m.getReturnType()), "Must return void");
 
     Type[] params = m.getGenericParameterTypes();
-    MethodAnalysisContext methodContext = MethodAnalysisContext.create();
-    TypeDescriptor<? extends BoundedWindow> windowT = getWindowType(fnT, m);
-    for (int i = 0; i < params.length; ++i) {
-      Parameter extraParam =
-          analyzeExtraParameter(
-              errors,
-              fnContext,
-              methodContext,
-              fnT,
-              ParameterDescription.of(
-                  m, i, fnT.resolveType(params[i]), Arrays.asList(m.getParameterAnnotations()[i])),
-              inputT,
-              restrictionT);
-      if (extraParam instanceof SchemaElementParameter) {
-        errors.throwIllegalArgument(
-            "Schema @%s are not supported for @%s method. Found %s, did you mean to use %s?",
-            format(DoFn.Element.class),
-            format(DoFn.SplitRestriction.class),
-            format(((SchemaElementParameter) extraParam).elementT()),
-            format(inputT));
-      } else if (extraParam instanceof RestrictionParameter) {
-        errors.checkArgument(
-            restrictionT.equals(((RestrictionParameter) extraParam).restrictionT()),
-            "Uses restriction type %s, but @%s method uses restriction type %s",
-            format(((RestrictionParameter) extraParam).restrictionT()),
-            format(DoFn.GetInitialRestriction.class),
-            format(restrictionT));
-      }
-      methodContext.addParameter(extraParam);
-    }
-
-    for (Parameter parameter : methodContext.getExtraParameters()) {
-      checkParameterOneOf(errors, parameter, ALLOWED_SPLIT_RESTRICTION_PARAMETERS);
-    }
-
-    return DoFnSignature.SplitRestrictionMethod.create(
-        m, windowT, methodContext.getExtraParameters());
-  }
-
-  @VisibleForTesting
-  static DoFnSignature.TruncateRestrictionMethod analyzeTruncateRestrictionMethod(
-      ErrorReporter errors,
-      TypeDescriptor<? extends DoFn<?, ?>> fnT,
-      Method m,
-      TypeDescriptor<?> inputT,
-      TypeDescriptor<?> restrictionT,
-      FnAnalysisContext fnContext) {
-    // Method is of the form:
-    // @TruncateRestriction
-    // TruncateResult<RestrictionT> truncateRestriction(... parameters ...);
+    errors.checkArgument(params.length == 3, "Must have exactly 3 arguments");
     errors.checkArgument(
-        TruncateResult.class.equals(m.getReturnType()), "Must return TruncateResult<Restriction>");
-    Type[] params = m.getGenericParameterTypes();
-    MethodAnalysisContext methodContext = MethodAnalysisContext.create();
-    TypeDescriptor<? extends BoundedWindow> windowT = getWindowType(fnT, m);
-    for (int i = 0; i < params.length; ++i) {
-      Parameter extraParam =
-          analyzeExtraParameter(
-              errors,
-              fnContext,
-              methodContext,
-              fnT,
-              ParameterDescription.of(
-                  m, i, fnT.resolveType(params[i]), Arrays.asList(m.getParameterAnnotations()[i])),
-              inputT,
-              restrictionT);
-      if (extraParam instanceof SchemaElementParameter) {
-        errors.throwIllegalArgument(
-            "Schema @%s are not supported for @%s method. Found %s, did you mean to use %s?",
-            format(DoFn.Element.class),
-            format(TruncateRestriction.class),
-            format(((SchemaElementParameter) extraParam).elementT()),
-            format(inputT));
-      } else if (extraParam instanceof RestrictionParameter) {
-        errors.checkArgument(
-            restrictionT.equals(((RestrictionParameter) extraParam).restrictionT()),
-            "Uses restriction type %s, but @%s method uses restriction type %s",
-            format(((RestrictionParameter) extraParam).restrictionT()),
-            format(DoFn.GetInitialRestriction.class),
-            format(restrictionT));
-      }
-      methodContext.addParameter(extraParam);
-    }
+        fnT.resolveType(params[0]).equals(inputT),
+        "First argument must be the element type %s",
+        formatType(inputT));
 
-    for (Parameter parameter : methodContext.getExtraParameters()) {
-      checkParameterOneOf(errors, parameter, ALLOWED_TRUNCATE_RESTRICTION_PARAMETERS);
-    }
+    TypeDescriptor<?> restrictionT = fnT.resolveType(params[1]);
+    TypeDescriptor<?> receiverT = fnT.resolveType(params[2]);
+    TypeDescriptor<?> expectedReceiverT = outputReceiverTypeOf(restrictionT);
+    errors.checkArgument(
+        receiverT.equals(expectedReceiverT),
+        "Third argument must be %s, but is %s",
+        formatType(expectedReceiverT),
+        formatType(receiverT));
 
-    return DoFnSignature.TruncateRestrictionMethod.create(
-        m, windowT, methodContext.getExtraParameters());
-  }
-
-  private static ImmutableMap<String, TimerFamilyDeclaration> analyzeTimerFamilyDeclarations(
-      ErrorReporter errors, Class<?> fnClazz) {
-    Map<String, TimerFamilyDeclaration> declarations = new HashMap<>();
-    for (Field field : declaredFieldsWithAnnotation(DoFn.TimerFamily.class, fnClazz, DoFn.class)) {
-      // TimerSpec fields may generally be private, but will be accessed via the signature
-      field.setAccessible(true);
-      String id =
-          TimerFamilyDeclaration.PREFIX + field.getAnnotation(DoFn.TimerFamily.class).value();
-      validateTimerFamilyField(errors, declarations, id, field);
-      declarations.put(id, TimerFamilyDeclaration.create(id, field));
-    }
-
-    return ImmutableMap.copyOf(declarations);
+    return DoFnSignature.SplitRestrictionMethod.create(m, restrictionT);
   }
 
   private static ImmutableMap<String, TimerDeclaration> analyzeTimerDeclarations(
@@ -1881,9 +1219,7 @@ public class DoFnSignatures {
     for (Field field : declaredFieldsWithAnnotation(DoFn.TimerId.class, fnClazz, DoFn.class)) {
       // TimerSpec fields may generally be private, but will be accessed via the signature
       field.setAccessible(true);
-      // Add fixed prefix to avoid key collision with TimerFamily.
-      String id =
-          DoFnSignature.TimerDeclaration.PREFIX + field.getAnnotation(DoFn.TimerId.class).value();
+      String id = field.getAnnotation(DoFn.TimerId.class).value();
       validateTimerField(errors, declarations, id, field);
       declarations.put(id, DoFnSignature.TimerDeclaration.create(id, field));
     }
@@ -1900,7 +1236,7 @@ public class DoFnSignatures {
     if (declarations.containsKey(id)) {
       errors.throwIllegalArgument(
           "Duplicate %s \"%s\", used on both of [%s] and [%s]",
-          format(DoFn.TimerId.class),
+          DoFn.TimerId.class.getSimpleName(),
           id,
           field.toString(),
           declarations.get(id).field().toString());
@@ -1910,49 +1246,13 @@ public class DoFnSignatures {
     if (!(timerSpecRawType.equals(TimerSpec.class))) {
       errors.throwIllegalArgument(
           "%s annotation on non-%s field [%s]",
-          format(DoFn.TimerId.class), format(TimerSpec.class), field.toString());
+          DoFn.TimerId.class.getSimpleName(), TimerSpec.class.getSimpleName(), field.toString());
     }
 
     if (!Modifier.isFinal(field.getModifiers())) {
       errors.throwIllegalArgument(
           "Non-final field %s annotated with %s. Timer declarations must be final.",
-          field.toString(), format(DoFn.TimerId.class));
-    }
-  }
-
-  /**
-   * Returns successfully if the field is valid, otherwise throws an exception via its {@link
-   * ErrorReporter} parameter describing validation failures for the timer family declaration.
-   */
-  private static void validateTimerFamilyField(
-      ErrorReporter errors,
-      Map<String, TimerFamilyDeclaration> declarations,
-      String id,
-      Field field) {
-    if (id.isEmpty()) {
-      errors.throwIllegalArgument("TimerFamily id must not be empty");
-    }
-
-    if (declarations.containsKey(id)) {
-      errors.throwIllegalArgument(
-          "Duplicate %s \"%s\", used on both of [%s] and [%s]",
-          format(DoFn.TimerFamily.class),
-          id,
-          field.toString(),
-          declarations.get(id).field().toString());
-    }
-
-    Class<?> timerSpecRawType = field.getType();
-    if (!(timerSpecRawType.equals(TimerSpec.class))) {
-      errors.throwIllegalArgument(
-          "%s annotation on non-%s field [%s]",
-          format(DoFn.TimerFamily.class), format(TimerSpec.class), field.toString());
-    }
-
-    if (!Modifier.isFinal(field.getModifiers())) {
-      errors.throwIllegalArgument(
-          "Non-final field %s annotated with %s. TimerMap declarations must be final.",
-          field.toString(), format(DoFn.TimerFamily.class));
+          field.toString(), DoFn.TimerId.class.getSimpleName());
     }
   }
 
@@ -1969,25 +1269,12 @@ public class DoFnSignatures {
     errors.checkArgument(
         resT.isSubtypeOf(TypeDescriptor.of(Coder.class)),
         "Must return a Coder, but returns %s",
-        format(resT));
+        formatType(resT));
     return DoFnSignature.GetRestrictionCoderMethod.create(m, resT);
   }
 
-  @VisibleForTesting
-  static DoFnSignature.GetWatermarkEstimatorStateCoderMethod
-      analyzeGetWatermarkEstimatorStateCoderMethod(
-          ErrorReporter errors, TypeDescriptor<? extends DoFn> fnT, Method m) {
-    errors.checkArgument(m.getParameterTypes().length == 0, "Must have zero arguments");
-    TypeDescriptor<?> resT = fnT.resolveType(m.getGenericReturnType());
-    errors.checkArgument(
-        resT.isSubtypeOf(TypeDescriptor.of(Coder.class)),
-        "Must return a Coder, but returns %s",
-        format(resT));
-    return DoFnSignature.GetWatermarkEstimatorStateCoderMethod.create(m, resT);
-  }
-
   /**
-   * Generates a {@link TypeDescriptor} for {@code RestrictionTracker<RestrictionT, ?>} given {@code
+   * Generates a {@link TypeDescriptor} for {@code RestrictionTracker<RestrictionT>} given {@code
    * RestrictionT}.
    */
   private static <RestrictionT>
@@ -1997,203 +1284,24 @@ public class DoFnSignatures {
         new TypeParameter<RestrictionT>() {}, restrictionT);
   }
 
-  /**
-   * Generates a {@link TypeDescriptor} for {@code WatermarkEstimator<WatermarkEstimatorStateT>}
-   * given {@code WatermarkEstimatorStateT}.
-   */
-  private static <WatermarkEstimatorStateT>
-      TypeDescriptor<WatermarkEstimator<WatermarkEstimatorStateT>> watermarkEstimatorTypeOf(
-          TypeDescriptor<WatermarkEstimatorStateT> watermarkEstimatorStateT) {
-    return new TypeDescriptor<WatermarkEstimator<WatermarkEstimatorStateT>>() {}.where(
-        new TypeParameter<WatermarkEstimatorStateT>() {}, watermarkEstimatorStateT);
-  }
-
   @VisibleForTesting
   static DoFnSignature.NewTrackerMethod analyzeNewTrackerMethod(
-      ErrorReporter errors,
-      TypeDescriptor<? extends DoFn<?, ?>> fnT,
-      Method m,
-      TypeDescriptor<?> inputT,
-      TypeDescriptor<?> outputT,
-      TypeDescriptor<?> restrictionT,
-      FnAnalysisContext fnContext) {
+      ErrorReporter errors, TypeDescriptor<? extends DoFn> fnT, Method m) {
     // Method is of the form:
     // @NewTracker
-    // TrackerT newTracker(... parameters ...);
+    // TrackerT newTracker(RestrictionT restriction);
     Type[] params = m.getGenericParameterTypes();
+    errors.checkArgument(params.length == 1, "Must have a single argument");
+
+    TypeDescriptor<?> restrictionT = fnT.resolveType(params[0]);
     TypeDescriptor<?> trackerT = fnT.resolveType(m.getGenericReturnType());
     TypeDescriptor<?> expectedTrackerT = restrictionTrackerTypeOf(restrictionT);
     errors.checkArgument(
         trackerT.isSubtypeOf(expectedTrackerT),
         "Returns %s, but must return a subtype of %s",
-        format(trackerT),
-        format(expectedTrackerT));
-
-    MethodAnalysisContext methodContext = MethodAnalysisContext.create();
-    TypeDescriptor<? extends BoundedWindow> windowT = getWindowType(fnT, m);
-    for (int i = 0; i < params.length; ++i) {
-      Parameter extraParam =
-          analyzeExtraParameter(
-              errors,
-              fnContext,
-              methodContext,
-              fnT,
-              ParameterDescription.of(
-                  m, i, fnT.resolveType(params[i]), Arrays.asList(m.getParameterAnnotations()[i])),
-              inputT,
-              outputT);
-      if (extraParam instanceof SchemaElementParameter) {
-        errors.throwIllegalArgument(
-            "Schema @%s are not supported for @%s method. Found %s, did you mean to use %s?",
-            format(DoFn.Element.class),
-            format(DoFn.NewTracker.class),
-            format(((SchemaElementParameter) extraParam).elementT()),
-            format(inputT));
-      } else if (extraParam instanceof RestrictionParameter) {
-        errors.checkArgument(
-            restrictionT.equals(((RestrictionParameter) extraParam).restrictionT()),
-            "Uses restriction type %s, but @%s method uses restriction type %s",
-            format(((RestrictionParameter) extraParam).restrictionT()),
-            format(DoFn.GetInitialRestriction.class),
-            format(restrictionT));
-      }
-      methodContext.addParameter(extraParam);
-    }
-
-    for (Parameter parameter : methodContext.getExtraParameters()) {
-      checkParameterOneOf(errors, parameter, ALLOWED_NEW_TRACKER_PARAMETERS);
-    }
-
-    return DoFnSignature.NewTrackerMethod.create(
-        m, fnT.resolveType(m.getGenericReturnType()), windowT, methodContext.getExtraParameters());
-  }
-
-  @VisibleForTesting
-  static DoFnSignature.NewWatermarkEstimatorMethod analyzeNewWatermarkEstimatorMethod(
-      ErrorReporter errors,
-      TypeDescriptor<? extends DoFn<?, ?>> fnT,
-      Method m,
-      TypeDescriptor<?> inputT,
-      TypeDescriptor<?> outputT,
-      TypeDescriptor<?> restrictionT,
-      TypeDescriptor<?> watermarkEstimatorStateT,
-      FnAnalysisContext fnContext) {
-    // Method is of the form:
-    // @NewWatermarkEstimator
-    // WatermarkEstimatorT newWatermarkEstimator(... parameters ...);
-    Type[] params = m.getGenericParameterTypes();
-    TypeDescriptor<?> watermarkEstimatorT = fnT.resolveType(m.getGenericReturnType());
-    TypeDescriptor<?> expectedWatermarkEstimatorT =
-        watermarkEstimatorTypeOf(watermarkEstimatorStateT);
-    errors.checkArgument(
-        watermarkEstimatorT.isSubtypeOf(expectedWatermarkEstimatorT),
-        "Returns %s, but must return a subtype of %s",
-        format(watermarkEstimatorT),
-        format(expectedWatermarkEstimatorT));
-
-    MethodAnalysisContext methodContext = MethodAnalysisContext.create();
-    TypeDescriptor<? extends BoundedWindow> windowT = getWindowType(fnT, m);
-    for (int i = 0; i < params.length; ++i) {
-      Parameter extraParam =
-          analyzeExtraParameter(
-              errors,
-              fnContext,
-              methodContext,
-              fnT,
-              ParameterDescription.of(
-                  m, i, fnT.resolveType(params[i]), Arrays.asList(m.getParameterAnnotations()[i])),
-              inputT,
-              outputT);
-      if (extraParam instanceof SchemaElementParameter) {
-        errors.throwIllegalArgument(
-            "Schema @%s are not supported for @%s method. Found %s, did you mean to use %s?",
-            format(DoFn.Element.class),
-            format(DoFn.NewWatermarkEstimator.class),
-            format(((SchemaElementParameter) extraParam).elementT()),
-            format(inputT));
-      } else if (extraParam instanceof RestrictionParameter) {
-        errors.checkArgument(
-            restrictionT.equals(((RestrictionParameter) extraParam).restrictionT()),
-            "Uses restriction type %s, but @%s method uses restriction type %s",
-            format(((RestrictionParameter) extraParam).restrictionT()),
-            format(DoFn.GetInitialWatermarkEstimatorState.class),
-            format(restrictionT));
-      } else if (extraParam instanceof WatermarkEstimatorStateParameter) {
-        errors.checkArgument(
-            watermarkEstimatorStateT.equals(
-                ((WatermarkEstimatorStateParameter) extraParam).estimatorStateT()),
-            "Uses watermark estimator state type %s, but @%s method uses watermark estimator state type %s",
-            format(((WatermarkEstimatorStateParameter) extraParam).estimatorStateT()),
-            format(DoFn.GetInitialWatermarkEstimatorState.class),
-            format(watermarkEstimatorStateT));
-      }
-      methodContext.addParameter(extraParam);
-    }
-
-    for (Parameter parameter : methodContext.getExtraParameters()) {
-      checkParameterOneOf(errors, parameter, ALLOWED_NEW_WATERMARK_ESTIMATOR_PARAMETERS);
-    }
-
-    return DoFnSignature.NewWatermarkEstimatorMethod.create(
-        m, fnT.resolveType(m.getGenericReturnType()), windowT, methodContext.getExtraParameters());
-  }
-
-  @VisibleForTesting
-  static DoFnSignature.GetSizeMethod analyzeGetSizeMethod(
-      ErrorReporter errors,
-      TypeDescriptor<? extends DoFn<?, ?>> fnT,
-      Method m,
-      TypeDescriptor<?> inputT,
-      TypeDescriptor<?> outputT,
-      TypeDescriptor<?> restrictionT,
-      FnAnalysisContext fnContext) {
-    // Method is of the form:
-    // @GetSize
-    // double getSize(... parameters ...);
-    Type[] params = m.getGenericParameterTypes();
-
-    errors.checkArgument(
-        m.getGenericReturnType().equals(Double.TYPE),
-        "Returns %s, but must return a double",
-        format(TypeDescriptor.of(m.getGenericReturnType())));
-
-    MethodAnalysisContext methodContext = MethodAnalysisContext.create();
-    TypeDescriptor<? extends BoundedWindow> windowT = getWindowType(fnT, m);
-    for (int i = 0; i < params.length; ++i) {
-      Parameter extraParam =
-          analyzeExtraParameter(
-              errors,
-              fnContext,
-              methodContext,
-              fnT,
-              ParameterDescription.of(
-                  m, i, fnT.resolveType(params[i]), Arrays.asList(m.getParameterAnnotations()[i])),
-              inputT,
-              outputT);
-      if (extraParam instanceof SchemaElementParameter) {
-        errors.throwIllegalArgument(
-            "Schema @%s are not supported for @%s method. Found %s, did you mean to use %s?",
-            format(DoFn.Element.class),
-            format(DoFn.GetSize.class),
-            format(((SchemaElementParameter) extraParam).elementT()),
-            format(inputT));
-      } else if (extraParam instanceof RestrictionParameter) {
-        errors.checkArgument(
-            restrictionT.equals(((RestrictionParameter) extraParam).restrictionT()),
-            "Uses restriction type %s, but @%s method uses restriction type %s",
-            format(((RestrictionParameter) extraParam).restrictionT()),
-            format(DoFn.GetInitialRestriction.class),
-            format(restrictionT));
-      }
-
-      methodContext.addParameter(extraParam);
-    }
-
-    for (Parameter parameter : methodContext.getExtraParameters()) {
-      checkParameterOneOf(errors, parameter, ALLOWED_GET_SIZE_PARAMETERS);
-    }
-
-    return DoFnSignature.GetSizeMethod.create(m, windowT, methodContext.getExtraParameters());
+        formatType(trackerT),
+        formatType(expectedTrackerT));
+    return DoFnSignature.NewTrackerMethod.create(m, restrictionT, trackerT);
   }
 
   private static Collection<Method> declaredMethodsWithAnnotation(
@@ -2261,14 +1369,16 @@ public class DoFnSignatures {
       if (!Modifier.isFinal(field.getModifiers())) {
         errors.throwIllegalArgument(
             "Non-final field %s annotated with %s. Field access declarations must be final.",
-            field.toString(), format(DoFn.FieldAccess.class));
+            field.toString(), DoFn.FieldAccess.class.getSimpleName());
         continue;
       }
       Class<?> fieldAccessRawType = field.getType();
       if (!fieldAccessRawType.equals(FieldAccessDescriptor.class)) {
         errors.throwIllegalArgument(
             "Field %s annotated with %s, but the value was not of type %s",
-            field.toString(), format(DoFn.FieldAccess.class), format(FieldAccessDescriptor.class));
+            field.toString(),
+            DoFn.FieldAccess.class.getSimpleName(),
+            FieldAccessDescriptor.class.getSimpleName());
       }
       fieldAccessDeclarations.put(
           fieldAccessAnnotation.value(),
@@ -2290,7 +1400,7 @@ public class DoFnSignatures {
       if (declarations.containsKey(id)) {
         errors.throwIllegalArgument(
             "Duplicate %s \"%s\", used on both of [%s] and [%s]",
-            format(DoFn.StateId.class),
+            DoFn.StateId.class.getSimpleName(),
             id,
             field.toString(),
             declarations.get(id).field().toString());
@@ -2301,8 +1411,8 @@ public class DoFnSignatures {
       if (!(TypeDescriptor.of(stateSpecRawType).isSubtypeOf(TypeDescriptor.of(StateSpec.class)))) {
         errors.throwIllegalArgument(
             "%s annotation on non-%s field [%s] that has class %s",
-            format(DoFn.StateId.class),
-            format(StateSpec.class),
+            DoFn.StateId.class.getSimpleName(),
+            StateSpec.class.getSimpleName(),
             field.toString(),
             stateSpecRawType.getName());
         continue;
@@ -2311,7 +1421,7 @@ public class DoFnSignatures {
       if (!Modifier.isFinal(field.getModifiers())) {
         errors.throwIllegalArgument(
             "Non-final field %s annotated with %s. State declarations must be final.",
-            field.toString(), format(DoFn.StateId.class));
+            field.toString(), DoFn.StateId.class.getSimpleName());
         continue;
       }
 
@@ -2343,12 +1453,13 @@ public class DoFnSignatures {
     return ImmutableMap.copyOf(declarations);
   }
 
-  private static @Nullable Method findAnnotatedMethod(
+  @Nullable
+  private static Method findAnnotatedMethod(
       ErrorReporter errors, Class<? extends Annotation> anno, Class<?> fnClazz, boolean required) {
     Collection<Method> matches = declaredMethodsWithAnnotation(anno, fnClazz, DoFn.class);
 
     if (matches.isEmpty()) {
-      errors.checkArgument(!required, "No method annotated with @%s found", format(anno));
+      errors.checkArgument(!required, "No method annotated with @%s found", anno.getSimpleName());
       return null;
     }
 
@@ -2361,7 +1472,7 @@ public class DoFnSignatures {
           first.getName().equals(other.getName())
               && Arrays.equals(first.getParameterTypes(), other.getParameterTypes()),
           "Found multiple methods annotated with @%s. [%s] and [%s]",
-          format(anno),
+          anno.getSimpleName(),
           format(first),
           format(other));
     }
@@ -2376,15 +1487,11 @@ public class DoFnSignatures {
   }
 
   private static String format(Method method) {
-    return ReflectHelpers.formatMethod(method);
+    return ReflectHelpers.METHOD_FORMATTER.apply(method);
   }
 
-  private static String format(TypeDescriptor<?> t) {
-    return ReflectHelpers.simpleTypeDescription(t.getType());
-  }
-
-  private static String format(Class<?> kls) {
-    return kls.getSimpleName();
+  private static String formatType(TypeDescriptor<?> t) {
+    return ReflectHelpers.TYPE_SIMPLE_DESCRIPTION.apply(t.getType());
   }
 
   static class ErrorReporter {
@@ -2398,14 +1505,15 @@ public class DoFnSignatures {
       return new ErrorReporter(
           this,
           String.format(
-              "@%s %s", format(annotation), (method == null) ? "(absent)" : format(method)));
+              "@%s %s",
+              annotation.getSimpleName(), (method == null) ? "(absent)" : format(method)));
     }
 
     ErrorReporter forParameter(ParameterDescription param) {
       return new ErrorReporter(
           this,
           String.format(
-              "parameter of type %s at index %s", format(param.getType()), param.getIndex()));
+              "parameter of type %s at index %s", formatType(param.getType()), param.getIndex()));
     }
 
     void throwIllegalArgument(String message, Object... args) {
@@ -2432,7 +1540,7 @@ public class DoFnSignatures {
       checkState(
           fieldValue instanceof StateSpec,
           "Malformed %s class %s: state declaration field %s does not have type %s.",
-          format(DoFn.class),
+          DoFn.class.getSimpleName(),
           target.getClass().getName(),
           stateDeclaration.field().getName(),
           StateSpec.class);
@@ -2442,7 +1550,9 @@ public class DoFnSignatures {
       throw new RuntimeException(
           String.format(
               "Malformed %s class %s: state declaration field %s is not accessible.",
-              format(DoFn.class), target.getClass().getName(), stateDeclaration.field().getName()));
+              DoFn.class.getSimpleName(),
+              target.getClass().getName(),
+              stateDeclaration.field().getName()));
     }
   }
 
@@ -2453,7 +1563,7 @@ public class DoFnSignatures {
       checkState(
           fieldValue instanceof TimerSpec,
           "Malformed %s class %s: timer declaration field %s does not have type %s.",
-          format(DoFn.class),
+          DoFn.class.getSimpleName(),
           target.getClass().getName(),
           timerDeclaration.field().getName(),
           TimerSpec.class);
@@ -2463,79 +1573,9 @@ public class DoFnSignatures {
       throw new RuntimeException(
           String.format(
               "Malformed %s class %s: timer declaration field %s is not accessible.",
-              format(DoFn.class), target.getClass().getName(), timerDeclaration.field().getName()));
-    }
-  }
-
-  public static TimerSpec getTimerFamilySpecOrThrow(
-      TimerFamilyDeclaration timerFamilyDeclaration, DoFn<?, ?> target) {
-    try {
-      Object fieldValue = timerFamilyDeclaration.field().get(target);
-      checkState(
-          fieldValue instanceof TimerSpec,
-          "Malformed %s class %s: timer declaration field %s does not have type %s.",
-          format(DoFn.class),
-          target.getClass().getName(),
-          timerFamilyDeclaration.field().getName(),
-          TimerSpec.class);
-
-      return (TimerSpec) timerFamilyDeclaration.field().get(target);
-    } catch (IllegalAccessException exc) {
-      throw new RuntimeException(
-          String.format(
-              "Malformed %s class %s: timer declaration field %s is not accessible.",
-              format(DoFn.class),
+              DoFn.class.getSimpleName(),
               target.getClass().getName(),
-              timerFamilyDeclaration.field().getName()));
+              timerDeclaration.field().getName()));
     }
-  }
-
-  public static boolean isSplittable(DoFn<?, ?> doFn) {
-    return signatureForDoFn(doFn).processElement().isSplittable();
-  }
-
-  public static boolean isStateful(DoFn<?, ?> doFn) {
-    return usesState(doFn) || usesTimers(doFn);
-  }
-
-  public static boolean usesMapState(DoFn<?, ?> doFn) {
-    return usesGivenStateClass(doFn, MapState.class);
-  }
-
-  public static boolean usesSetState(DoFn<?, ?> doFn) {
-    return usesGivenStateClass(doFn, SetState.class);
-  }
-
-  public static boolean usesOrderedListState(DoFn<?, ?> doFn) {
-    return usesGivenStateClass(doFn, OrderedListState.class);
-  }
-
-  public static boolean usesValueState(DoFn<?, ?> doFn) {
-    return usesGivenStateClass(doFn, ValueState.class) || requiresTimeSortedInput(doFn);
-  }
-
-  public static boolean usesBagState(DoFn<?, ?> doFn) {
-    return usesGivenStateClass(doFn, BagState.class) || requiresTimeSortedInput(doFn);
-  }
-
-  public static boolean usesWatermarkHold(DoFn<?, ?> doFn) {
-    return usesGivenStateClass(doFn, WatermarkHoldState.class) || requiresTimeSortedInput(doFn);
-  }
-
-  public static boolean usesTimers(DoFn<?, ?> doFn) {
-    return signatureForDoFn(doFn).usesTimers() || requiresTimeSortedInput(doFn);
-  }
-
-  public static boolean usesState(DoFn<?, ?> doFn) {
-    return signatureForDoFn(doFn).usesState() || requiresTimeSortedInput(doFn);
-  }
-
-  public static boolean requiresTimeSortedInput(DoFn<?, ?> doFn) {
-    return signatureForDoFn(doFn).processElement().requiresTimeSortedInput();
-  }
-
-  private static boolean usesGivenStateClass(DoFn<?, ?> doFn, Class<? extends State> stateClass) {
-    return signatureForDoFn(doFn).stateDeclarations().values().stream()
-        .anyMatch(d -> d.stateType().isSubtypeOf(TypeDescriptor.of(stateClass)));
   }
 }

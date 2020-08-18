@@ -17,8 +17,6 @@
 
 """Unit tests for :class:`HadoopFileSystem`."""
 
-# pytype: skip-file
-
 from __future__ import absolute_import
 
 import io
@@ -28,10 +26,7 @@ import sys
 import unittest
 from builtins import object
 
-# patches unittest.TestCase to be python3 compatible
-import future.tests.base  # pylint: disable=unused-import
 from future.utils import itervalues
-from parameterized import parameterized_class
 
 from apache_beam.io import hadoopfilesystem as hdfs
 from apache_beam.io.filesystem import BeamIOError
@@ -41,7 +36,7 @@ from apache_beam.options.pipeline_options import PipelineOptions
 
 class FakeFile(io.BytesIO):
   """File object for FakeHdfs"""
-  __hash__ = None  # type: ignore[assignment]
+  __hash__ = None
 
   def __init__(self, path, mode='', type='FILE'):
     io.BytesIO.__init__(self)
@@ -72,7 +67,7 @@ class FakeFile(io.BytesIO):
 
   @property
   def size(self):
-    if self.closed:  # pylint: disable=using-constant-test
+    if self.closed:
       if self.saved_data is None:
         return 0
       return len(self.saved_data)
@@ -101,6 +96,7 @@ class FakeHdfsError(Exception):
 
 class FakeHdfs(object):
   """Fake implementation of ``hdfs.Client``."""
+
   def __init__(self):
     self.files = {}
 
@@ -190,15 +186,12 @@ class FakeHdfs(object):
     if self.status(path1, strict=False) is None:
       raise FakeHdfsError('Path1 not found: %s' % path1)
 
-    files_to_rename = [
-        path for path in self.files
-        if path == path1 or path.startswith(path1 + '/')
-    ]
-    for fullpath in files_to_rename:
-      f = self.files.pop(fullpath)
-      newpath = path2 + fullpath[len(path1):]
-      f.stat['path'] = newpath
-      self.files[newpath] = f
+    for fullpath in self.files.keys():  # pylint: disable=consider-iterating-dictionary
+      if fullpath == path1 or fullpath.startswith(path1 + '/'):
+        f = self.files.pop(fullpath)
+        newpath = path2 + fullpath[len(path1):]
+        f.stat['path'] = newpath
+        self.files[newpath] = f
 
   def checksum(self, path):
     f = self.files.get(path, None)
@@ -207,8 +200,8 @@ class FakeHdfs(object):
     return f.get_file_checksum()
 
 
-@parameterized_class(('full_urls', ), [(False, ), (True, )])
 class HadoopFileSystemTest(unittest.TestCase):
+
   @classmethod
   def setUpClass(cls):
     # Method has been renamed in Python 3
@@ -217,7 +210,8 @@ class HadoopFileSystemTest(unittest.TestCase):
 
   def setUp(self):
     self._fake_hdfs = FakeHdfs()
-    hdfs.hdfs.InsecureClient = (lambda *args, **kwargs: self._fake_hdfs)
+    hdfs.hdfs.InsecureClient = (
+        lambda *args, **kwargs: self._fake_hdfs)
     pipeline_options = PipelineOptions()
     hdfs_options = pipeline_options.view_as(HadoopFileSystemOptions)
     hdfs_options.hdfs_host = ''
@@ -225,11 +219,7 @@ class HadoopFileSystemTest(unittest.TestCase):
     hdfs_options.hdfs_user = ''
 
     self.fs = hdfs.HadoopFileSystem(pipeline_options)
-    self.fs._full_urls = self.full_urls
-    if self.full_urls:
-      self.tmpdir = 'hdfs://test_dir'
-    else:
-      self.tmpdir = 'hdfs://server/test_dir'
+    self.tmpdir = 'hdfs://test_dir'
 
     for filename in ['old_file1', 'old_file2']:
       url = self.fs.join(self.tmpdir, filename)
@@ -239,64 +229,24 @@ class HadoopFileSystemTest(unittest.TestCase):
     self.assertEqual(self.fs.scheme(), 'hdfs')
     self.assertEqual(hdfs.HadoopFileSystem.scheme(), 'hdfs')
 
-  def test_parse_url(self):
-    cases = [
-        ('hdfs://', ('', '/'), False),
-        ('hdfs://', None, True),
-        ('hdfs://a', ('', '/a'), False),
-        ('hdfs://a', ('a', '/'), True),
-        ('hdfs://a/', ('', '/a/'), False),
-        ('hdfs://a/', ('a', '/'), True),
-        ('hdfs://a/b', ('', '/a/b'), False),
-        ('hdfs://a/b', ('a', '/b'), True),
-        ('hdfs://a/b/', ('', '/a/b/'), False),
-        ('hdfs://a/b/', ('a', '/b/'), True),
-        ('hdfs:/a/b', None, False),
-        ('hdfs:/a/b', None, True),
-        ('invalid', None, False),
-        ('invalid', None, True),
-    ]
-    for url, expected, full_urls in cases:
-      if self.full_urls != full_urls:
-        continue
-      try:
-        result = self.fs._parse_url(url)
-      except ValueError:
-        self.assertIsNone(expected, msg=(url, expected, full_urls))
-        continue
-      self.assertEqual(expected, result, msg=(url, expected, full_urls))
-
   def test_url_join(self):
-    self.assertEqual(
-        'hdfs://tmp/path/to/file',
-        self.fs.join('hdfs://tmp/path', 'to', 'file'))
-    self.assertEqual(
-        'hdfs://tmp/path/to/file', self.fs.join('hdfs://tmp/path', 'to/file'))
-    self.assertEqual('hdfs://tmp/path/', self.fs.join('hdfs://tmp/path/', ''))
-
-    if not self.full_urls:
-      self.assertEqual('hdfs://bar', self.fs.join('hdfs://foo', '/bar'))
-      self.assertEqual('hdfs://bar', self.fs.join('hdfs://foo/', '/bar'))
-      with self.assertRaises(ValueError):
-        self.fs.join('/no/scheme', 'file')
-    else:
-      self.assertEqual('hdfs://foo/bar', self.fs.join('hdfs://foo', '/bar'))
-      self.assertEqual('hdfs://foo/bar', self.fs.join('hdfs://foo/', '/bar'))
+    self.assertEqual('hdfs://tmp/path/to/file',
+                     self.fs.join('hdfs://tmp/path', 'to', 'file'))
+    self.assertEqual('hdfs://tmp/path/to/file',
+                     self.fs.join('hdfs://tmp/path', 'to/file'))
+    self.assertEqual('hdfs://tmp/path/',
+                     self.fs.join('hdfs://tmp/path/', ''))
+    self.assertEqual('hdfs://bar',
+                     self.fs.join('hdfs://foo', '/bar'))
+    with self.assertRaises(ValueError):
+      self.fs.join('/no/scheme', 'file')
 
   def test_url_split(self):
     self.assertEqual(('hdfs://tmp/path/to', 'file'),
                      self.fs.split('hdfs://tmp/path/to/file'))
-    if not self.full_urls:
-      self.assertEqual(('hdfs://', 'tmp'), self.fs.split('hdfs://tmp'))
-      self.assertEqual(('hdfs://tmp', ''), self.fs.split('hdfs://tmp/'))
-      self.assertEqual(('hdfs://tmp', 'a'), self.fs.split('hdfs://tmp/a'))
-    else:
-      self.assertEqual(('hdfs://tmp/', ''), self.fs.split('hdfs://tmp'))
-      self.assertEqual(('hdfs://tmp/', ''), self.fs.split('hdfs://tmp/'))
-      self.assertEqual(('hdfs://tmp/', 'a'), self.fs.split('hdfs://tmp/a'))
-
-    self.assertEqual(('hdfs://tmp/a', ''), self.fs.split('hdfs://tmp/a/'))
-    with self.assertRaisesRegex(ValueError, r'parse'):
+    self.assertEqual(('hdfs://', 'tmp'), self.fs.split('hdfs://tmp'))
+    self.assertEqual(('hdfs://tmp', ''), self.fs.split('hdfs://tmp/'))
+    with self.assertRaisesRegexp(ValueError, r'parse'):
       self.fs.split('tmp')
 
   def test_mkdirs(self):
@@ -312,22 +262,18 @@ class HadoopFileSystemTest(unittest.TestCase):
       self.fs.mkdirs(url)
 
   def test_match_file(self):
-    expected_files = [
-        self.fs.join(self.tmpdir, filename)
-        for filename in ['old_file1', 'old_file2']
-    ]
+    expected_files = [self.fs.join(self.tmpdir, filename)
+                      for filename in ['old_file1', 'old_file2']]
     match_patterns = expected_files
     result = self.fs.match(match_patterns)
-    returned_files = [
-        f.path for match_result in result for f in match_result.metadata_list
-    ]
+    returned_files = [f.path
+                      for match_result in result
+                      for f in match_result.metadata_list]
     self.assertCountEqual(expected_files, returned_files)
 
   def test_match_file_with_limits(self):
-    expected_files = [
-        self.fs.join(self.tmpdir, filename)
-        for filename in ['old_file1', 'old_file2']
-    ]
+    expected_files = [self.fs.join(self.tmpdir, filename)
+                      for filename in ['old_file1', 'old_file2']]
     result = self.fs.match([self.tmpdir + '/'], [1])[0]
     files = [f.path for f in result.metadata_list]
     self.assertEqual(len(files), 1)
@@ -346,17 +292,15 @@ class HadoopFileSystemTest(unittest.TestCase):
   def test_match_file_error(self):
     url = self.fs.join(self.tmpdir, 'old_file1')
     bad_url = 'bad_url'
-    with self.assertRaisesRegex(BeamIOError,
-                                r'^Match operation failed .* %s' % bad_url):
+    with self.assertRaisesRegexp(BeamIOError,
+                                 r'^Match operation failed .* %s' % bad_url):
       result = self.fs.match([bad_url, url])[0]
       files = [f.path for f in result.metadata_list]
       self.assertEqual(files, [self.fs._parse_url(url)])
 
   def test_match_directory(self):
-    expected_files = [
-        self.fs.join(self.tmpdir, filename)
-        for filename in ['old_file1', 'old_file2']
-    ]
+    expected_files = [self.fs.join(self.tmpdir, filename)
+                      for filename in ['old_file1', 'old_file2']]
 
     # Listing without a trailing '/' should return the directory itself and not
     # its contents. The fake HDFS client here has a "sparse" directory
@@ -366,10 +310,8 @@ class HadoopFileSystemTest(unittest.TestCase):
     self.assertCountEqual(files, expected_files)
 
   def test_match_directory_trailing_slash(self):
-    expected_files = [
-        self.fs.join(self.tmpdir, filename)
-        for filename in ['old_file1', 'old_file2']
-    ]
+    expected_files = [self.fs.join(self.tmpdir, filename)
+                      for filename in ['old_file1', 'old_file2']]
 
     result = self.fs.match([self.tmpdir + '/'])[0]
     files = [f.path for f in result.metadata_list]
@@ -379,7 +321,7 @@ class HadoopFileSystemTest(unittest.TestCase):
     url = self.fs.join(self.tmpdir, 'new_file')
     handle = self.fs.create(url)
     self.assertIsNotNone(handle)
-    _, url = self.fs._parse_url(url)
+    url = self.fs._parse_url(url)
     expected_file = FakeFile(url, 'wb')
     self.assertEqual(self._fake_hdfs.files[url], expected_file)
 
@@ -388,13 +330,13 @@ class HadoopFileSystemTest(unittest.TestCase):
 
     handle = self.fs.create(url)
     self.assertIsNotNone(handle)
-    _, path = self.fs._parse_url(url)
+    path = self.fs._parse_url(url)
     expected_file = FakeFile(path, 'wb')
     self.assertEqual(self._fake_hdfs.files[path], expected_file)
     data = b'abc' * 10
     handle.write(data)
     # Compressed data != original data
-    self.assertNotEqual(data, self._fake_hdfs.files[path].getvalue())
+    self.assertNotEquals(data, self._fake_hdfs.files[path].getvalue())
     handle.close()
 
     handle = self.fs.open(url)
@@ -437,9 +379,8 @@ class HadoopFileSystemTest(unittest.TestCase):
       f1.write(b'Hello')
     with self.fs.create(url2) as f2:
       f2.write(b'nope')
-    with self.assertRaisesRegex(BeamIOError,
-                                r'already exists.*%s' %
-                                posixpath.basename(url2)):
+    with self.assertRaisesRegexp(
+        BeamIOError, r'already exists.*%s' % posixpath.basename(url2)):
       self.fs.copy([url1], [url2])
 
   def test_copy_file_error(self):
@@ -449,9 +390,9 @@ class HadoopFileSystemTest(unittest.TestCase):
     url4 = self.fs.join(self.tmpdir, 'new_file4')
     with self.fs.create(url3) as f:
       f.write(b'Hello')
-    with self.assertRaisesRegex(BeamIOError,
-                                r'^Copy operation failed .*%s.*%s.* not found' %
-                                (url1, url2)):
+    with self.assertRaisesRegexp(
+        BeamIOError, r'^Copy operation failed .*%s.*%s.* not found' % (
+            url1, url2)):
       self.fs.copy([url1, url3], [url2, url4])
     self.assertTrue(self._cmpfiles(url3, url4))
 
@@ -493,7 +434,7 @@ class HadoopFileSystemTest(unittest.TestCase):
     with self.fs.create(url2) as f:
       f.write(b'nope')
 
-    with self.assertRaisesRegex(BeamIOError, r'already exists'):
+    with self.assertRaisesRegexp(BeamIOError, r'already exists'):
       self.fs.copy([url_t1], [url_t2])
 
   def test_rename_file(self):
@@ -514,9 +455,8 @@ class HadoopFileSystemTest(unittest.TestCase):
     with self.fs.create(url3) as f:
       f.write(b'Hello')
 
-    with self.assertRaisesRegex(BeamIOError,
-                                r'^Rename operation failed .*%s.*%s' %
-                                (url1, url2)):
+    with self.assertRaisesRegexp(
+        BeamIOError, r'^Rename operation failed .*%s.*%s' % (url1, url2)):
       self.fs.rename([url1, url3], [url2, url4])
     self.assertFalse(self.fs.exists(url3))
     self.assertTrue(self.fs.exists(url4))
@@ -552,8 +492,8 @@ class HadoopFileSystemTest(unittest.TestCase):
     url = self.fs.join(self.tmpdir, 'f1')
     with self.fs.create(url) as f:
       f.write(b'Hello')
-    self.assertEqual(
-        'fake_algo-5-checksum_byte_sequence', self.fs.checksum(url))
+    self.assertEqual('fake_algo-5-checksum_byte_sequence',
+                     self.fs.checksum(url))
 
   def test_delete_file(self):
     url = self.fs.join(self.tmpdir, 'old_file1')
@@ -585,9 +525,9 @@ class HadoopFileSystemTest(unittest.TestCase):
     url2 = self.fs.join(self.tmpdir, 'old_file1')
 
     self.assertTrue(self.fs.exists(url2))
-    _, path1 = self.fs._parse_url(url1)
-    with self.assertRaisesRegex(BeamIOError,
-                                r'^Delete operation failed .* %s' % path1):
+    path1 = self.fs._parse_url(url1)
+    with self.assertRaisesRegexp(BeamIOError,
+                                 r'^Delete operation failed .* %s' % path1):
       self.fs.delete([url1, url2])
     self.assertFalse(self.fs.exists(url2))
 
@@ -595,11 +535,11 @@ class HadoopFileSystemTest(unittest.TestCase):
 class HadoopFileSystemRuntimeValueProviderTest(unittest.TestCase):
   """Tests pipeline_options, in the form of a
   RuntimeValueProvider.runtime_options object."""
-  def setUp(self):
-    self._fake_hdfs = FakeHdfs()
-    hdfs.hdfs.InsecureClient = (lambda *args, **kwargs: self._fake_hdfs)
 
   def test_dict_options(self):
+    self._fake_hdfs = FakeHdfs()
+    hdfs.hdfs.InsecureClient = (
+        lambda *args, **kwargs: self._fake_hdfs)
     pipeline_options = {
         'hdfs_host': '',
         'hdfs_port': 0,
@@ -607,44 +547,35 @@ class HadoopFileSystemRuntimeValueProviderTest(unittest.TestCase):
     }
 
     self.fs = hdfs.HadoopFileSystem(pipeline_options=pipeline_options)
-    self.assertFalse(self.fs._full_urls)
 
   def test_dict_options_missing(self):
-    with self.assertRaisesRegex(ValueError, r'hdfs_host'):
+    self._fake_hdfs = FakeHdfs()
+    hdfs.hdfs.InsecureClient = (
+        lambda *args, **kwargs: self._fake_hdfs)
+
+    with self.assertRaisesRegexp(ValueError, r'hdfs_host'):
       self.fs = hdfs.HadoopFileSystem(
           pipeline_options={
               'hdfs_port': 0,
               'hdfs_user': '',
-          })
+          }
+      )
 
-    with self.assertRaisesRegex(ValueError, r'hdfs_port'):
+    with self.assertRaisesRegexp(ValueError, r'hdfs_port'):
       self.fs = hdfs.HadoopFileSystem(
           pipeline_options={
               'hdfs_host': '',
               'hdfs_user': '',
-          })
+          }
+      )
 
-    with self.assertRaisesRegex(ValueError, r'hdfs_user'):
+    with self.assertRaisesRegexp(ValueError, r'hdfs_user'):
       self.fs = hdfs.HadoopFileSystem(
           pipeline_options={
               'hdfs_host': '',
               'hdfs_port': 0,
-          })
-
-  def test_dict_options_full_urls(self):
-    pipeline_options = {
-        'hdfs_host': '',
-        'hdfs_port': 0,
-        'hdfs_user': '',
-        'hdfs_full_urls': 'invalid',
-    }
-
-    with self.assertRaisesRegex(ValueError, r'hdfs_full_urls'):
-      self.fs = hdfs.HadoopFileSystem(pipeline_options=pipeline_options)
-
-    pipeline_options['hdfs_full_urls'] = True
-    self.fs = hdfs.HadoopFileSystem(pipeline_options=pipeline_options)
-    self.assertTrue(self.fs._full_urls)
+          }
+      )
 
 
 if __name__ == '__main__':

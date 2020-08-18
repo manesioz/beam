@@ -11,10 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Compute stats, infer schema, and validate stats for chicago taxi example."""
-# pytype: skip-file
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -28,12 +25,11 @@ import tensorflow_data_validation as tfdv
 from tensorflow_metadata.proto.v0 import statistics_pb2
 
 import apache_beam as beam
-from apache_beam.io.gcp.bigquery import ReadFromBigQuery
 from apache_beam.metrics.metric import MetricsFilter
 from apache_beam.testing.load_tests.load_test_metrics_utils import MeasureTime
 from apache_beam.testing.load_tests.load_test_metrics_utils import MetricsReader
 
-from google.protobuf import text_format  # type: ignore  # typeshed out of date
+from google.protobuf import text_format
 from trainer import taxi
 
 
@@ -70,20 +66,19 @@ def validate_stats(stats_path, schema_path, anomalies_path):
   print(text_format.MessageToString(anomalies))
 
   print('Writing anomalies to anomalies path.')
-  file_io.write_string_to_file(
-      anomalies_path, text_format.MessageToString(anomalies))
+  file_io.write_string_to_file(anomalies_path,
+                               text_format.MessageToString(anomalies))
 
 
-def compute_stats(
-    input_handle,
-    stats_path,
-    max_rows=None,
-    for_eval=False,
-    pipeline_args=None,
-    publish_to_bq=None,
-    metrics_dataset=None,
-    metrics_table=None,
-    project=None):
+def compute_stats(input_handle,
+                  stats_path,
+                  max_rows=None,
+                  for_eval=False,
+                  pipeline_args=None,
+                  publish_to_bq=None,
+                  metrics_dataset=None,
+                  metrics_table=None,
+                  project=None):
   """Computes statistics on the input data.
 
   Args:
@@ -100,11 +95,9 @@ def compute_stats(
   metrics_monitor = None
   if publish_to_bq:
     metrics_monitor = MetricsReader(
-        publish_to_bq=publish_to_bq,
         project_name=project,
         bq_table=metrics_table,
         bq_dataset=metrics_dataset,
-        namespace=namespace,
         filters=MetricsFilter().with_namespace(namespace),
     )
 
@@ -112,13 +105,12 @@ def compute_stats(
       table_name=input_handle, max_rows=max_rows, for_eval=for_eval)
   raw_data = (
       pipeline
-      | 'ReadBigQuery' >> ReadFromBigQuery(
-          query=query, project=project, use_standard_sql=True)
+      | 'ReadBigQuery' >> beam.io.Read(
+          beam.io.BigQuerySource(query=query, use_standard_sql=True))
       | 'Measure time: Start' >> beam.ParDo(MeasureTime(namespace))
       | 'ConvertToTFDVInput' >> beam.Map(
-          lambda x:
-          {key: np.asarray([x[key]])
-           for key in x if x[key] is not None}))
+          lambda x: {key: np.asarray([x[key]])
+                     for key in x if x[key] is not None}))
 
   _ = (
       raw_data
@@ -136,14 +128,13 @@ def compute_stats(
 
 
 def main():
-  tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.INFO)
+  tf.logging.set_verbosity(tf.logging.INFO)
 
   parser = argparse.ArgumentParser()
   parser.add_argument(
       '--input',
-      help=(
-          'Input BigQuery table to process specified as: '
-          'DATASET.TABLE or path to csv file with input data.'))
+      help=('Input BigQuery table to process specified as: '
+            'DATASET.TABLE or path to csv file with input data.'))
 
   parser.add_argument(
       '--stats_path',
@@ -189,10 +180,16 @@ def main():
       type=bool)
 
   parser.add_argument(
-      '--metrics_dataset', help='BQ dataset', default=None, type=str)
+      '--metrics_dataset',
+      help='BQ dataset',
+      default=None,
+      type=str)
 
   parser.add_argument(
-      '--metrics_table', help='BQ table', default=None, type=str)
+      '--metrics_table',
+      help='BQ table',
+      default=None,
+      type=str)
 
   parser.add_argument(
       '--metric_reporting_project',

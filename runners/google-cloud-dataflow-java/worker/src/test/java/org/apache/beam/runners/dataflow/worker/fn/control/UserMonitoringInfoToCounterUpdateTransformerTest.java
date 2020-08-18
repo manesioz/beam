@@ -17,10 +17,8 @@
  */
 package org.apache.beam.runners.dataflow.worker.fn.control;
 
-import static org.apache.beam.runners.core.metrics.MonitoringInfoEncodings.encodeInt64Counter;
-import static org.apache.beam.runners.dataflow.worker.testing.GenericJsonAssert.assertEqualsAsJson;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
 import static org.mockito.Matchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -31,8 +29,6 @@ import java.util.Map;
 import java.util.Optional;
 import org.apache.beam.model.pipeline.v1.MetricsApi.MonitoringInfo;
 import org.apache.beam.runners.core.metrics.MonitoringInfoConstants;
-import org.apache.beam.runners.core.metrics.MonitoringInfoConstants.TypeUrns;
-import org.apache.beam.runners.core.metrics.MonitoringInfoConstants.Urns;
 import org.apache.beam.runners.core.metrics.SpecMonitoringInfoValidator;
 import org.apache.beam.runners.dataflow.worker.DataflowExecutionContext.DataflowStepContext;
 import org.apache.beam.runners.dataflow.worker.counters.NameContext;
@@ -61,17 +57,14 @@ public class UserMonitoringInfoToCounterUpdateTransformerTest {
         new UserMonitoringInfoToCounterUpdateTransformer(mockSpecValidator, stepContextMapping);
     Optional<String> error = Optional.of("Error text");
     when(mockSpecValidator.validate(any())).thenReturn(error);
-    assertNull(testObject.transform(null));
+    assertEquals(null, testObject.transform(null));
   }
 
   @Test
   public void testTransformThrowsIfMonitoringInfoWithWrongUrnPrefixReceived() {
     Map<String, DataflowStepContext> stepContextMapping = new HashMap<>();
     MonitoringInfo monitoringInfo =
-        MonitoringInfo.newBuilder()
-            .setUrn(Urns.ELEMENT_COUNT)
-            .setType(TypeUrns.SUM_INT64_TYPE)
-            .build();
+        MonitoringInfo.newBuilder().setUrn("beam:metric:element_count:v1").build();
     UserMonitoringInfoToCounterUpdateTransformer testObject =
         new UserMonitoringInfoToCounterUpdateTransformer(mockSpecValidator, stepContextMapping);
     when(mockSpecValidator.validate(any())).thenReturn(Optional.empty());
@@ -85,8 +78,7 @@ public class UserMonitoringInfoToCounterUpdateTransformerTest {
     Map<String, DataflowStepContext> stepContextMapping = new HashMap<>();
     MonitoringInfo monitoringInfo =
         MonitoringInfo.newBuilder()
-            .setUrn(Urns.USER_SUM_INT64)
-            .setType(TypeUrns.SUM_INT64_TYPE)
+            .setUrn("beam:metric:user")
             .putLabels(MonitoringInfoConstants.Labels.NAME, "anyName")
             .putLabels(MonitoringInfoConstants.Labels.NAMESPACE, "anyNamespace")
             .putLabels(MonitoringInfoConstants.Labels.PTRANSFORM, "anyValue")
@@ -94,12 +86,11 @@ public class UserMonitoringInfoToCounterUpdateTransformerTest {
     UserMonitoringInfoToCounterUpdateTransformer testObject =
         new UserMonitoringInfoToCounterUpdateTransformer(mockSpecValidator, stepContextMapping);
     when(mockSpecValidator.validate(any())).thenReturn(Optional.empty());
-    assertNull(testObject.transform(monitoringInfo));
+    assertEquals(null, testObject.transform(monitoringInfo));
   }
 
   @Test
-  public void testTransformReturnsValidCounterUpdateWhenValidUserMonitoringInfoReceived()
-      throws Exception {
+  public void testTransformReturnsValidCounterUpdateWhenValidUserMonitoringInfoReceived() {
     Map<String, DataflowStepContext> stepContextMapping = new HashMap<>();
     NameContext nc =
         NameContext.create("anyStageName", "anyOriginalName", "anySystemName", "anyUserName");
@@ -109,25 +100,23 @@ public class UserMonitoringInfoToCounterUpdateTransformerTest {
 
     MonitoringInfo monitoringInfo =
         MonitoringInfo.newBuilder()
-            .setUrn(Urns.USER_SUM_INT64)
-            .setType(TypeUrns.SUM_INT64_TYPE)
+            .setUrn("beam:metric:user")
             .putLabels(MonitoringInfoConstants.Labels.NAME, "anyName")
             .putLabels(MonitoringInfoConstants.Labels.NAMESPACE, "anyNamespace")
             .putLabels(MonitoringInfoConstants.Labels.PTRANSFORM, "anyValue")
-            .setPayload(encodeInt64Counter(1L))
             .build();
     UserMonitoringInfoToCounterUpdateTransformer testObject =
         new UserMonitoringInfoToCounterUpdateTransformer(mockSpecValidator, stepContextMapping);
     when(mockSpecValidator.validate(any())).thenReturn(Optional.empty());
 
     CounterUpdate result = testObject.transform(monitoringInfo);
-    assertNotNull(result);
+    assertNotEquals(null, result);
 
-    assertEqualsAsJson(
-        "{cumulative:true, integer:{highBits:0, lowBits:1}, "
-            + "structuredNameAndMetadata:{metadata:{kind:'SUM'}, "
-            + "name:{name:'anyName', origin:'USER', originNamespace:'anyNamespace', "
-            + "originalStepName:'anyOriginalName'}}}",
-        result);
+    assertEquals(
+        "{cumulative=true, integer={highBits=0, lowBits=0}, "
+            + "structuredNameAndMetadata={metadata={kind=SUM}, "
+            + "name={name=anyName, origin=USER, originNamespace=anyNamespace, "
+            + "originalStepName=anyOriginalName}}}",
+        result.toString());
   }
 }

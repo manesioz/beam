@@ -38,11 +38,6 @@ public class DeltaCounterCell implements Counter, MetricCell<Long> {
   }
 
   @Override
-  public void reset() {
-    value.set(0L);
-  }
-
-  @Override
   public void inc(long n) {
     value.addAndGet(n);
   }

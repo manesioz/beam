@@ -21,6 +21,7 @@ import static java.util.Objects.requireNonNull;
 import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions.checkState;
 
 import java.util.Optional;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.extensions.euphoria.core.client.operator.base.Builders;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.TimestampCombiner;
@@ -28,7 +29,6 @@ import org.apache.beam.sdk.transforms.windowing.Trigger;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.transforms.windowing.WindowFn;
 import org.apache.beam.sdk.values.WindowingStrategy;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Duration;
 
 /**
@@ -42,7 +42,7 @@ class WindowBuilder<T>
         Builders.AccumulationMode<WindowBuilder<T>>,
         Builders.WindowedOutput<WindowBuilder<T>> {
 
-  private @Nullable Window<T> window;
+  @Nullable private Window<T> window;
 
   /**
    * Get underlying window.

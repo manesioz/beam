@@ -28,6 +28,7 @@ import java.util.Map;
 import org.apache.beam.model.fnexecution.v1.BeamFnApi;
 import org.apache.beam.model.pipeline.v1.RunnerApi;
 import org.apache.beam.model.pipeline.v1.RunnerApi.FunctionSpec;
+import org.apache.beam.model.pipeline.v1.RunnerApi.SdkFunctionSpec;
 import org.apache.beam.runners.dataflow.worker.DataflowPortabilityPCollectionView;
 import org.apache.beam.runners.dataflow.worker.NameContextsForTests;
 import org.apache.beam.runners.dataflow.worker.counters.NameContext;
@@ -145,10 +146,12 @@ public class NodesTest {
   @Test
   public void testFetchReadySideInputsAndFilterBlockedStreamingSideInputsNode() {
     WindowingStrategy windowingStrategy = WindowingStrategy.globalDefault();
-    Map<PCollectionView<?>, RunnerApi.FunctionSpec> pcollectionViewsToWindowMappingFns =
+    Map<PCollectionView<?>, RunnerApi.SdkFunctionSpec> pcollectionViewsToWindowMappingFns =
         ImmutableMap.of(
             mock(PCollectionView.class),
-            FunctionSpec.newBuilder().setUrn("beam:test:urn:1.0").build());
+            SdkFunctionSpec.newBuilder()
+                .setSpec(FunctionSpec.newBuilder().setUrn("beam:test:urn:1.0"))
+                .build());
     NameContext nameContext = NameContextsForTests.nameContextForTest();
     assertSame(
         FetchAndFilterStreamingSideInputsNode.create(

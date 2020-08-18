@@ -58,9 +58,9 @@ class DoFnLifecycleManagerRemovingTransformEvaluator<InputT> implements Transfor
     }
   }
 
-  public <KeyT> void onTimer(TimerData timer, KeyT key, BoundedWindow window) throws Exception {
+  public void onTimer(TimerData timer, BoundedWindow window) throws Exception {
     try {
-      underlying.onTimer(timer, key, window);
+      underlying.onTimer(timer, window);
     } catch (Exception e) {
       onException(e, "Exception encountered while cleaning up after processing a timer");
       throw e;

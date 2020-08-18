@@ -175,7 +175,7 @@ public class RedisIOTest {
   }
 
   @Test
-  public void testWriteUsingINCRBY() {
+  public void testWriteUsingINCRBY() throws Exception {
     String key = "key_incr";
     List<String> values = Arrays.asList("0", "1", "2", "-3", "2", "4", "0", "5");
     List<KV<String, String>> data = buildConstantKeyList(key, values);
@@ -190,7 +190,7 @@ public class RedisIOTest {
   }
 
   @Test
-  public void testWriteUsingDECRBY() {
+  public void testWriteUsingDECRBY() throws Exception {
     String key = "key_decr";
 
     List<String> values = Arrays.asList("-10", "1", "2", "-3", "2", "4", "0", "5");

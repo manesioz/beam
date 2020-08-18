@@ -21,10 +21,10 @@ import java.lang.reflect.InvocationTargetException;
 import java.util.List;
 
 /**
- * A {@link Factory} that uses a default constructor and a list of setters to construct a {@link
- * SchemaUserTypeCreator}.
+ * A {@link UserTypeCreatorFactory} that uses a default constructor and a list of setters to
+ * construct a class.
  */
-class SetterBasedCreatorFactory implements Factory<SchemaUserTypeCreator> {
+class SetterBasedCreatorFactory implements UserTypeCreatorFactory {
   private final Factory<List<FieldValueSetter>> setterFactory;
 
   public SetterBasedCreatorFactory(Factory<List<FieldValueSetter>> setterFactory) {

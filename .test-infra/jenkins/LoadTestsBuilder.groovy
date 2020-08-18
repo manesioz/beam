@@ -20,7 +20,6 @@ import CommonJobProperties as commonJobProperties
 import CommonTestProperties.Runner
 import CommonTestProperties.SDK
 import CommonTestProperties.TriggeringContext
-import InfluxDBCredentialsHelper
 
 class LoadTestsBuilder {
   final static String DOCKER_CONTAINER_REGISTRY = 'gcr.io/apache-beam-testing/beam_portability'
@@ -31,36 +30,25 @@ class LoadTestsBuilder {
     commonJobProperties.setTopLevelMainJobProperties(scope, 'master', 240)
 
     for (testConfiguration in testConfigurations) {
-      loadTest(scope, testConfiguration.title, testConfiguration.runner, sdk, testConfiguration.pipelineOptions,
-          testConfiguration.test, testConfiguration.withDataflowWorkerJar ?: false)
+        loadTest(scope, testConfiguration.title, testConfiguration.runner, sdk, testConfiguration.pipelineOptions, testConfiguration.test)
     }
   }
 
 
-  static void loadTest(context, String title, Runner runner, SDK sdk, Map<String, ?> options,
-      String mainClass, Boolean withDataflowWorkerJar = false) {
+  static void loadTest(context, String title, Runner runner, SDK sdk, Map<String, ?> options, String mainClass) {
     options.put('runner', runner.option)
-    InfluxDBCredentialsHelper.useCredentials(context)
 
     context.steps {
-      shell("echo \"*** ${title} ***\"")
+      shell("echo *** ${title} ***")
       gradle {
         rootBuildScriptDir(commonJobProperties.checkoutDir)
-        setGradleTask(delegate, runner, sdk, options, mainClass, withDataflowWorkerJar)
+        tasks(getGradleTaskName(sdk))
         commonJobProperties.setGradleSwitches(delegate)
+        switches("-PloadTest.mainClass=\"${mainClass}\"")
+        switches("-Prunner=${runner.getDepenedencyBySDK(sdk)}")
+        switches("-PloadTest.args=\"${parseOptions(options)}\"")
       }
     }
-  }
-
-  static String parseOptions(Map<String, ?> options) {
-    options.collect { entry ->
-      // Flags are indicated by null values
-      if (entry.value == null) {
-        "--${entry.key}"
-      } else {
-        "--${entry.key}=$entry.value".replace('\"', '\\\"').replace('\'', '\\\'')
-      }
-    }.join(' ')
   }
 
   static String getBigQueryDataset(String baseName, TriggeringContext triggeringContext) {
@@ -71,28 +59,20 @@ class LoadTestsBuilder {
     }
   }
 
-  private static void setGradleTask(context, Runner runner, SDK sdk, Map<String, ?> options,
-      String mainClass, Boolean withDataflowWorkerJar) {
-    context.tasks(getGradleTaskName(sdk))
-    context.switches("-PloadTest.mainClass=\"${mainClass}\"")
-    context.switches("-Prunner=${runner.getDependencyBySDK(sdk)}")
-    context.switches("-PwithDataflowWorkerJar=\"${withDataflowWorkerJar}\"")
-    context.switches("-PloadTest.args=\"${parseOptions(options)}\"")
-
-
-    if (sdk == SDK.PYTHON_37) {
-      context.switches("-PpythonVersion=3.7")
-    }
-  }
-
   private static String getGradleTaskName(SDK sdk) {
     if (sdk == SDK.JAVA) {
       return ':sdks:java:testing:load-tests:run'
-    } else if (sdk == SDK.PYTHON || sdk == SDK.PYTHON_37) {
+    } else if (sdk == SDK.PYTHON) {
       return ':sdks:python:apache_beam:testing:load_tests:run'
     } else {
       throw new RuntimeException("No task name defined for SDK: $SDK")
     }
+  }
+
+  private static String parseOptions(Map<String, ?> options) {
+    options.collect {
+      "--${it.key}=$it.value".replace('\"', '\\\"').replace('\'', '\\\'')
+    }.join(' ')
   }
 }
 

@@ -94,7 +94,6 @@ public class PipelineTranslation {
     RunnerApi.Pipeline res =
         RunnerApi.Pipeline.newBuilder()
             .setComponents(components.toComponents())
-            .addAllRequirements(components.requirements())
             .addAllRootTransformIds(rootIds)
             .build();
     if (!useDeprecatedViewTransforms) {

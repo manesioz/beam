@@ -17,13 +17,14 @@
  */
 package org.apache.beam.runners.flink;
 
+import javax.annotation.Nullable;
 import org.apache.beam.runners.fnexecution.ServerFactory;
-import org.apache.beam.runners.jobsubmission.JobServerDriver;
+import org.apache.beam.runners.fnexecution.jobsubmission.JobInvoker;
+import org.apache.beam.runners.fnexecution.jobsubmission.JobServerDriver;
 import org.apache.beam.sdk.extensions.gcp.options.GcsOptions;
 import org.apache.beam.sdk.io.FileSystems;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.kohsuke.args4j.CmdLineException;
 import org.kohsuke.args4j.CmdLineParser;
 import org.kohsuke.args4j.Option;
@@ -37,17 +38,11 @@ public class FlinkJobServerDriver extends JobServerDriver {
 
   /** Flink runner-specific Configuration for the jobServer. */
   public static class FlinkServerConfiguration extends ServerConfiguration {
-    @Option(
-        name = "--flink-master",
-        aliases = {"--flink-master-url"},
-        usage =
-            "Flink master address (host:port) to submit the job against. Use Use \"[local]\" to start a local "
-                + "cluster for the execution. Use \"[auto]\" if you plan to either execute locally or submit through "
-                + "Flink\'s CLI.")
-    private String flinkMaster = FlinkPipelineOptions.AUTO;
+    @Option(name = "--flink-master-url", usage = "Flink master url to submit job.")
+    private String flinkMasterUrl = "[auto]";
 
-    String getFlinkMaster() {
-      return this.flinkMaster;
+    String getFlinkMasterUrl() {
+      return this.flinkMasterUrl;
     }
 
     @Option(
@@ -81,7 +76,7 @@ public class FlinkJobServerDriver extends JobServerDriver {
     System.err.println();
   }
 
-  public static FlinkServerConfiguration parseArgs(String[] args) {
+  public static FlinkJobServerDriver fromParams(String[] args) {
     FlinkServerConfiguration configuration = new FlinkServerConfiguration();
     CmdLineParser parser = new CmdLineParser(configuration);
     try {
@@ -91,45 +86,33 @@ public class FlinkJobServerDriver extends JobServerDriver {
       printUsage(parser);
       throw new IllegalArgumentException("Unable to parse command line arguments.", e);
     }
-    return configuration;
-  }
 
-  // this method is used via reflection in TestPortableRunner
-  public static FlinkJobServerDriver fromParams(String[] args) {
-    return fromConfig(parseArgs(args));
+    return fromConfig(configuration);
   }
 
   public static FlinkJobServerDriver fromConfig(FlinkServerConfiguration configuration) {
     return create(
         configuration,
         createJobServerFactory(configuration),
-        createArtifactServerFactory(configuration),
-        () -> FlinkJobInvoker.create(configuration));
+        createArtifactServerFactory(configuration));
   }
 
-  public static FlinkJobServerDriver fromConfig(
-      FlinkServerConfiguration configuration, JobInvokerFactory jobInvokerFactory) {
-    return create(
-        configuration,
-        createJobServerFactory(configuration),
-        createArtifactServerFactory(configuration),
-        jobInvokerFactory);
-  }
-
-  private static FlinkJobServerDriver create(
+  public static FlinkJobServerDriver create(
       FlinkServerConfiguration configuration,
       ServerFactory jobServerFactory,
-      ServerFactory artifactServerFactory,
-      JobInvokerFactory jobInvokerFactory) {
-    return new FlinkJobServerDriver(
-        configuration, jobServerFactory, artifactServerFactory, jobInvokerFactory);
+      ServerFactory artifactServerFactory) {
+    return new FlinkJobServerDriver(configuration, jobServerFactory, artifactServerFactory);
   }
 
   private FlinkJobServerDriver(
       FlinkServerConfiguration configuration,
       ServerFactory jobServerFactory,
-      ServerFactory artifactServerFactory,
-      JobInvokerFactory jobInvokerFactory) {
-    super(configuration, jobServerFactory, artifactServerFactory, jobInvokerFactory);
+      ServerFactory artifactServerFactory) {
+    super(configuration, jobServerFactory, artifactServerFactory);
+  }
+
+  @Override
+  protected JobInvoker createJobInvoker() {
+    return FlinkJobInvoker.create((FlinkServerConfiguration) configuration);
   }
 }

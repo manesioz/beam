@@ -72,6 +72,7 @@ public class BeamBasicAggregationRule extends RelOptRule {
             aggregate.getTraitSet().replace(BeamLogicalConvention.INSTANCE),
             convert(
                 newTableScan, newTableScan.getTraitSet().replace(BeamLogicalConvention.INSTANCE)),
+            aggregate.indicator,
             aggregate.getGroupSet(),
             aggregate.getGroupSets(),
             aggregate.getAggCallList(),

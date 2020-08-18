@@ -37,6 +37,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import javax.annotation.Nullable;
 import org.apache.beam.runners.core.metrics.ExecutionStateTracker;
 import org.apache.beam.runners.core.metrics.ExecutionStateTracker.ExecutionState;
 import org.apache.beam.runners.core.metrics.MetricsContainerImpl;
@@ -50,7 +51,6 @@ import org.apache.beam.runners.dataflow.worker.util.common.worker.NativeReader.P
 import org.apache.beam.sdk.util.UserCodeException;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.annotations.VisibleForTesting;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -73,7 +73,7 @@ public class WorkItemStatusClient {
   private transient String uniqueWorkId = null;
   private boolean finalStateSent = false;
 
-  private @Nullable BatchModeExecutionContext executionContext;
+  @Nullable private BatchModeExecutionContext executionContext;
 
   /**
    * Construct a partly-initialized {@link WorkItemStatusClient}. Once the {@link
@@ -188,8 +188,8 @@ public class WorkItemStatusClient {
     return false;
   }
 
-  private @Nullable synchronized WorkItemServiceState execute(WorkItemStatus status)
-      throws IOException {
+  @Nullable
+  private synchronized WorkItemServiceState execute(WorkItemStatus status) throws IOException {
     WorkItemServiceState result = workUnitClient.reportWorkItemStatus(status);
     if (result != null) {
       nextReportIndex = result.getNextReportIndex();

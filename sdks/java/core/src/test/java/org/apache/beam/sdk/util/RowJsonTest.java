@@ -17,12 +17,10 @@
  */
 package org.apache.beam.sdk.util;
 
-import static org.apache.beam.sdk.testing.JsonMatcher.jsonStringLike;
-import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.allOf;
-import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasProperty;
 import static org.hamcrest.Matchers.stringContainsInOrder;
+import static org.junit.Assert.assertEquals;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.module.SimpleModule;
@@ -32,11 +30,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import org.apache.beam.sdk.schemas.Schema;
 import org.apache.beam.sdk.schemas.Schema.FieldType;
-import org.apache.beam.sdk.schemas.logicaltypes.PassThroughLogicalType;
-import org.apache.beam.sdk.util.RowJson.RowJsonDeserializer;
-import org.apache.beam.sdk.util.RowJson.RowJsonDeserializer.NullBehavior;
-import org.apache.beam.sdk.util.RowJson.RowJsonSerializer;
-import org.apache.beam.sdk.util.RowJson.UnsupportedRowJsonException;
+import org.apache.beam.sdk.util.RowJsonDeserializer.UnsupportedRowJsonException;
 import org.apache.beam.sdk.values.Row;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
 import org.hamcrest.Matcher;
@@ -51,7 +45,7 @@ import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameter;
 import org.junit.runners.Parameterized.Parameters;
 
-/** Unit tests for {@link RowJson.RowJsonDeserializer} and {@link RowJson.RowJsonSerializer}. */
+/** Unit tests for {@link RowJsonDeserializer} and {@link RowJsonSerializer}. */
 @RunWith(Enclosed.class)
 public class RowJsonTest {
   @RunWith(Parameterized.class)
@@ -72,7 +66,6 @@ public class RowJsonTest {
     public static Collection<Object[]> data() {
       return ImmutableList.of(
           makeFlatRowTestCase(),
-          makeLogicalTypeTestCase(),
           makeArrayFieldTestCase(),
           makeArrayOfArraysTestCase(),
           makeNestedRowTestCase(),
@@ -122,22 +115,6 @@ public class RowJsonTest {
               .build();
 
       return new Object[] {"Flat row", schema, rowString, expectedRow};
-    }
-
-    private static Object[] makeLogicalTypeTestCase() {
-      Schema schema =
-          Schema.builder()
-              .addLogicalTypeField(
-                  "f_passThroughString",
-                  new PassThroughLogicalType<String>(
-                      "SqlCharType", FieldType.STRING, "", FieldType.STRING) {})
-              .build();
-
-      String rowString = "{\n" + "\"f_passThroughString\" : \"hello\"\n" + "}";
-
-      Row expectedRow = Row.withSchema(schema).addValues("hello").build();
-
-      return new Object[] {"Logical Types", schema, rowString, expectedRow};
     }
 
     private static Object[] makeArrayFieldTestCase() {
@@ -242,68 +219,20 @@ public class RowJsonTest {
 
     @Test
     public void testDeserialize() throws IOException {
-      Row parsedRow =
-          newObjectMapperWith(
-                  RowJsonSerializer.forSchema(schema), RowJsonDeserializer.forSchema(schema))
-              .readValue(serializedString, Row.class);
+      Row parsedRow = newObjectMapperFor(schema).readValue(serializedString, Row.class);
 
-      assertThat(row, equalTo(parsedRow));
+      assertEquals(row, parsedRow);
     }
 
+    // This serves to validate RowJsonSerializer. We don't have tests to check that the output
+    // string matches exactly what we expect, just that the string we produced can be deserialized
+    // again into an equal row.
     @Test
-    public void testSerialize() throws IOException {
-      String str =
-          newObjectMapperWith(
-                  RowJsonSerializer.forSchema(schema), RowJsonDeserializer.forSchema(schema))
-              .writeValueAsString(row);
-
-      assertThat(str, jsonStringLike(serializedString));
-    }
-
-    @Test
-    public void testRoundTrip_KeepNulls_AcceptMissingOrNull() throws IOException {
-      ObjectMapper objectMapper =
-          newObjectMapperWith(
-              RowJsonSerializer.forSchema(schema).withDropNullsOnWrite(false),
-              RowJsonDeserializer.forSchema(schema)
-                  .withNullBehavior(NullBehavior.ACCEPT_MISSING_OR_NULL));
+    public void testRoundTrip() throws IOException {
+      ObjectMapper objectMapper = newObjectMapperFor(schema);
       Row parsedRow = objectMapper.readValue(objectMapper.writeValueAsString(row), Row.class);
 
-      assertThat(row, equalTo(parsedRow));
-    }
-
-    @Test
-    public void testRoundTrip_DropNulls_AcceptMissingOrNull() throws IOException {
-      ObjectMapper objectMapper =
-          newObjectMapperWith(
-              RowJsonSerializer.forSchema(schema).withDropNullsOnWrite(true),
-              RowJsonDeserializer.forSchema(schema)
-                  .withNullBehavior(NullBehavior.ACCEPT_MISSING_OR_NULL));
-      Row parsedRow = objectMapper.readValue(objectMapper.writeValueAsString(row), Row.class);
-
-      assertThat(row, equalTo(parsedRow));
-    }
-
-    @Test
-    public void testRoundTrip_DropNulls_RequireMissing() throws IOException {
-      ObjectMapper objectMapper =
-          newObjectMapperWith(
-              RowJsonSerializer.forSchema(schema).withDropNullsOnWrite(true),
-              RowJsonDeserializer.forSchema(schema).withNullBehavior(NullBehavior.REQUIRE_MISSING));
-      Row parsedRow = objectMapper.readValue(objectMapper.writeValueAsString(row), Row.class);
-
-      assertThat(row, equalTo(parsedRow));
-    }
-
-    @Test
-    public void testRoundTrip_KeepNulls_RequireNull() throws IOException {
-      ObjectMapper objectMapper =
-          newObjectMapperWith(
-              RowJsonSerializer.forSchema(schema).withDropNullsOnWrite(false),
-              RowJsonDeserializer.forSchema(schema).withNullBehavior(NullBehavior.REQUIRE_NULL));
-      Row parsedRow = objectMapper.readValue(objectMapper.writeValueAsString(row), Row.class);
-
-      assertThat(row, equalTo(parsedRow));
+      assertEquals(row, parsedRow);
     }
   }
 
@@ -342,9 +271,7 @@ public class RowJsonTest {
       thrown.expect(UnsupportedRowJsonException.class);
       thrown.expectMessage("Expected JSON array");
 
-      newObjectMapperWith(
-              RowJsonSerializer.forSchema(schema), RowJsonDeserializer.forSchema(schema))
-          .readValue(rowString, Row.class);
+      newObjectMapperFor(schema).readValue(rowString, Row.class);
     }
 
     @Test
@@ -364,9 +291,7 @@ public class RowJsonTest {
       thrown.expect(UnsupportedRowJsonException.class);
       thrown.expectMessage("Expected JSON object");
 
-      newObjectMapperWith(
-              RowJsonSerializer.forSchema(schema), RowJsonDeserializer.forSchema(schema))
-          .readValue(rowString, Row.class);
+      newObjectMapperFor(schema).readValue(rowString, Row.class);
     }
 
     @Test
@@ -378,86 +303,7 @@ public class RowJsonTest {
       thrown.expect(UnsupportedRowJsonException.class);
       thrown.expectMessage("'f_string' is not present");
 
-      newObjectMapperWith(RowJsonDeserializer.forSchema(schema)).readValue(rowString, Row.class);
-    }
-
-    @Test
-    public void testRequireNullThrowsForMissingNullableField() throws Exception {
-      Schema schema =
-          Schema.builder()
-              .addByteField("f_byte")
-              .addNullableField("f_string", FieldType.STRING)
-              .build();
-
-      String rowString = "{\n" + "\"f_byte\" : 12\n" + "}";
-
-      thrown.expect(UnsupportedRowJsonException.class);
-      thrown.expectMessage("'f_string'");
-
-      newObjectMapperWith(
-              RowJsonDeserializer.forSchema(schema).withNullBehavior(NullBehavior.REQUIRE_NULL))
-          .readValue(rowString, Row.class);
-    }
-
-    @Test
-    public void testRequireNullAcceptsNullValue() throws Exception {
-      Schema schema =
-          Schema.builder()
-              .addByteField("f_byte")
-              .addNullableField("f_string", FieldType.STRING)
-              .build();
-
-      String rowString = "{\"f_byte\": 12, \"f_string\": null}";
-
-      assertThat(
-          newObjectMapperWith(
-                  RowJsonDeserializer.forSchema(schema).withNullBehavior(NullBehavior.REQUIRE_NULL))
-              .readValue(rowString, Row.class),
-          equalTo(
-              Row.withSchema(schema)
-                  .withFieldValue("f_byte", (byte) 12)
-                  .withFieldValue("f_string", null)
-                  .build()));
-    }
-
-    @Test
-    public void testRequireMissingThrowsForNullValue() throws Exception {
-      Schema schema =
-          Schema.builder()
-              .addByteField("f_byte")
-              .addNullableField("f_string", FieldType.STRING)
-              .build();
-
-      String rowString = "{\"f_byte\": 12, \"f_string\": null}";
-
-      thrown.expect(UnsupportedRowJsonException.class);
-      thrown.expectMessage("'f_string'");
-
-      newObjectMapperWith(
-              RowJsonDeserializer.forSchema(schema).withNullBehavior(NullBehavior.REQUIRE_MISSING))
-          .readValue(rowString, Row.class);
-    }
-
-    @Test
-    public void testRequireMissingAcceptsMissingField() throws Exception {
-      Schema schema =
-          Schema.builder()
-              .addByteField("f_byte")
-              .addNullableField("f_string", FieldType.STRING)
-              .build();
-
-      String rowString = "{\"f_byte\": 12}";
-
-      assertThat(
-          newObjectMapperWith(
-                  RowJsonDeserializer.forSchema(schema)
-                      .withNullBehavior(NullBehavior.REQUIRE_MISSING))
-              .readValue(rowString, Row.class),
-          equalTo(
-              Row.withSchema(schema)
-                  .withFieldValue("f_byte", (byte) 12)
-                  .withFieldValue("f_string", null)
-                  .build()));
+      newObjectMapperFor(schema).readValue(rowString, Row.class);
     }
 
     @Test
@@ -465,11 +311,9 @@ public class RowJsonTest {
       Schema schema = Schema.builder().addDateTimeField("f_dateTime").build();
 
       thrown.expect(UnsupportedRowJsonException.class);
-      thrown.expectMessage("DATETIME");
-      thrown.expectMessage("f_dateTime");
-      thrown.expectMessage("not supported");
+      thrown.expectMessage("DATETIME is not supported");
 
-      RowJson.RowJsonDeserializer.forSchema(schema);
+      RowJsonDeserializer.forSchema(schema);
     }
 
     @Test
@@ -477,11 +321,9 @@ public class RowJsonTest {
       Schema schema = Schema.builder().addArrayField("f_dateTimeArray", FieldType.DATETIME).build();
 
       thrown.expect(UnsupportedRowJsonException.class);
-      thrown.expectMessage("DATETIME");
-      thrown.expectMessage("f_dateTimeArray[]");
-      thrown.expectMessage("not supported");
+      thrown.expectMessage("DATETIME is not supported");
 
-      RowJson.RowJsonDeserializer.forSchema(schema);
+      RowJsonDeserializer.forSchema(schema);
     }
 
     @Test
@@ -492,28 +334,9 @@ public class RowJsonTest {
       Schema schema = Schema.builder().addRowField("f_nestedRow", nestedSchema).build();
 
       thrown.expect(UnsupportedRowJsonException.class);
-      thrown.expectMessage("DATETIME");
-      thrown.expectMessage("f_nestedRow.f_dateTimeArray[]");
-      thrown.expectMessage("not supported");
+      thrown.expectMessage("DATETIME is not supported");
 
-      RowJson.RowJsonDeserializer.forSchema(schema);
-    }
-
-    @Test
-    public void testDeserializerThrowsForMultipleUnsupportedFieldTypes() throws Exception {
-      Schema schema =
-          Schema.builder()
-              .addInt32Field("f_int32")
-              .addDateTimeField("f_dateTime")
-              .addArrayField("f_dateTimeArray", FieldType.DATETIME)
-              .build();
-
-      thrown.expect(UnsupportedRowJsonException.class);
-      thrown.expectMessage("f_dateTime=DATETIME");
-      thrown.expectMessage("f_dateTimeArray[]=DATETIME");
-      thrown.expectMessage("not supported");
-
-      RowJson.RowJsonDeserializer.forSchema(schema);
+      RowJsonDeserializer.forSchema(schema);
     }
 
     @Test
@@ -571,13 +394,11 @@ public class RowJsonTest {
       String fieldName = "f_" + fieldType.getTypeName().name().toLowerCase();
       Schema schema = schemaWithField(fieldName, fieldType);
       Row expectedRow = Row.withSchema(schema).addValues(expectedRowFieldValue).build();
-      ObjectMapper jsonParser =
-          newObjectMapperWith(
-              RowJsonSerializer.forSchema(schema), RowJsonDeserializer.forSchema(schema));
+      ObjectMapper jsonParser = newObjectMapperFor(schema);
 
       Row parsedRow = jsonParser.readValue(jsonObjectWith(fieldName, jsonFieldValue), Row.class);
 
-      assertThat(expectedRow, equalTo(parsedRow));
+      assertEquals(expectedRow, parsedRow);
     }
 
     @Test
@@ -661,9 +482,7 @@ public class RowJsonTest {
       String fieldName = "f_" + fieldType.getTypeName().name().toLowerCase();
 
       Schema schema = schemaWithField(fieldName, fieldType);
-      ObjectMapper jsonParser =
-          newObjectMapperWith(
-              RowJsonSerializer.forSchema(schema), RowJsonDeserializer.forSchema(schema));
+      ObjectMapper jsonParser = newObjectMapperFor(schema);
 
       thrown.expectMessage(fieldName);
       thrown.expectCause(unsupportedWithMessage(jsonFieldValue, "out of range"));
@@ -690,19 +509,10 @@ public class RowJsonTest {
         hasProperty("message", stringContainsInOrder(Arrays.asList(message))));
   }
 
-  private static ObjectMapper newObjectMapperWith(
-      RowJsonSerializer ser, RowJsonDeserializer deser) {
+  private static ObjectMapper newObjectMapperFor(Schema schema) {
     SimpleModule simpleModule = new SimpleModule("rowSerializationTesModule");
-    simpleModule.addSerializer(Row.class, ser);
-    simpleModule.addDeserializer(Row.class, deser);
-    ObjectMapper objectMapper = new ObjectMapper();
-    objectMapper.registerModule(simpleModule);
-    return objectMapper;
-  }
-
-  private static ObjectMapper newObjectMapperWith(RowJsonDeserializer deser) {
-    SimpleModule simpleModule = new SimpleModule("rowSerializationTesModule");
-    simpleModule.addDeserializer(Row.class, deser);
+    simpleModule.addSerializer(Row.class, RowJsonSerializer.forSchema(schema));
+    simpleModule.addDeserializer(Row.class, RowJsonDeserializer.forSchema(schema));
     ObjectMapper objectMapper = new ObjectMapper();
     objectMapper.registerModule(simpleModule);
     return objectMapper;

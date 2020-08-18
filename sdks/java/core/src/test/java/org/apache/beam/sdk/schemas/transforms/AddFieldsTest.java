@@ -52,18 +52,16 @@ public class AddFieldsTest {
             .apply(
                 AddFields.<Row>create()
                     .field("field2", Schema.FieldType.INT32)
-                    .field("field3", Schema.FieldType.array(Schema.FieldType.STRING))
-                    .field("field4", Schema.FieldType.iterable(Schema.FieldType.STRING)));
+                    .field("field3", Schema.FieldType.array(Schema.FieldType.STRING)));
 
     Schema expectedSchema =
         Schema.builder()
             .addStringField("field1")
             .addNullableField("field2", Schema.FieldType.INT32)
             .addNullableField("field3", Schema.FieldType.array(Schema.FieldType.STRING))
-            .addNullableField("field4", Schema.FieldType.iterable(Schema.FieldType.STRING))
             .build();
     assertEquals(expectedSchema, added.getSchema());
-    Row expected = Row.withSchema(expectedSchema).addValues("value", null, null, null).build();
+    Row expected = Row.withSchema(expectedSchema).addValues("value", null, null).build();
     PAssert.that(added).containsInAnyOrder(expected);
     pipeline.run();
   }
@@ -102,21 +100,19 @@ public class AddFieldsTest {
             .apply(
                 AddFields.<Row>create()
                     .field("nested.field2", Schema.FieldType.INT32)
-                    .field("nested.field3", Schema.FieldType.array(Schema.FieldType.STRING))
-                    .field("nested.field4", Schema.FieldType.iterable(Schema.FieldType.STRING)));
+                    .field("nested.field3", Schema.FieldType.array(Schema.FieldType.STRING)));
 
     Schema expectedNestedSchema =
         Schema.builder()
             .addStringField("field1")
             .addNullableField("field2", Schema.FieldType.INT32)
             .addNullableField("field3", Schema.FieldType.array(Schema.FieldType.STRING))
-            .addNullableField("field4", Schema.FieldType.iterable(Schema.FieldType.STRING))
             .build();
     Schema expectedSchema = Schema.builder().addRowField("nested", expectedNestedSchema).build();
     assertEquals(expectedSchema, added.getSchema());
 
     Row expectedNested =
-        Row.withSchema(expectedNestedSchema).addValues("value", null, null, null).build();
+        Row.withSchema(expectedNestedSchema).addValues("value", null, null).build();
     Row expected = Row.withSchema(expectedSchema).addValue(expectedNested).build();
 
     PAssert.that(added).containsInAnyOrder(expected);
@@ -138,21 +134,17 @@ public class AddFieldsTest {
             .apply(
                 AddFields.<Row>create()
                     .field("nested.field2", Schema.FieldType.INT32, 42)
-                    .field("nested.field3", Schema.FieldType.array(Schema.FieldType.STRING), list)
-                    .field(
-                        "nested.field4", Schema.FieldType.iterable(Schema.FieldType.STRING), list));
+                    .field("nested.field3", Schema.FieldType.array(Schema.FieldType.STRING), list));
 
     Schema expectedNestedSchema =
         Schema.builder()
             .addStringField("field1")
             .addField("field2", Schema.FieldType.INT32)
             .addField("field3", Schema.FieldType.array(Schema.FieldType.STRING))
-            .addField("field4", Schema.FieldType.iterable(Schema.FieldType.STRING))
             .build();
     Schema expectedSchema = Schema.builder().addRowField("nested", expectedNestedSchema).build();
     assertEquals(expectedSchema, added.getSchema());
-    Row expectedNested =
-        Row.withSchema(expectedNestedSchema).addValues("value", 42, list, list).build();
+    Row expectedNested = Row.withSchema(expectedNestedSchema).addValues("value", 42, list).build();
     Row expected = Row.withSchema(expectedSchema).addValue(expectedNested).build();
 
     PAssert.that(added).containsInAnyOrder(expected);
@@ -174,15 +166,13 @@ public class AddFieldsTest {
                 AddFields.<Row>create()
                     .field("field2", Schema.FieldType.INT32)
                     .field("nested.field2", Schema.FieldType.INT32)
-                    .field("nested.field3", Schema.FieldType.array(Schema.FieldType.STRING))
-                    .field("nested.field4", Schema.FieldType.iterable(Schema.FieldType.STRING)));
+                    .field("nested.field3", Schema.FieldType.array(Schema.FieldType.STRING)));
 
     Schema expectedNestedSchema =
         Schema.builder()
             .addStringField("field1")
             .addNullableField("field2", Schema.FieldType.INT32)
             .addNullableField("field3", Schema.FieldType.array(Schema.FieldType.STRING))
-            .addNullableField("field4", Schema.FieldType.iterable(Schema.FieldType.STRING))
             .build();
     Schema expectedSchema =
         Schema.builder()
@@ -192,7 +182,7 @@ public class AddFieldsTest {
     assertEquals(expectedSchema, added.getSchema());
 
     Row expectedNested =
-        Row.withSchema(expectedNestedSchema).addValues("value", null, null, null).build();
+        Row.withSchema(expectedNestedSchema).addValues("value", null, null).build();
     Row expected = Row.withSchema(expectedSchema).addValues(expectedNested, null).build();
 
     PAssert.that(added).containsInAnyOrder(expected);
@@ -212,15 +202,13 @@ public class AddFieldsTest {
                 AddFields.<Row>create()
                     .field("nested.field1", Schema.FieldType.STRING, "value")
                     .field("nested.field2", Schema.FieldType.INT32)
-                    .field("nested.field3", Schema.FieldType.array(Schema.FieldType.STRING))
-                    .field("nested.field4", Schema.FieldType.iterable(Schema.FieldType.STRING)));
+                    .field("nested.field3", Schema.FieldType.array(Schema.FieldType.STRING)));
 
     Schema expectedNestedSchema =
         Schema.builder()
             .addStringField("field1")
             .addNullableField("field2", Schema.FieldType.INT32)
             .addNullableField("field3", Schema.FieldType.array(Schema.FieldType.STRING))
-            .addNullableField("field4", Schema.FieldType.iterable(Schema.FieldType.STRING))
             .build();
     Schema expectedSchema =
         Schema.builder()
@@ -229,7 +217,7 @@ public class AddFieldsTest {
     assertEquals(expectedSchema, added.getSchema());
 
     Row expectedNested =
-        Row.withSchema(expectedNestedSchema).addValues("value", null, null, null).build();
+        Row.withSchema(expectedNestedSchema).addValues("value", null, null).build();
     Row expected = Row.withSchema(expectedSchema).addValue(expectedNested).build();
 
     PAssert.that(added).containsInAnyOrder(expected);
@@ -238,29 +226,19 @@ public class AddFieldsTest {
 
   @Test
   @Category(NeedsRunner.class)
-  public void addNestedCollectionField() {
+  public void addNestedArrayField() {
     Schema nested = Schema.builder().addStringField("field1").build();
-    Schema schema =
-        Schema.builder()
-            .addArrayField("array", Schema.FieldType.row(nested))
-            .addIterableField("iter", Schema.FieldType.row(nested))
-            .build();
+    Schema schema = Schema.builder().addArrayField("array", Schema.FieldType.row(nested)).build();
 
     Row subRow = Row.withSchema(nested).addValue("value").build();
-    Row row =
-        Row.withSchema(schema)
-            .addArray(subRow, subRow)
-            .addIterable(ImmutableList.of(subRow, subRow))
-            .build();
+    Row row = Row.withSchema(schema).addArray(subRow, subRow).build();
     PCollection<Row> added =
         pipeline
             .apply(Create.of(row).withRowSchema(schema))
             .apply(
                 AddFields.<Row>create()
                     .field("array.field2", Schema.FieldType.INT32)
-                    .field("array.field3", Schema.FieldType.array(Schema.FieldType.STRING))
-                    .field("iter.field2", Schema.FieldType.INT32)
-                    .field("iter.field3", Schema.FieldType.array(Schema.FieldType.STRING)));
+                    .field("array.field3", Schema.FieldType.array(Schema.FieldType.STRING)));
 
     Schema expectedNestedSchema =
         Schema.builder()
@@ -269,19 +247,12 @@ public class AddFieldsTest {
             .addNullableField("field3", Schema.FieldType.array(Schema.FieldType.STRING))
             .build();
     Schema expectedSchema =
-        Schema.builder()
-            .addArrayField("array", Schema.FieldType.row(expectedNestedSchema))
-            .addIterableField("iter", Schema.FieldType.row(expectedNestedSchema))
-            .build();
+        Schema.builder().addArrayField("array", Schema.FieldType.row(expectedNestedSchema)).build();
     assertEquals(expectedSchema, added.getSchema());
 
     Row expectedNested =
         Row.withSchema(expectedNestedSchema).addValues("value", null, null).build();
-    Row expected =
-        Row.withSchema(expectedSchema)
-            .addArray(expectedNested, expectedNested)
-            .addIterable(ImmutableList.of(expectedNested, expectedNested))
-            .build();
+    Row expected = Row.withSchema(expectedSchema).addArray(expectedNested, expectedNested).build();
 
     PAssert.that(added).containsInAnyOrder(expected);
     pipeline.run();
@@ -338,15 +309,13 @@ public class AddFieldsTest {
             .apply(
                 AddFields.<Row>create()
                     .field("map.field2", Schema.FieldType.INT32)
-                    .field("map.field3", Schema.FieldType.array(Schema.FieldType.STRING))
-                    .field("map.field4", Schema.FieldType.iterable(Schema.FieldType.STRING)));
+                    .field("map.field3", Schema.FieldType.array(Schema.FieldType.STRING)));
 
     Schema expectedNestedSchema =
         Schema.builder()
             .addStringField("field1")
             .addNullableField("field2", Schema.FieldType.INT32)
             .addNullableField("field3", Schema.FieldType.array(Schema.FieldType.STRING))
-            .addNullableField("field4", Schema.FieldType.iterable(Schema.FieldType.STRING))
             .build();
     Schema expectedSchema =
         Schema.builder()
@@ -355,7 +324,7 @@ public class AddFieldsTest {
     assertEquals(expectedSchema, added.getSchema());
 
     Row expectedNested =
-        Row.withSchema(expectedNestedSchema).addValues("value", null, null, null).build();
+        Row.withSchema(expectedNestedSchema).addValues("value", null, null).build();
     Row expected =
         Row.withSchema(expectedSchema).addValue(ImmutableMap.of("key", expectedNested)).build();
 

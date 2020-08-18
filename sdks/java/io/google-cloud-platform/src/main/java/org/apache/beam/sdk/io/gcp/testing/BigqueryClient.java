@@ -59,13 +59,12 @@ import java.util.Objects;
 import java.util.Random;
 import java.util.stream.Collectors;
 import javax.annotation.Nonnull;
-import org.apache.beam.sdk.annotations.Internal;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.extensions.gcp.util.BackOffAdapter;
 import org.apache.beam.sdk.extensions.gcp.util.Transport;
 import org.apache.beam.sdk.util.FluentBackoff;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Lists;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -111,7 +110,6 @@ import org.slf4j.LoggerFactory;
  *    client.insertDataToTable(projectId, datasetId, tableName, rows)
  * ]}</pre>
  */
-@Internal
 public class BigqueryClient {
   private static final Logger LOG = LoggerFactory.getLogger(BigqueryClient.class);
   // The maximum number of retries to execute a BigQuery RPC
@@ -175,7 +173,8 @@ public class BigqueryClient {
     return queryWithRetries(query, projectId, false, true);
   }
 
-  private @Nullable Object getTypedCellValue(TableFieldSchema fieldSchema, Object v) {
+  @Nullable
+  private Object getTypedCellValue(TableFieldSchema fieldSchema, Object v) {
     if (Data.isNull(v)) {
       return null;
     }

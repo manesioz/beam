@@ -34,6 +34,7 @@ import java.nio.channels.WritableByteChannel;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
@@ -60,7 +61,6 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.annotations.Visi
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Predicates;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterables;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Lists;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Duration;
 
 /**
@@ -273,8 +273,8 @@ public class TextIO {
   /** Implementation of {@link #read}. */
   @AutoValue
   public abstract static class Read extends PTransform<PBegin, PCollection<String>> {
-
-    abstract @Nullable ValueProvider<String> getFilepattern();
+    @Nullable
+    abstract ValueProvider<String> getFilepattern();
 
     abstract MatchConfiguration getMatchConfiguration();
 
@@ -283,7 +283,8 @@ public class TextIO {
     abstract Compression getCompression();
 
     @SuppressWarnings("mutable") // this returns an array that can be mutated by the caller
-    abstract byte @Nullable [] getDelimiter();
+    @Nullable
+    abstract byte[] getDelimiter();
 
     abstract Builder toBuilder();
 
@@ -297,7 +298,7 @@ public class TextIO {
 
       abstract Builder setCompression(Compression compression);
 
-      abstract Builder setDelimiter(byte @Nullable [] delimiter);
+      abstract Builder setDelimiter(byte[] delimiter);
 
       abstract Read build();
     }
@@ -453,7 +454,8 @@ public class TextIO {
     abstract Compression getCompression();
 
     @SuppressWarnings("mutable") // this returns an array that can be mutated by the caller
-    abstract byte @Nullable [] getDelimiter();
+    @Nullable
+    abstract byte[] getDelimiter();
 
     abstract Builder toBuilder();
 
@@ -463,7 +465,7 @@ public class TextIO {
 
       abstract Builder setCompression(Compression compression);
 
-      abstract Builder setDelimiter(byte @Nullable [] delimiter);
+      abstract Builder setDelimiter(byte[] delimiter);
 
       abstract ReadAll build();
     }
@@ -537,7 +539,8 @@ public class TextIO {
     abstract long getDesiredBundleSizeBytes();
 
     @SuppressWarnings("mutable") // this returns an array that can be mutated by the caller
-    abstract byte @Nullable [] getDelimiter();
+    @Nullable
+    abstract byte[] getDelimiter();
 
     abstract Builder toBuilder();
 
@@ -545,7 +548,7 @@ public class TextIO {
     abstract static class Builder {
       abstract Builder setDesiredBundleSizeBytes(long desiredBundleSizeBytes);
 
-      abstract Builder setDelimiter(byte @Nullable [] delimiter);
+      abstract Builder setDelimiter(byte[] delimiter);
 
       abstract ReadFiles build();
     }
@@ -602,44 +605,55 @@ public class TextIO {
       extends PTransform<PCollection<UserT>, WriteFilesResult<DestinationT>> {
 
     /** The prefix of each file written, combined with suffix and shardTemplate. */
-    abstract @Nullable ValueProvider<ResourceId> getFilenamePrefix();
+    @Nullable
+    abstract ValueProvider<ResourceId> getFilenamePrefix();
 
     /** The suffix of each file written, combined with prefix and shardTemplate. */
-    abstract @Nullable String getFilenameSuffix();
+    @Nullable
+    abstract String getFilenameSuffix();
 
     /** The base directory used for generating temporary files. */
-    abstract @Nullable ValueProvider<ResourceId> getTempDirectory();
+    @Nullable
+    abstract ValueProvider<ResourceId> getTempDirectory();
 
     /** The delimiter between string records. */
     @SuppressWarnings("mutable") // this returns an array that can be mutated by the caller
     abstract char[] getDelimiter();
 
     /** An optional header to add to each file. */
-    abstract @Nullable String getHeader();
+    @Nullable
+    abstract String getHeader();
 
     /** An optional footer to add to each file. */
-    abstract @Nullable String getFooter();
+    @Nullable
+    abstract String getFooter();
 
     /** Requested number of shards. 0 for automatic. */
     abstract int getNumShards();
 
     /** The shard template of each file written, combined with prefix and suffix. */
-    abstract @Nullable String getShardTemplate();
+    @Nullable
+    abstract String getShardTemplate();
 
     /** A policy for naming output files. */
-    abstract @Nullable FilenamePolicy getFilenamePolicy();
+    @Nullable
+    abstract FilenamePolicy getFilenamePolicy();
 
     /** Allows for value-dependent {@link DynamicDestinations} to be vended. */
-    abstract @Nullable DynamicDestinations<UserT, DestinationT, String> getDynamicDestinations();
+    @Nullable
+    abstract DynamicDestinations<UserT, DestinationT, String> getDynamicDestinations();
 
     /** A destination function for using {@link DefaultFilenamePolicy}. */
-    abstract @Nullable SerializableFunction<UserT, Params> getDestinationFunction();
+    @Nullable
+    abstract SerializableFunction<UserT, Params> getDestinationFunction();
 
     /** A default destination for empty PCollections. */
-    abstract @Nullable Params getEmptyDestination();
+    @Nullable
+    abstract Params getEmptyDestination();
 
     /** A function that converts UserT to a String, for writing to the file. */
-    abstract @Nullable SerializableFunction<UserT, String> getFormatFunction();
+    @Nullable
+    abstract SerializableFunction<UserT, String> getFormatFunction();
 
     /** Whether to write windowed output files. */
     abstract boolean getWindowedWrites();
@@ -1255,10 +1269,11 @@ public class TextIO {
   /** Implementation of {@link #sink}. */
   @AutoValue
   public abstract static class Sink implements FileIO.Sink<String> {
+    @Nullable
+    abstract String getHeader();
 
-    abstract @Nullable String getHeader();
-
-    abstract @Nullable String getFooter();
+    @Nullable
+    abstract String getFooter();
 
     abstract Builder toBuilder();
 
@@ -1281,7 +1296,7 @@ public class TextIO {
       return toBuilder().setFooter(footer).build();
     }
 
-    private transient @Nullable PrintWriter writer;
+    @Nullable private transient PrintWriter writer;
 
     @Override
     public void open(WritableByteChannel channel) throws IOException {

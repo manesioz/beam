@@ -18,7 +18,6 @@
 package org.apache.beam.runners.jet;
 
 import com.hazelcast.config.EventJournalConfig;
-import com.hazelcast.config.MapConfig;
 import com.hazelcast.jet.JetInstance;
 import com.hazelcast.jet.JetTestInstanceFactory;
 import com.hazelcast.jet.config.JetConfig;
@@ -86,13 +85,8 @@ public class TestJetRunner extends PipelineRunner<PipelineResult> {
 
   private static Collection<JetInstance> initMemberInstances(
       JetTestInstanceFactory internalFactory) {
-    JetConfig config =
-        new JetConfig()
-            .configureHazelcast(
-                c ->
-                    c.addMapConfig(
-                        new MapConfig("map")
-                            .setEventJournalConfig(new EventJournalConfig().setEnabled(true))));
+    JetConfig config = new JetConfig();
+    config.getHazelcastConfig().addEventJournalConfig(new EventJournalConfig().setMapName("map"));
 
     return Arrays.asList(internalFactory.newMember(config), internalFactory.newMember(config));
   }

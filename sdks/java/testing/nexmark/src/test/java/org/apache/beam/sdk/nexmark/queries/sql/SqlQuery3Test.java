@@ -31,12 +31,8 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Immutabl
 import org.joda.time.Instant;
 import org.junit.Rule;
 import org.junit.Test;
-import org.junit.experimental.runners.Enclosed;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
 
 /** Unit tests for {@link SqlQuery3}. */
-@RunWith(Enclosed.class)
 public class SqlQuery3Test {
 
   private static final List<Person> PEOPLE =
@@ -86,33 +82,16 @@ public class SqlQuery3Test {
           new NameCityStateId("name_1", "city_1", "CA", 6L),
           new NameCityStateId("name_3", "city_3", "ID", 8L));
 
-  private abstract static class SqlQuery3TestCases {
-    protected abstract SqlQuery3 getQuery(NexmarkConfiguration configuration);
+  @Rule public TestPipeline testPipeline = TestPipeline.create();
 
-    @Rule public TestPipeline testPipeline = TestPipeline.create();
+  @Test
+  public void testJoinsPeopleWithAuctions() throws Exception {
+    PCollection<Event> events = testPipeline.apply(Create.of(PEOPLE_AND_AUCTIONS_EVENTS));
 
-    @Test
-    public void testJoinsPeopleWithAuctions() throws Exception {
-      PCollection<Event> events = testPipeline.apply(Create.of(PEOPLE_AND_AUCTIONS_EVENTS));
-      PAssert.that(events.apply(getQuery(new NexmarkConfiguration()))).containsInAnyOrder(RESULTS);
-      testPipeline.run();
-    }
-  }
+    PAssert.that(events.apply(new SqlQuery3(new NexmarkConfiguration())))
+        .containsInAnyOrder(RESULTS);
 
-  @RunWith(JUnit4.class)
-  public static class SqlQuery3TestCalcite extends SqlQuery3TestCases {
-    @Override
-    protected SqlQuery3 getQuery(NexmarkConfiguration configuration) {
-      return SqlQuery3.calciteSqlQuery3(configuration);
-    }
-  }
-
-  @RunWith(JUnit4.class)
-  public static class SqlQuery3TestZetaSql extends SqlQuery3TestCases {
-    @Override
-    protected SqlQuery3 getQuery(NexmarkConfiguration configuration) {
-      return SqlQuery3.calciteSqlQuery3(configuration);
-    }
+    testPipeline.run();
   }
 
   private static Person newPerson(long id, String state) {

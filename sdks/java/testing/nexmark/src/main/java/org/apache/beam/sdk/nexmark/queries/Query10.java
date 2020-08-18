@@ -24,6 +24,7 @@ import java.nio.channels.Channels;
 import java.nio.channels.WritableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ThreadLocalRandom;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.extensions.gcp.options.GcsOptions;
 import org.apache.beam.sdk.metrics.Counter;
@@ -40,7 +41,6 @@ import org.apache.beam.sdk.transforms.windowing.AfterPane;
 import org.apache.beam.sdk.transforms.windowing.AfterProcessingTime;
 import org.apache.beam.sdk.transforms.windowing.AfterWatermark;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
-import org.apache.beam.sdk.transforms.windowing.DefaultTrigger;
 import org.apache.beam.sdk.transforms.windowing.FixedWindows;
 import org.apache.beam.sdk.transforms.windowing.PaneInfo;
 import org.apache.beam.sdk.transforms.windowing.PaneInfo.Timing;
@@ -48,7 +48,6 @@ import org.apache.beam.sdk.transforms.windowing.Repeatedly;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.slf4j.Logger;
@@ -76,7 +75,7 @@ public class Query10 extends NexmarkQueryTransform<Done> {
     /** Timing of records in this file. */
     private final PaneInfo.Timing timing;
     /** Path to file containing records, or {@literal null} if no output required. */
-    private final @Nullable String filename;
+    @Nullable private final String filename;
 
     public OutputFile(
         Instant maxTimestamp,
@@ -98,7 +97,7 @@ public class Query10 extends NexmarkQueryTransform<Done> {
   }
 
   /** GCS uri prefix for all log and 'finished' files. If null they won't be written. */
-  private @Nullable String outputPath;
+  @Nullable private String outputPath;
 
   /** Maximum number of workers, used to determine log sharding factor. */
   private int maxNumWorkers;
@@ -162,7 +161,8 @@ public class Query10 extends NexmarkQueryTransform<Done> {
    * Return path to which we should write the index for {@code window}, or {@literal null} if no
    * output required.
    */
-  private @Nullable String indexPathFor(BoundedWindow window) {
+  @Nullable
+  private String indexPathFor(BoundedWindow window) {
     if (outputPath == null) {
       return null;
     }
@@ -314,7 +314,7 @@ public class Query10 extends NexmarkQueryTransform<Done> {
             name + ".WindowLogFiles",
             Window.<KV<Void, OutputFile>>into(
                     FixedWindows.of(Duration.standardSeconds(configuration.windowSizeSec)))
-                .triggering(DefaultTrigger.of())
+                .triggering(AfterWatermark.pastEndOfWindow())
                 // We expect no late data here, but we'll assume the worst so we can detect any.
                 .withAllowedLateness(Duration.standardDays(1))
                 .discardingFiredPanes())

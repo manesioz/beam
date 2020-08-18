@@ -17,7 +17,6 @@
  */
 package org.apache.beam.runners.flink.metrics;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.PrintStream;
@@ -41,8 +40,6 @@ public class FileReporter extends AbstractReporter {
   private PrintStream ps;
 
   @Override
-  @SuppressFBWarnings(
-      "DM_DEFAULT_ENCODING") // should this method specify the encoding for the PrintStream?
   public void open(MetricConfig config) {
     synchronized (this) {
       if (path == null) {

@@ -30,7 +30,6 @@ import org.apache.beam.sdk.coders.VarIntCoder;
 import org.apache.beam.sdk.coders.VarLongCoder;
 import org.apache.beam.sdk.nexmark.NexmarkUtils;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Objects;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /** Result of Query4. */
 public class CategoryPrice implements KnownSize, Serializable {
@@ -100,7 +99,7 @@ public class CategoryPrice implements KnownSize, Serializable {
   }
 
   @Override
-  public boolean equals(@Nullable Object o) {
+  public boolean equals(Object o) {
     if (this == o) {
       return true;
     }

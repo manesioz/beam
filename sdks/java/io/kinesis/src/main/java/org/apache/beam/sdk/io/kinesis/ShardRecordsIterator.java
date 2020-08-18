@@ -24,6 +24,7 @@ import com.amazonaws.services.kinesis.model.ExpiredIteratorException;
 import com.amazonaws.services.kinesis.model.Shard;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import org.joda.time.Instant;
 import org.slf4j.Logger;
@@ -42,15 +43,14 @@ class ShardRecordsIterator {
   private final RecordFilter filter;
   private final String streamName;
   private final String shardId;
-  private final AtomicReference<ShardCheckpoint> checkpoint;
-  private final WatermarkPolicy watermarkPolicy;
-  private final WatermarkPolicyFactory watermarkPolicyFactory;
-  private final WatermarkPolicy latestRecordTimestampPolicy =
-      WatermarkPolicyFactory.withArrivalTimePolicy().createWatermarkPolicy();
+  private AtomicReference<ShardCheckpoint> checkpoint;
   private String shardIterator;
+  private AtomicLong millisBehindLatest = new AtomicLong(Long.MAX_VALUE);
+  private AtomicReference<WatermarkPolicy> watermarkPolicy;
+  private WatermarkPolicyFactory watermarkPolicyFactory;
 
   ShardRecordsIterator(
-      ShardCheckpoint initialCheckpoint,
+      final ShardCheckpoint initialCheckpoint,
       SimplifiedKinesisClient simplifiedKinesisClient,
       WatermarkPolicyFactory watermarkPolicyFactory)
       throws TransientKinesisException {
@@ -58,7 +58,7 @@ class ShardRecordsIterator {
   }
 
   ShardRecordsIterator(
-      ShardCheckpoint initialCheckpoint,
+      final ShardCheckpoint initialCheckpoint,
       SimplifiedKinesisClient simplifiedKinesisClient,
       WatermarkPolicyFactory watermarkPolicyFactory,
       RecordFilter filter)
@@ -69,7 +69,7 @@ class ShardRecordsIterator {
     this.streamName = initialCheckpoint.getStreamName();
     this.shardId = initialCheckpoint.getShardId();
     this.shardIterator = initialCheckpoint.getShardIterator(kinesis);
-    this.watermarkPolicy = watermarkPolicyFactory.createWatermarkPolicy();
+    this.watermarkPolicy = new AtomicReference<>(watermarkPolicyFactory.createWatermarkPolicy());
     this.watermarkPolicyFactory = watermarkPolicyFactory;
   }
 
@@ -82,13 +82,10 @@ class ShardRecordsIterator {
               streamName, shardId));
     }
     GetKinesisRecordsResult response = fetchRecords();
-    LOG.debug(
-        "Fetched {} new records from shard: streamName={}, shardId={}",
-        response.getRecords().size(),
-        streamName,
-        shardId);
+    LOG.debug("Fetched {} new records", response.getRecords().size());
 
     List<KinesisRecord> filteredRecords = filter.apply(response.getRecords(), checkpoint.get());
+    millisBehindLatest.set(response.getMillisBehindLatest());
     return filteredRecords;
   }
 
@@ -98,11 +95,7 @@ class ShardRecordsIterator {
       shardIterator = response.getNextShardIterator();
       return response;
     } catch (ExpiredIteratorException e) {
-      LOG.info(
-          "Refreshing expired iterator for shard: streamName={}, shardId={}",
-          streamName,
-          shardId,
-          e);
+      LOG.info("Refreshing expired iterator", e);
       shardIterator = checkpoint.get().getShardIterator(kinesis);
       return fetchRecords();
     }
@@ -114,16 +107,11 @@ class ShardRecordsIterator {
 
   void ackRecord(KinesisRecord record) {
     checkpoint.set(checkpoint.get().moveAfter(record));
-    watermarkPolicy.update(record);
-    latestRecordTimestampPolicy.update(record);
+    watermarkPolicy.get().update(record);
   }
 
   Instant getShardWatermark() {
-    return watermarkPolicy.getWatermark();
-  }
-
-  Instant getLatestRecordTimestamp() {
-    return latestRecordTimestampPolicy.getWatermark();
+    return watermarkPolicy.get().getWatermark();
   }
 
   String getShardId() {

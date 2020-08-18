@@ -25,7 +25,6 @@ import org.apache.beam.sdk.coders.CoderException;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.util.CoderUtils;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Splitter;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /** Factory methods for creating the {@link StateNamespace StateNamespaces}. */
 public class StateNamespaces {
@@ -67,7 +66,7 @@ public class StateNamespaces {
     }
 
     @Override
-    public boolean equals(@Nullable Object obj) {
+    public boolean equals(Object obj) {
       return obj == this || obj instanceof GlobalNamespace;
     }
 
@@ -124,7 +123,7 @@ public class StateNamespaces {
     }
 
     @Override
-    public boolean equals(@Nullable Object obj) {
+    public boolean equals(Object obj) {
       if (obj == this) {
         return true;
       }
@@ -205,7 +204,7 @@ public class StateNamespaces {
     }
 
     @Override
-    public boolean equals(@Nullable Object obj) {
+    public boolean equals(Object obj) {
       if (obj == this) {
         return true;
       }

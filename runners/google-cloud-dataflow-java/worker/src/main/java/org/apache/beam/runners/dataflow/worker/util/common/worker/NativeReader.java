@@ -21,7 +21,7 @@ import java.io.IOException;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Observable;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import javax.annotation.Nullable;
 
 /**
  * Abstract base class for native readers in the Dataflow runner.
@@ -62,7 +62,8 @@ public abstract class NativeReader<T> extends Observable {
      *     are discouraged from throwing {@code UnsupportedOperationException} in this case). By
      *     default, returns {@code null}.
      */
-    public @Nullable Progress getProgress() {
+    @Nullable
+    public Progress getProgress() {
       return null;
     }
 
@@ -71,7 +72,8 @@ public abstract class NativeReader<T> extends Observable {
      * "primary" part as small as possible, so that this iterator will produce a minimal number of
      * (ideally no) further records.
      */
-    public @Nullable DynamicSplitResult requestCheckpoint() {
+    @Nullable
+    public DynamicSplitResult requestCheckpoint() {
       return null;
     }
 
@@ -105,7 +107,8 @@ public abstract class NativeReader<T> extends Observable {
      *     a {@link NativeReader.DynamicSplitResult} describing how the input was split into a
      *     primary and residual part. By default, returns {@code null}.
      */
-    public @Nullable DynamicSplitResult requestDynamicSplit(DynamicSplitRequest request) {
+    @Nullable
+    public DynamicSplitResult requestDynamicSplit(DynamicSplitRequest request) {
       return null;
     }
 
@@ -232,7 +235,7 @@ public abstract class NativeReader<T> extends Observable {
     }
 
     @Override
-    public boolean equals(@Nullable Object obj) {
+    public boolean equals(Object obj) {
       if (this == obj) {
         return true;
       } else if (!(obj instanceof DynamicSplitResultWithPosition)) {

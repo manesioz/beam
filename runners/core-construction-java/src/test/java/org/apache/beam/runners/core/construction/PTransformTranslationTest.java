@@ -29,6 +29,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import javax.annotation.Nullable;
 import org.apache.beam.model.pipeline.v1.RunnerApi;
 import org.apache.beam.model.pipeline.v1.RunnerApi.Components;
 import org.apache.beam.sdk.Pipeline;
@@ -52,7 +53,6 @@ import org.apache.beam.sdk.values.PValue;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.TupleTagList;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -182,8 +182,9 @@ public class PTransformTranslationTest {
             return "fake/urn";
           }
 
+          @Nullable
           @Override
-          public RunnerApi.@Nullable FunctionSpec getSpec() {
+          public RunnerApi.FunctionSpec getSpec() {
             return null;
           }
         };

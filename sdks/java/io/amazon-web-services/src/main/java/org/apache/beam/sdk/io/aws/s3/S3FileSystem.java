@@ -60,6 +60,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.io.FileSystem;
 import org.apache.beam.sdk.io.aws.options.S3ClientBuilderFactory;
 import org.apache.beam.sdk.io.aws.options.S3Options;
@@ -79,7 +80,6 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Multimap
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.util.concurrent.ListeningExecutorService;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.util.concurrent.MoreExecutors;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.util.concurrent.ThreadFactoryBuilder;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -239,9 +239,11 @@ class S3FileSystem extends FileSystem<S3ResourceId> {
 
     abstract S3ResourceId getGlobPath();
 
-    abstract @Nullable List<S3ResourceId> getExpandedPaths();
+    @Nullable
+    abstract List<S3ResourceId> getExpandedPaths();
 
-    abstract @Nullable IOException getException();
+    @Nullable
+    abstract IOException getException();
 
     static ExpandedGlob create(S3ResourceId globPath, List<S3ResourceId> expandedPaths) {
       checkNotNull(globPath, "globPath");
@@ -261,9 +263,11 @@ class S3FileSystem extends FileSystem<S3ResourceId> {
 
     abstract S3ResourceId getPath();
 
-    abstract @Nullable String getContentEncoding();
+    @Nullable
+    abstract String getContentEncoding();
 
-    abstract @Nullable IOException getException();
+    @Nullable
+    abstract IOException getException();
 
     static PathWithEncoding create(S3ResourceId path, String contentEncoding) {
       checkNotNull(path, "path");

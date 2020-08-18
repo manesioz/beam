@@ -20,7 +20,6 @@ package org.apache.beam.runners.direct;
 import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions.checkNotNull;
 
 import java.util.Collection;
-import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
@@ -29,7 +28,6 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorService;
-import org.apache.beam.runners.core.InMemoryBundleFinalizer;
 import org.apache.beam.runners.core.ReadyCheckingSideInputReader;
 import org.apache.beam.runners.core.SideInputReader;
 import org.apache.beam.runners.core.TimerInternals.TimerData;
@@ -52,8 +50,6 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Immutabl
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterables;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.util.concurrent.MoreExecutors;
 import org.joda.time.Instant;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * The evaluation context for a specific pipeline being executed by the {@link DirectRunner}.
@@ -72,8 +68,6 @@ import org.slf4j.LoggerFactory;
  * executed.
  */
 class EvaluationContext {
-  private static final Logger LOG = LoggerFactory.getLogger(EvaluationContext.class);
-
   /** The graph representing this {@link Pipeline}. */
   private final DirectGraph graph;
 
@@ -153,7 +147,6 @@ class EvaluationContext {
       CommittedBundle<?> completedBundle,
       Iterable<TimerData> completedTimers,
       TransformResult<?> result) {
-
     Iterable<? extends CommittedBundle<?>> committedBundles =
         commitBundles(result.getOutputBundles());
     metrics.commitLogical(completedBundle, result.getLogicalMetricUpdates());
@@ -188,15 +181,6 @@ class EvaluationContext {
         committedResult.getUnprocessedInputs().orElse(null),
         committedResult.getOutputs(),
         result.getWatermarkHold());
-
-    // Callback and requested bundle finalizations
-    for (InMemoryBundleFinalizer.Finalization finalization : result.getBundleFinalizations()) {
-      try {
-        finalization.getCallback().onBundleSuccess();
-      } catch (Exception e) {
-        LOG.warn("Failed to finalize {} for completed bundle {}", finalization, completedBundle, e);
-      }
-    }
     return committedResult;
   }
 
@@ -242,11 +226,7 @@ class EvaluationContext {
   private void fireAvailableCallbacks(AppliedPTransform<?, ?, ?> producingTransform) {
     TransformWatermarks watermarks = watermarkManager.getWatermarks(producingTransform);
     Instant outputWatermark = watermarks.getOutputWatermark();
-    try {
-      callbackExecutor.fireForWatermark(producingTransform, outputWatermark);
-    } catch (InterruptedException ex) {
-      Thread.currentThread().interrupt();
-    }
+    callbackExecutor.fireForWatermark(producingTransform, outputWatermark);
   }
 
   /** Create a {@link UncommittedBundle} for use by a source. */
@@ -383,23 +363,15 @@ class EvaluationContext {
     fireAllAvailableCallbacks();
   }
 
-  @VisibleForTesting
-  Collection<FiredTimers<AppliedPTransform<?, ?, ?>>> extractFiredTimers() {
-    return extractFiredTimers(Collections.emptyList());
-  }
-
   /**
-   * Extracts all timers that have been fired and have not already been extracted. Do not extract
-   * timers for given ignored transforms.
+   * Extracts all timers that have been fired and have not already been extracted.
    *
-   * @param ignoredTransforms transforms that must be ignored and timers not extracted for them
-   *     <p>This is a destructive operation. Timers will only appear in the result of this method
-   *     once for each time they are set.
+   * <p>This is a destructive operation. Timers will only appear in the result of this method once
+   * for each time they are set.
    */
-  Collection<FiredTimers<AppliedPTransform<?, ?, ?>>> extractFiredTimers(
-      Collection<AppliedPTransform<?, ?, ?>> ignoredTransforms) {
+  public Collection<FiredTimers<AppliedPTransform<?, ?, ?>>> extractFiredTimers() {
     forceRefresh();
-    return watermarkManager.extractFiredTimers(ignoredTransforms);
+    return watermarkManager.extractFiredTimers();
   }
 
   /** Returns true if the step will not produce additional output. */

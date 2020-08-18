@@ -18,9 +18,6 @@
 package org.apache.beam.sdk.nexmark.queries.sql;
 
 import org.apache.beam.sdk.extensions.sql.SqlTransform;
-import org.apache.beam.sdk.extensions.sql.impl.CalciteQueryPlanner;
-import org.apache.beam.sdk.extensions.sql.impl.QueryPlanner;
-import org.apache.beam.sdk.extensions.sql.zetasql.ZetaSQLQueryPlanner;
 import org.apache.beam.sdk.nexmark.model.AuctionPrice;
 import org.apache.beam.sdk.nexmark.model.Event;
 import org.apache.beam.sdk.nexmark.model.Event.Type;
@@ -29,7 +26,10 @@ import org.apache.beam.sdk.nexmark.queries.NexmarkQueryTransform;
 import org.apache.beam.sdk.nexmark.queries.NexmarkQueryUtil;
 import org.apache.beam.sdk.schemas.transforms.Convert;
 import org.apache.beam.sdk.transforms.Filter;
+import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.values.PCollection;
+import org.apache.beam.sdk.values.PInput;
+import org.apache.beam.sdk.values.Row;
 
 /**
  * Query 2, 'Filtering. Find bids with specific auction ids and show their bid price. In CQL syntax:
@@ -48,21 +48,13 @@ public class SqlQuery2 extends NexmarkQueryTransform<AuctionPrice> {
   private static final String QUERY_TEMPLATE =
       "SELECT auction, price FROM PCOLLECTION WHERE MOD(auction, %d) = 0";
 
-  private final long skipFactor;
-  private final Class<? extends QueryPlanner> plannerClass;
+  private final PTransform<PInput, PCollection<Row>> query;
 
-  private SqlQuery2(String name, long skipFactor, Class<? extends QueryPlanner> plannerClass) {
+  public SqlQuery2(long skipFactor) {
     super("SqlQuery2");
-    this.plannerClass = plannerClass;
-    this.skipFactor = skipFactor;
-  }
 
-  public static SqlQuery2 calciteSqlQuery2(long skipFactor) {
-    return new SqlQuery2("SqlQuery2", skipFactor, CalciteQueryPlanner.class);
-  }
-
-  public static SqlQuery2 zetaSqlQuery2(long skipFactor) {
-    return new SqlQuery2("ZetaSqlQuery2", skipFactor, ZetaSQLQueryPlanner.class);
+    String queryString = String.format(QUERY_TEMPLATE, skipFactor);
+    query = SqlTransform.query(queryString);
   }
 
   @Override
@@ -70,9 +62,7 @@ public class SqlQuery2 extends NexmarkQueryTransform<AuctionPrice> {
     return allEvents
         .apply(Filter.by(NexmarkQueryUtil.IS_BID))
         .apply(getName() + ".SelectEvent", new SelectEvent(Type.BID))
-        .apply(
-            SqlTransform.query(String.format(QUERY_TEMPLATE, skipFactor))
-                .withQueryPlannerClass(plannerClass))
+        .apply(query)
         .apply(Convert.fromRows(AuctionPrice.class));
   }
 }

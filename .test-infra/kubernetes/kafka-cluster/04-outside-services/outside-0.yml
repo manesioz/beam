@@ -17,6 +17,7 @@ kind: Service
 apiVersion: v1
 metadata:
   name: outside-0
+  namespace: kafka
 spec:
   selector:
     app: kafka

@@ -20,10 +20,7 @@ package org.apache.beam.runners.core.construction;
 import static org.junit.Assert.assertThat;
 
 import org.apache.beam.model.pipeline.v1.RunnerApi.FunctionSpec;
-import org.apache.beam.sdk.coders.BigEndianLongCoder;
-import org.apache.beam.sdk.coders.KvCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
-import org.apache.beam.sdk.io.range.OffsetRange;
 import org.apache.beam.sdk.runners.AppliedPTransform;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.transforms.Create;
@@ -34,8 +31,6 @@ import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.PCollectionViews;
 import org.apache.beam.sdk.values.PCollectionViews.TypeDescriptorSupplier;
-import org.apache.beam.sdk.values.PCollectionViews.ValueOrMetadata;
-import org.apache.beam.sdk.values.PCollectionViews.ValueOrMetadataCoder;
 import org.apache.beam.sdk.values.TypeDescriptors;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
 import org.hamcrest.Matchers;
@@ -51,47 +46,31 @@ public class CreatePCollectionViewTranslationTest {
   // Two parameters suffices because the nature of the serialization/deserialization of
   // the view is not what is being tested; it is just important that the round trip
   // is not vacuous.
-  @Parameters(name = "{index}: {0} {1}")
-  public static Iterable<Object[]> data() {
-    PCollection<String> singletonTestPCollection = p.apply(Create.of("one"));
-    PCollection<KV<Long, ValueOrMetadata<String, OffsetRange>>> listTestPCollection =
-        p.apply(
-            Create.of(KV.of(0L, ValueOrMetadata.<String, OffsetRange>create("one")))
-                .withCoder(
-                    KvCoder.of(
-                        BigEndianLongCoder.of(),
-                        ValueOrMetadataCoder.create(
-                            StringUtf8Coder.of(), OffsetRange.Coder.of()))));
-
+  @Parameters(name = "{index}: {0}")
+  public static Iterable<CreatePCollectionView<?, ?>> data() {
     return ImmutableList.of(
-        new Object[] {
-          CreatePCollectionView.of(
-              PCollectionViews.singletonView(
-                  singletonTestPCollection,
-                  (TypeDescriptorSupplier<String>) () -> TypeDescriptors.strings(),
-                  singletonTestPCollection.getWindowingStrategy(),
-                  false,
-                  null,
-                  StringUtf8Coder.of())),
-          singletonTestPCollection
-        },
-        new Object[] {
-          CreatePCollectionView.of(
-              PCollectionViews.listView(
-                  listTestPCollection,
-                  (TypeDescriptorSupplier<String>) () -> TypeDescriptors.strings(),
-                  listTestPCollection.getWindowingStrategy())),
-          listTestPCollection
-        });
+        CreatePCollectionView.of(
+            PCollectionViews.singletonView(
+                testPCollection,
+                (TypeDescriptorSupplier<String>) () -> TypeDescriptors.strings(),
+                testPCollection.getWindowingStrategy(),
+                false,
+                null,
+                StringUtf8Coder.of())),
+        CreatePCollectionView.of(
+            PCollectionViews.listView(
+                testPCollection,
+                (TypeDescriptorSupplier<String>) () -> TypeDescriptors.strings(),
+                testPCollection.getWindowingStrategy())));
   }
 
   @Parameter(0)
   public CreatePCollectionView<?, ?> createViewTransform;
 
-  @Parameter(1)
-  public PCollection<?> testPCollection;
-
   public static TestPipeline p = TestPipeline.create().enableAbandonedNodeEnforcement(false);
+
+  private static final PCollection<KV<Void, String>> testPCollection =
+      p.apply(Create.of(KV.of((Void) null, "one")));
 
   @Test
   public void testEncodedProto() throws Exception {

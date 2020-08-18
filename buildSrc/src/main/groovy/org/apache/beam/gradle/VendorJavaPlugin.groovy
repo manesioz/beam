@@ -21,7 +21,6 @@ package org.apache.beam.gradle
 import org.gradle.api.GradleException
 import org.gradle.api.Plugin
 import org.gradle.api.Project
-import org.gradle.api.artifacts.ProjectDependency
 import org.gradle.api.file.FileTree
 import org.gradle.api.publish.maven.MavenPublication
 
@@ -52,7 +51,6 @@ class VendorJavaPlugin implements Plugin<Project> {
   static class VendorJavaPluginConfig {
     List<String> dependencies
     List<String> runtimeDependencies
-    List<String> testDependencies
     Map<String, String> relocations
     List<String> exclusions
     String groupId
@@ -98,8 +96,7 @@ class VendorJavaPlugin implements Plugin<Project> {
 
       project.dependencies {
         config.dependencies.each { compile it }
-        config.runtimeDependencies.each { runtimeOnly it }
-        config.testDependencies.each { compileOnly it}
+        config.runtimeDependencies.each { runtime it }
       }
 
       // Create a task which emulates the maven-archiver plugin in generating a
@@ -109,7 +106,7 @@ class VendorJavaPlugin implements Plugin<Project> {
         outputs.file "${pomPropertiesFile}"
         doLast {
           new File("${pomPropertiesFile}").text =
-              """version=${config.version}
+                  """version=${config.version}
 groupId=${project.group}
 artifactId=${project.name}
 """
@@ -125,25 +122,21 @@ artifactId=${project.name}
         classifier = null
         mergeServiceFiles()
         zip64 true
-        exclude "META-INF/INDEX.LIST"
-        exclude "META-INF/*.SF"
-        exclude "META-INF/*.DSA"
-        exclude "META-INF/*.RSA"
       }
 
       project.task('validateVendoring', dependsOn: 'shadowJar') {
         inputs.files project.configurations.shadow.artifacts.files
         doLast {
           project.configurations.shadow.artifacts.files.each {
-            FileTree unexpectedlyExposedClasses = project.zipTree(it).matching {
+            FileTree exposedClasses = project.zipTree(it).matching {
               include "**/*.class"
               exclude "org/apache/beam/vendor/**"
               // BEAM-5919: Exclude paths for Java 9 multi-release jars.
               exclude "META-INF/versions/*/module-info.class"
               exclude "META-INF/versions/*/org/apache/beam/vendor/**"
             }
-            if (unexpectedlyExposedClasses.files) {
-              throw new GradleException("$it exposed classes outside of org.apache.beam namespace: ${unexpectedlyExposedClasses.files}")
+            if (exposedClasses.files) {
+              throw new GradleException("$it exposed classes outside of org.apache.beam namespace: ${exposedClasses.files}")
             }
           }
         }
@@ -189,11 +182,10 @@ artifactId=${project.name}
             }
             maven {
               url(project.properties['distMgmtSnapshotsUrl'] ?: isRelease(project)
-                  ? 'https://repository.apache.org/service/local/staging/deploy/maven2'
-                  : 'https://repository.apache.org/content/repositories/snapshots')
-              name(project.properties['distMgmtServerId'] ?: isRelease(project)
-                  ? 'apache.releases.https' : 'apache.snapshots.https')
-              // The maven settings plugin will load credentials from ~/.m2/settings.xml file that a user
+                      ? 'https://repository.apache.org/service/local/staging/deploy/maven2'
+                      : 'https://repository.apache.org/content/repositories/snapshots')
+
+              // We attempt to find and load credentials from ~/.m2/settings.xml file that a user
               // has configured with the Apache release and snapshot staging credentials.
               // <settings>
               //   <servers>
@@ -209,6 +201,18 @@ artifactId=${project.name}
               //     </server>
               //   </servers>
               // </settings>
+              def settingsXml = new File(System.getProperty('user.home'), '.m2/settings.xml')
+              if (settingsXml.exists()) {
+                def serverId = (project.properties['distMgmtServerId'] ?: isRelease(project)
+                        ? 'apache.releases.https' : 'apache.snapshots.https')
+                def m2SettingCreds = new XmlSlurper().parse(settingsXml).servers.server.find { server -> serverId.equals(server.id.text()) }
+                if (m2SettingCreds) {
+                  credentials {
+                    username m2SettingCreds.username.text()
+                    password m2SettingCreds.password.text()
+                  }
+                }
+              }
             }
           }
 
@@ -277,61 +281,12 @@ artifactId=${project.name}
               }
 
               pom.withXml {
-                def root = asNode()
-                def dependenciesNode = root.appendNode('dependencies')
-                def generateDependenciesFromConfiguration = { param ->
-                  project.configurations."${param.configuration}".allDependencies.each {
-                    def dependencyNode = dependenciesNode.appendNode('dependency')
-                    def appendClassifier = { dep ->
-                      dep.artifacts.each { art ->
-                        if (art.hasProperty('classifier')) {
-                          dependencyNode.appendNode('classifier', art.classifier)
-                        }
-                      }
-                    }
-
-                    if (it instanceof ProjectDependency) {
-                      dependencyNode.appendNode('groupId', it.getDependencyProject().mavenGroupId)
-                      dependencyNode.appendNode('artifactId', it.getDependencyProject().archivesBaseName)
-                      dependencyNode.appendNode('version', it.version)
-                      dependencyNode.appendNode('scope', param.scope)
-                      appendClassifier(it)
-                    } else {
-                      dependencyNode.appendNode('groupId', it.group)
-                      dependencyNode.appendNode('artifactId', it.name)
-                      dependencyNode.appendNode('version', it.version)
-                      dependencyNode.appendNode('scope', param.scope)
-                      appendClassifier(it)
-                    }
-
-                    // Start with any exclusions that were added via configuration exclude rules.
-                    // Then add all the exclusions that are specific to the dependency (if any
-                    // were declared). Finally build the node that represents all exclusions.
-                    def exclusions = []
-                    exclusions += project.configurations."${param.configuration}".excludeRules
-                    if (it.hasProperty('excludeRules')) {
-                      exclusions += it.excludeRules
-                    }
-                    if (!exclusions.empty) {
-                      def exclusionsNode = dependencyNode.appendNode('exclusions')
-                      exclusions.each { exclude ->
-                        def exclusionNode = exclusionsNode.appendNode('exclusion')
-                        exclusionNode.appendNode('groupId', exclude.group)
-                        exclusionNode.appendNode('artifactId', exclude.module)
-                      }
-                    }
-                  }
-                }
-
-                generateDependenciesFromConfiguration(configuration: 'runtimeOnly', scope: 'runtime')
-                generateDependenciesFromConfiguration(configuration: 'compileOnly', scope: 'provided')
-
                 // NB: This must come after asNode() logic, as it seems asNode()
                 // removes XML comments.
                 // TODO: Load this from file?
                 def elem = asElement()
                 def hdr = elem.getOwnerDocument().createComment(
-                    '''
+                        '''
     Licensed to the Apache Software Foundation (ASF) under one or more
     contributor license agreements.  See the NOTICE file distributed with
     this work for additional information regarding copyright ownership.

@@ -21,8 +21,9 @@ import com.google.api.services.dataflow.model.MapTask;
 import com.google.api.services.dataflow.model.WorkItem;
 import java.io.Closeable;
 import java.io.IOException;
-import java.util.Collection;
+import java.util.List;
 import java.util.function.Function;
+import javax.annotation.Nullable;
 import org.apache.beam.model.fnexecution.v1.BeamFnApi.RemoteGrpcPort;
 import org.apache.beam.model.pipeline.v1.RunnerApi;
 import org.apache.beam.runners.core.metrics.ExecutionStateSampler;
@@ -45,7 +46,6 @@ import org.apache.beam.runners.dataflow.worker.graph.Nodes.RemoteGrpcPortNode;
 import org.apache.beam.runners.dataflow.worker.graph.RegisterNodeFunction;
 import org.apache.beam.runners.dataflow.worker.graph.ReplacePgbkWithPrecombineFunction;
 import org.apache.beam.runners.dataflow.worker.status.DebugCapture;
-import org.apache.beam.runners.dataflow.worker.status.DebugCapture.Capturable;
 import org.apache.beam.runners.dataflow.worker.status.WorkerStatusPages;
 import org.apache.beam.runners.dataflow.worker.util.MemoryMonitor;
 import org.apache.beam.sdk.fn.IdGenerator;
@@ -57,7 +57,6 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Optional;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.cache.Cache;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.cache.CacheBuilder;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.graph.MutableNetwork;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -171,7 +170,7 @@ public class BatchDataflowWorker implements Closeable {
    * <p>This is also known as the "portable" or "Beam model" approach.
    */
   static BatchDataflowWorker forBatchFnWorkerHarness(
-      RunnerApi.@Nullable Pipeline pipeline,
+      @Nullable RunnerApi.Pipeline pipeline,
       SdkHarnessRegistry sdkHarnessRegistry,
       WorkUnitClient workUnitClient,
       DataflowWorkerHarnessOptions options) {
@@ -184,7 +183,7 @@ public class BatchDataflowWorker implements Closeable {
   }
 
   protected BatchDataflowWorker(
-      RunnerApi.@Nullable Pipeline pipeline,
+      @Nullable RunnerApi.Pipeline pipeline,
       SdkHarnessRegistry sdkHarnessRegistry,
       WorkUnitClient workUnitClient,
       DataflowMapTaskExecutorFactory mapTaskExecutorFactory,
@@ -238,14 +237,9 @@ public class BatchDataflowWorker implements Closeable {
         sdkFusedStage =
             pipeline == null
                 ? RegisterNodeFunction.withoutPipeline(
-                    idGenerator,
-                    sdkHarnessRegistry.beamFnStateApiServiceDescriptor(),
-                    sdkHarnessRegistry.beamFnDataApiServiceDescriptor())
+                    idGenerator, sdkHarnessRegistry.beamFnStateApiServiceDescriptor())
                 : RegisterNodeFunction.forPipeline(
-                    pipeline,
-                    idGenerator,
-                    sdkHarnessRegistry.beamFnStateApiServiceDescriptor(),
-                    sdkHarnessRegistry.beamFnDataApiServiceDescriptor());
+                    pipeline, idGenerator, sdkHarnessRegistry.beamFnStateApiServiceDescriptor());
         transformToRunnerNetwork =
             new CreateRegisterFnOperationFunction(
                 idGenerator,
@@ -271,7 +265,7 @@ public class BatchDataflowWorker implements Closeable {
   }
 
   private static DebugCapture.Manager initializeAndStartDebugCaptureManager(
-      DataflowWorkerHarnessOptions options, Collection<Capturable> debugCapturePages) {
+      DataflowWorkerHarnessOptions options, List<DebugCapture.Capturable> debugCapturePages) {
     DebugCapture.Manager result = new DebugCapture.Manager(options, debugCapturePages);
     result.start();
     return result;

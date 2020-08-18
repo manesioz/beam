@@ -23,13 +23,14 @@ lines = [
     "banana orange banana papaya"
 ]
 
-with beam.Pipeline() as p:
+p = beam.Pipeline()
 
-  (p | beam.Create(lines)
+(p | beam.Create(lines)
 
-     | beam.FlatMap(lambda sentence: sentence.split())
-     | beam.combiners.Count.PerElement()
-     | beam.MapTuple(lambda k, v: k + ":" + str(v))
+   | beam.FlatMap(lambda sentence: sentence.split())
+   | beam.combiners.Count.PerElement()
+   | beam.Map(lambda (k, v): k + ":" + str(v))
 
-     | LogElements())
+   | LogElements())
 
+p.run()

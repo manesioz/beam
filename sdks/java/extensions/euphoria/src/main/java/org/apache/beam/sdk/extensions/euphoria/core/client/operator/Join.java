@@ -21,6 +21,7 @@ import static java.util.Objects.requireNonNull;
 
 import java.util.Arrays;
 import java.util.Optional;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.extensions.euphoria.core.annotation.audience.Audience;
 import org.apache.beam.sdk.extensions.euphoria.core.annotation.operator.Recommended;
 import org.apache.beam.sdk.extensions.euphoria.core.annotation.operator.StateComplexity;
@@ -29,6 +30,7 @@ import org.apache.beam.sdk.extensions.euphoria.core.client.functional.UnaryFunct
 import org.apache.beam.sdk.extensions.euphoria.core.client.operator.base.Builders;
 import org.apache.beam.sdk.extensions.euphoria.core.client.operator.base.OptionalMethodBuilder;
 import org.apache.beam.sdk.extensions.euphoria.core.client.operator.base.ShuffleOperator;
+import org.apache.beam.sdk.extensions.euphoria.core.client.operator.hint.OutputHint;
 import org.apache.beam.sdk.extensions.euphoria.core.client.type.TypeAwareness;
 import org.apache.beam.sdk.extensions.euphoria.core.translate.OperatorTransform;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
@@ -42,7 +44,6 @@ import org.apache.beam.sdk.values.PCollectionList;
 import org.apache.beam.sdk.values.TypeDescriptor;
 import org.apache.beam.sdk.values.TypeDescriptors;
 import org.apache.beam.sdk.values.WindowingStrategy;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Duration;
 
 /**
@@ -162,7 +163,10 @@ public class Join<LeftT, RightT, KeyT, OutputT>
       extends Builders.WindowedOutput<WindowedOutputBuilder<KeyT, OutputT>>,
           OutputBuilder<KeyT, OutputT> {}
 
-  /** Last builder in a chain. It concludes this operators creation by calling {@link #output()}. */
+  /**
+   * Last builder in a chain. It concludes this operators creation by calling {@link
+   * #output(OutputHint...)}.
+   */
   public interface OutputBuilder<KeyT, OutputT>
       extends Builders.Output<KV<KeyT, OutputT>>, Builders.OutputValues<KeyT, OutputT> {}
 
@@ -179,15 +183,15 @@ public class Join<LeftT, RightT, KeyT, OutputT>
 
     private final WindowBuilder<Object> windowBuilder = new WindowBuilder<>();
 
-    private final @Nullable String name;
+    @Nullable private final String name;
     private final Type type;
     private PCollection<LeftT> left;
     private PCollection<RightT> right;
     private UnaryFunction<LeftT, KeyT> leftKeyExtractor;
     private UnaryFunction<RightT, KeyT> rightKeyExtractor;
-    private @Nullable TypeDescriptor<KeyT> keyType;
+    @Nullable private TypeDescriptor<KeyT> keyType;
     private BinaryFunctor<LeftT, RightT, OutputT> joinFunc;
-    private @Nullable TypeDescriptor<OutputT> outputType;
+    @Nullable private TypeDescriptor<OutputT> outputType;
 
     Builder(@Nullable String name, Type type) {
       this.name = name;
@@ -274,7 +278,7 @@ public class Join<LeftT, RightT, KeyT, OutputT>
     }
 
     @Override
-    public PCollection<KV<KeyT, OutputT>> output() {
+    public PCollection<KV<KeyT, OutputT>> output(OutputHint... outputHints) {
       @SuppressWarnings("unchecked")
       final PCollectionList<Object> inputs =
           PCollectionList.of(Arrays.asList((PCollection) left, (PCollection) right));
@@ -282,7 +286,7 @@ public class Join<LeftT, RightT, KeyT, OutputT>
     }
 
     @Override
-    public PCollection<OutputT> outputValues() {
+    public PCollection<OutputT> outputValues(OutputHint... outputHints) {
       @SuppressWarnings("unchecked")
       final PCollectionList<Object> inputs =
           PCollectionList.of(Arrays.asList((PCollection) left, (PCollection) right));

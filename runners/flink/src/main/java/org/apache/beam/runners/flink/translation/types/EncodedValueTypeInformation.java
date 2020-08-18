@@ -23,7 +23,6 @@ import org.apache.flink.api.common.typeinfo.AtomicType;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.common.typeutils.TypeComparator;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Flink {@link TypeInformation} for Beam values that have been encoded to byte data by a {@link
@@ -70,7 +69,7 @@ public class EncodedValueTypeInformation extends TypeInformation<byte[]>
   }
 
   @Override
-  public boolean equals(@Nullable Object other) {
+  public boolean equals(Object other) {
     return other instanceof EncodedValueTypeInformation;
   }
 

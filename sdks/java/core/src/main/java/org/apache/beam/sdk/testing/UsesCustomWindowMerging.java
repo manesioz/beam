@@ -17,8 +17,5 @@
  */
 package org.apache.beam.sdk.testing;
 
-import org.apache.beam.sdk.annotations.Internal;
-
 /** Category tag for validation tests which utilize custom window merging. */
-@Internal
 public interface UsesCustomWindowMerging {}

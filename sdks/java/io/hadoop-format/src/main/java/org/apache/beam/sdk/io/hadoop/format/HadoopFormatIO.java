@@ -43,8 +43,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
-import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.coders.AtomicCoder;
 import org.apache.beam.sdk.coders.CannotProvideCoderException;
 import org.apache.beam.sdk.coders.Coder;
@@ -100,7 +100,6 @@ import org.apache.hadoop.mapreduce.lib.db.DBConfiguration;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.task.JobContextImpl;
 import org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -295,7 +294,7 @@ import org.slf4j.LoggerFactory;
  * }
  * }</pre>
  */
-@Experimental(Kind.SOURCE_SINK)
+@Experimental(Experimental.Kind.SOURCE_SINK)
 public class HadoopFormatIO {
   private static final Logger LOG = LoggerFactory.getLogger(HadoopFormatIO.class);
 
@@ -355,22 +354,29 @@ public class HadoopFormatIO {
   public abstract static class Read<K, V> extends PTransform<PBegin, PCollection<KV<K, V>>> {
 
     // Returns the Hadoop Configuration which contains specification of source.
+    @Nullable
+    public abstract SerializableConfiguration getConfiguration();
 
-    public abstract @Nullable SerializableConfiguration getConfiguration();
+    @Nullable
+    public abstract SimpleFunction<?, K> getKeyTranslationFunction();
 
-    public abstract @Nullable SimpleFunction<?, K> getKeyTranslationFunction();
+    @Nullable
+    public abstract SimpleFunction<?, V> getValueTranslationFunction();
 
-    public abstract @Nullable SimpleFunction<?, V> getValueTranslationFunction();
+    @Nullable
+    public abstract TypeDescriptor<K> getKeyTypeDescriptor();
 
-    public abstract @Nullable TypeDescriptor<K> getKeyTypeDescriptor();
+    @Nullable
+    public abstract TypeDescriptor<V> getValueTypeDescriptor();
 
-    public abstract @Nullable TypeDescriptor<V> getValueTypeDescriptor();
+    @Nullable
+    public abstract TypeDescriptor<?> getinputFormatClass();
 
-    public abstract @Nullable TypeDescriptor<?> getinputFormatClass();
+    @Nullable
+    public abstract TypeDescriptor<?> getinputFormatKeyClass();
 
-    public abstract @Nullable TypeDescriptor<?> getinputFormatKeyClass();
-
-    public abstract @Nullable TypeDescriptor<?> getinputFormatValueClass();
+    @Nullable
+    public abstract TypeDescriptor<?> getinputFormatValueClass();
 
     public abstract Builder<K, V> toBuilder();
 
@@ -545,8 +551,8 @@ public class HadoopFormatIO {
     private final SerializableConfiguration conf;
     private final Coder<K> keyCoder;
     private final Coder<V> valueCoder;
-    private final @Nullable SimpleFunction<?, K> keyTranslationFunction;
-    private final @Nullable SimpleFunction<?, V> valueTranslationFunction;
+    @Nullable private final SimpleFunction<?, K> keyTranslationFunction;
+    @Nullable private final SimpleFunction<?, V> valueTranslationFunction;
     private final SerializableSplit inputSplit;
     private transient List<SerializableSplit> inputSplits;
     private long boundedSourceEstimatedSize = 0;
@@ -765,8 +771,8 @@ public class HadoopFormatIO {
     class HadoopInputFormatReader<T1, T2> extends BoundedSource.BoundedReader<KV<K, V>> {
 
       private final HadoopInputFormatBoundedSource<K, V> source;
-      private final @Nullable SimpleFunction<T1, K> keyTranslationFunction;
-      private final @Nullable SimpleFunction<T2, V> valueTranslationFunction;
+      @Nullable private final SimpleFunction<T1, K> keyTranslationFunction;
+      @Nullable private final SimpleFunction<T2, V> valueTranslationFunction;
       private final SerializableSplit split;
       private RecordReader<T1, T2> recordReader;
       private volatile boolean doneReading = false;
@@ -1041,9 +1047,10 @@ public class HadoopFormatIO {
    */
   public static class Write<KeyT, ValueT> extends PTransform<PCollection<KV<KeyT, ValueT>>, PDone> {
 
-    private final transient @Nullable Configuration configuration;
+    @Nullable private final transient Configuration configuration;
 
-    private final @Nullable PTransform<
+    @Nullable
+    private final PTransform<
             PCollection<? extends KV<KeyT, ValueT>>, PCollectionView<Configuration>>
         configTransform;
 

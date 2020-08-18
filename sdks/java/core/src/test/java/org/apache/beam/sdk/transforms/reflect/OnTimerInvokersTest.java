@@ -26,7 +26,6 @@ import org.apache.beam.sdk.state.TimeDomain;
 import org.apache.beam.sdk.state.TimerSpec;
 import org.apache.beam.sdk.state.TimerSpecs;
 import org.apache.beam.sdk.transforms.DoFn;
-import org.apache.beam.sdk.transforms.reflect.DoFnSignature.TimerDeclaration;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.junit.Before;
 import org.junit.Rule;
@@ -53,8 +52,7 @@ public class OnTimerInvokersTest {
   }
 
   private void invokeOnTimer(DoFn<String, String> fn, String timerId) {
-    OnTimerInvokers.forTimer(fn, TimerDeclaration.PREFIX + timerId)
-        .invokeOnTimer(mockArgumentProvider);
+    OnTimerInvokers.forTimer(fn, timerId).invokeOnTimer(mockArgumentProvider);
   }
 
   @Test
@@ -125,8 +123,7 @@ public class OnTimerInvokersTest {
   @Test
   public void testStableName() {
     OnTimerInvoker<Void, Void> invoker =
-        OnTimerInvokers.forTimer(
-            new StableNameTestDoFn(), TimerDeclaration.PREFIX + StableNameTestDoFn.TIMER_ID);
+        OnTimerInvokers.forTimer(new StableNameTestDoFn(), StableNameTestDoFn.TIMER_ID);
 
     assertThat(
         invoker.getClass().getName(),
@@ -135,7 +132,7 @@ public class OnTimerInvokersTest {
                 "%s$%s$%s$%s",
                 StableNameTestDoFn.class.getName(),
                 OnTimerInvoker.class.getSimpleName(),
-                "tstimeridwithspecialChars" /* alphanum only; human readable but not unique */,
-                "dHMtdGltZXItaWQud2l0aCBzcGVjaWFsQ2hhcnN7fQ" /* base64 encoding of UTF-8 timerId */)));
+                "timeridwithspecialChars" /* alphanum only; human readable but not unique */,
+                "dGltZXItaWQud2l0aCBzcGVjaWFsQ2hhcnN7fQ" /* base64 encoding of UTF-8 timerId */)));
   }
 }

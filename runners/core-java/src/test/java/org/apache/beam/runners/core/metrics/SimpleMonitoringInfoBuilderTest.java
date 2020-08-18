@@ -18,10 +18,10 @@
 package org.apache.beam.runners.core.metrics;
 
 import static junit.framework.TestCase.assertEquals;
-import static org.apache.beam.runners.core.metrics.MonitoringInfoEncodings.decodeInt64Counter;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import org.apache.beam.model.pipeline.v1.MetricsApi;
 import org.apache.beam.model.pipeline.v1.MetricsApi.MonitoringInfo;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -37,16 +37,16 @@ public class SimpleMonitoringInfoBuilderTest {
     builder.setUrn(MonitoringInfoConstants.Urns.ELEMENT_COUNT);
     assertNull(builder.build());
 
-    builder.setInt64SumValue(1);
+    builder.setInt64Value(1);
     assertNull(builder.build());
   }
 
   @Test
-  public void testReturnsExpectedMonitoringInfo() throws Exception {
+  public void testReturnsExpectedMonitoringInfo() {
     SimpleMonitoringInfoBuilder builder = new SimpleMonitoringInfoBuilder();
     builder.setUrn(MonitoringInfoConstants.Urns.ELEMENT_COUNT);
 
-    builder.setInt64SumValue(1);
+    builder.setInt64Value(1);
     builder.setLabel(MonitoringInfoConstants.Labels.PCOLLECTION, "myPcollection");
     // Pass now that the spec is fully met.
     MonitoringInfo monitoringInfo = builder.build();
@@ -55,17 +55,17 @@ public class SimpleMonitoringInfoBuilderTest {
         "myPcollection",
         monitoringInfo.getLabelsOrDefault(MonitoringInfoConstants.Labels.PCOLLECTION, null));
     assertEquals(MonitoringInfoConstants.Urns.ELEMENT_COUNT, monitoringInfo.getUrn());
-    assertEquals(MonitoringInfoConstants.TypeUrns.SUM_INT64_TYPE, monitoringInfo.getType());
-    assertEquals(1L, decodeInt64Counter(monitoringInfo.getPayload()));
+    assertEquals(MonitoringInfoConstants.TypeUrns.SUM_INT64, monitoringInfo.getType());
+    assertEquals(1, monitoringInfo.getMetric().getCounterData().getInt64Value());
     assertEquals(
         "myPcollection",
         monitoringInfo.getLabelsMap().get(MonitoringInfoConstants.Labels.PCOLLECTION));
   }
 
   @Test
-  public void testUserDistribution() throws Exception {
+  public void testUserDistribution() {
     SimpleMonitoringInfoBuilder builder = new SimpleMonitoringInfoBuilder();
-    builder.setUrn(MonitoringInfoConstants.Urns.USER_DISTRIBUTION_INT64);
+    builder.setUrn(MonitoringInfoConstants.Urns.USER_DISTRIBUTION_COUNTER);
     builder.setLabel(MonitoringInfoConstants.Labels.NAME, "myName");
     builder.setLabel(MonitoringInfoConstants.Labels.NAMESPACE, "myNamespace");
     builder.setLabel(MonitoringInfoConstants.Labels.PTRANSFORM, "myStep");
@@ -75,19 +75,18 @@ public class SimpleMonitoringInfoBuilderTest {
     // Pass now that the spec is fully met.
     MonitoringInfo monitoringInfo = builder.build();
     assertTrue(monitoringInfo != null);
-    assertEquals(MonitoringInfoConstants.Urns.USER_DISTRIBUTION_INT64, monitoringInfo.getUrn());
+    assertEquals(MonitoringInfoConstants.Urns.USER_DISTRIBUTION_COUNTER, monitoringInfo.getUrn());
     assertEquals(
         "myName", monitoringInfo.getLabelsOrDefault(MonitoringInfoConstants.Labels.NAME, ""));
     assertEquals(
         "myNamespace",
         monitoringInfo.getLabelsOrDefault(MonitoringInfoConstants.Labels.NAMESPACE, ""));
-    assertEquals(
-        MonitoringInfoConstants.TypeUrns.DISTRIBUTION_INT64_TYPE, monitoringInfo.getType());
-    DistributionData data =
-        MonitoringInfoEncodings.decodeInt64Distribution(monitoringInfo.getPayload());
-    assertEquals(10L, data.sum());
-    assertEquals(2L, data.count());
-    assertEquals(9L, data.max());
-    assertEquals(1L, data.min());
+    assertEquals(MonitoringInfoConstants.TypeUrns.DISTRIBUTION_INT64, monitoringInfo.getType());
+    MetricsApi.IntDistributionData distribution =
+        monitoringInfo.getMetric().getDistributionData().getIntDistributionData();
+    assertEquals(10, distribution.getSum());
+    assertEquals(2, distribution.getCount());
+    assertEquals(9, distribution.getMax());
+    assertEquals(1, distribution.getMin());
   }
 }

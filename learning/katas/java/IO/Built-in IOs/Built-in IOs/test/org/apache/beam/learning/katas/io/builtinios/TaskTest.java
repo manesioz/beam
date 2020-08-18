@@ -18,12 +18,5 @@
 
 package org.apache.beam.learning.katas.io.builtinios;
 
-import org.junit.Test;
-
 public class TaskTest {
-
-  @Test
-  public void nothing() {
-  }
-
 }

@@ -28,16 +28,11 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
-import org.apache.beam.model.jobmanagement.v1.JobApi;
-import org.apache.beam.model.jobmanagement.v1.JobApi.GetJobMetricsResponse;
 import org.apache.beam.model.pipeline.v1.MetricsApi.MonitoringInfo;
 import org.apache.beam.runners.core.metrics.MetricUpdates.MetricUpdate;
 import org.apache.beam.sdk.metrics.MetricKey;
 import org.apache.beam.sdk.metrics.MetricResult;
 import org.apache.beam.sdk.metrics.MetricResults;
-import org.apache.beam.vendor.grpc.v1p26p0.com.google.protobuf.InvalidProtocolBufferException;
-import org.apache.beam.vendor.grpc.v1p26p0.com.google.protobuf.util.JsonFormat;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Metrics containers by step.
@@ -89,16 +84,8 @@ public class MetricsContainerStepMap implements Serializable {
     getContainer(step).update(container);
   }
 
-  /** Reset the metric containers. */
-  public void reset() {
-    for (MetricsContainerImpl metricsContainer : metricsContainers.values()) {
-      metricsContainer.reset();
-    }
-    unboundContainer.reset();
-  }
-
   @Override
-  public boolean equals(@Nullable Object object) {
+  public boolean equals(Object object) {
     if (object instanceof MetricsContainerStepMap) {
       MetricsContainerStepMap metricsContainerStepMap = (MetricsContainerStepMap) object;
       return Objects.equals(metricsContainers, metricsContainerStepMap.metricsContainers)
@@ -178,15 +165,7 @@ public class MetricsContainerStepMap implements Serializable {
 
   @Override
   public String toString() {
-    JobApi.MetricResults results =
-        JobApi.MetricResults.newBuilder().addAllAttempted(getMonitoringInfos()).build();
-    GetJobMetricsResponse response = GetJobMetricsResponse.newBuilder().setMetrics(results).build();
-    try {
-      JsonFormat.Printer printer = JsonFormat.printer();
-      return printer.print(response);
-    } catch (InvalidProtocolBufferException e) {
-      throw new RuntimeException(e);
-    }
+    return asAttemptedOnlyMetricResults(this).toString();
   }
 
   private Iterable<MetricsContainerImpl> getMetricsContainers() {

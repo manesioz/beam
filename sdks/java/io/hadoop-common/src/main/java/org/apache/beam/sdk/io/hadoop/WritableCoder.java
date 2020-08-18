@@ -37,7 +37,6 @@ import org.apache.beam.sdk.coders.DefaultCoder;
 import org.apache.beam.sdk.values.TypeDescriptor;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.Writable;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * A {@code WritableCoder} is a {@link Coder} for a Java class that implements {@link Writable}.
@@ -105,7 +104,7 @@ public class WritableCoder<T extends Writable> extends CustomCoder<T> {
   }
 
   @Override
-  public boolean equals(@Nullable Object other) {
+  public boolean equals(Object other) {
     if (other == this) {
       return true;
     }

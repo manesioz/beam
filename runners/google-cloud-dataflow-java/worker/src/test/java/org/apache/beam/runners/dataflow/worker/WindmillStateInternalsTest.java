@@ -35,14 +35,12 @@ import org.apache.beam.runners.core.StateNamespace;
 import org.apache.beam.runners.core.StateNamespaceForTest;
 import org.apache.beam.runners.core.StateTag;
 import org.apache.beam.runners.core.StateTags;
-import org.apache.beam.runners.dataflow.options.DataflowWorkerHarnessOptions;
 import org.apache.beam.runners.dataflow.worker.windmill.Windmill;
 import org.apache.beam.runners.dataflow.worker.windmill.Windmill.TagBag;
 import org.apache.beam.runners.dataflow.worker.windmill.Windmill.TagValue;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.coders.VarIntCoder;
-import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.state.BagState;
 import org.apache.beam.sdk.state.CombiningState;
 import org.apache.beam.sdk.state.GroupingState;
@@ -52,7 +50,7 @@ import org.apache.beam.sdk.state.WatermarkHoldState;
 import org.apache.beam.sdk.transforms.Sum;
 import org.apache.beam.sdk.transforms.windowing.TimestampCombiner;
 import org.apache.beam.sdk.util.CoderUtils;
-import org.apache.beam.vendor.grpc.v1p26p0.com.google.protobuf.ByteString;
+import org.apache.beam.vendor.grpc.v1p21p0.com.google.protobuf.ByteString;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Supplier;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.util.concurrent.Futures;
@@ -82,8 +80,6 @@ public class WindmillStateInternalsTest {
       Sum.ofIntegers().getAccumulatorCoder(null, VarIntCoder.of());
   private long workToken = 0;
 
-  DataflowWorkerHarnessOptions options;
-
   @Mock private WindmillStateReader mockReader;
 
   private WindmillStateInternals<String> underTest;
@@ -103,8 +99,7 @@ public class WindmillStateInternalsTest {
   @Before
   public void setUp() {
     MockitoAnnotations.initMocks(this);
-    options = PipelineOptionsFactory.as(DataflowWorkerHarnessOptions.class);
-    cache = new WindmillStateCache(options.getWorkerCacheMb());
+    cache = new WindmillStateCache();
     resetUnderTest();
   }
 

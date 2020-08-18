@@ -17,7 +17,6 @@
  */
 package org.apache.beam.runners.dataflow.worker.fn.control;
 
-import static org.apache.beam.runners.core.metrics.MonitoringInfoEncodings.decodeInt64Distribution;
 import static org.apache.beam.runners.dataflow.worker.counters.DataflowCounterUpdateExtractor.longToSplitInt;
 
 import com.google.api.services.dataflow.model.CounterUpdate;
@@ -25,15 +24,13 @@ import com.google.api.services.dataflow.model.IntegerMean;
 import com.google.api.services.dataflow.model.NameAndKind;
 import java.util.Map;
 import java.util.Optional;
+import javax.annotation.Nullable;
+import org.apache.beam.model.pipeline.v1.MetricsApi.IntDistributionData;
 import org.apache.beam.model.pipeline.v1.MetricsApi.MonitoringInfo;
-import org.apache.beam.runners.core.metrics.DistributionData;
 import org.apache.beam.runners.core.metrics.MonitoringInfoConstants;
-import org.apache.beam.runners.core.metrics.MonitoringInfoConstants.TypeUrns;
-import org.apache.beam.runners.core.metrics.MonitoringInfoConstants.Urns;
 import org.apache.beam.runners.core.metrics.SpecMonitoringInfoValidator;
 import org.apache.beam.runners.dataflow.worker.MetricsToCounterUpdateConverter.Kind;
 import org.apache.beam.runners.dataflow.worker.counters.NameContext;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,6 +42,9 @@ public class MeanByteCountMonitoringInfoToCounterUpdateTransformer
 
   private final SpecMonitoringInfoValidator specValidator;
   private final Map<String, NameContext> pcollectionIdToNameContext;
+
+  // TODO(BEAM-6945): utilize value from metrics.proto once it gets in.
+  private static final String SUPPORTED_URN = MonitoringInfoConstants.Urns.SAMPLED_BYTE_SIZE;
 
   /**
    * @param specValidator SpecMonitoringInfoValidator to utilize for default validation.
@@ -71,16 +71,8 @@ public class MeanByteCountMonitoringInfoToCounterUpdateTransformer
     }
 
     String urn = monitoringInfo.getUrn();
-    if (!urn.equals(Urns.SAMPLED_BYTE_SIZE)) {
+    if (!urn.equals(SUPPORTED_URN)) {
       throw new RuntimeException(String.format("Received unexpected counter urn: %s", urn));
-    }
-
-    String type = monitoringInfo.getType();
-    if (!type.equals(TypeUrns.DISTRIBUTION_INT64_TYPE)) {
-      throw new RuntimeException(
-          String.format(
-              "Received unexpected counter type. Expected type: %s, received: %s",
-              TypeUrns.DISTRIBUTION_INT64_TYPE, type));
     }
 
     if (!pcollectionIdToNameContext.containsKey(
@@ -100,14 +92,17 @@ public class MeanByteCountMonitoringInfoToCounterUpdateTransformer
    * @return CounterUpdate generated based on provided monitoringInfo
    */
   @Override
-  public @Nullable CounterUpdate transform(MonitoringInfo monitoringInfo) {
+  @Nullable
+  public CounterUpdate transform(MonitoringInfo monitoringInfo) {
     Optional<String> validationResult = validate(monitoringInfo);
     if (validationResult.isPresent()) {
       LOG.debug(validationResult.get());
       return null;
     }
 
-    DistributionData data = decodeInt64Distribution(monitoringInfo.getPayload());
+    IntDistributionData value =
+        monitoringInfo.getMetric().getDistributionData().getIntDistributionData();
+
     final String pcollectionId =
         monitoringInfo.getLabelsMap().get(MonitoringInfoConstants.Labels.PCOLLECTION);
     final String pcollectionName = pcollectionIdToNameContext.get(pcollectionId).userName();
@@ -121,12 +116,12 @@ public class MeanByteCountMonitoringInfoToCounterUpdateTransformer
         .setCumulative(true)
         .setIntegerMean(
             new IntegerMean()
-                .setSum(longToSplitInt(data.sum()))
-                .setCount(longToSplitInt(data.count())));
+                .setSum(longToSplitInt(value.getSum()))
+                .setCount(longToSplitInt(value.getCount())));
   }
 
-  /** @return URN that this transformer can convert to {@link CounterUpdate}s. */
+  /** @return iterable of Urns that this transformer can convert to CounterUpdates. */
   public static String getSupportedUrn() {
-    return Urns.SAMPLED_BYTE_SIZE;
+    return SUPPORTED_URN;
   }
 }

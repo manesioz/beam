@@ -24,6 +24,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import javax.annotation.Nullable;
 import org.apache.beam.runners.core.StateInternals;
 import org.apache.beam.runners.core.StateNamespace;
 import org.apache.beam.runners.core.StateTag;
@@ -35,7 +36,6 @@ import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.state.BagState;
 import org.apache.beam.sdk.state.CombiningState;
 import org.apache.beam.sdk.state.MapState;
-import org.apache.beam.sdk.state.OrderedListState;
 import org.apache.beam.sdk.state.ReadableState;
 import org.apache.beam.sdk.state.SetState;
 import org.apache.beam.sdk.state.State;
@@ -51,7 +51,6 @@ import org.apache.flink.api.common.state.ListState;
 import org.apache.flink.api.common.state.ListStateDescriptor;
 import org.apache.flink.api.common.state.OperatorStateStore;
 import org.apache.flink.runtime.state.OperatorStateBackend;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * {@link StateInternals} that uses a Flink {@link OperatorStateBackend} to manage the broadcast
@@ -76,7 +75,8 @@ public class FlinkBroadcastStateInternals<K> implements StateInternals {
   }
 
   @Override
-  public @Nullable K getKey() {
+  @Nullable
+  public K getKey() {
     return null;
   }
 
@@ -112,13 +112,6 @@ public class FlinkBroadcastStateInternals<K> implements StateInternals {
               Coder<ValueT> mapValueCoder) {
             throw new UnsupportedOperationException(
                 String.format("%s is not supported", MapState.class.getSimpleName()));
-          }
-
-          @Override
-          public <ElemT> OrderedListState<ElemT> bindOrderedList(
-              StateTag<OrderedListState<ElemT>> spec, Coder<ElemT> elemCoder) {
-            throw new UnsupportedOperationException(
-                String.format("%s is not supported", OrderedListState.class.getSimpleName()));
           }
 
           @Override
@@ -312,7 +305,7 @@ public class FlinkBroadcastStateInternals<K> implements StateInternals {
     }
 
     @Override
-    public boolean equals(@Nullable Object o) {
+    public boolean equals(Object o) {
       if (this == o) {
         return true;
       }
@@ -402,7 +395,7 @@ public class FlinkBroadcastStateInternals<K> implements StateInternals {
     }
 
     @Override
-    public boolean equals(@Nullable Object o) {
+    public boolean equals(Object o) {
       if (this == o) {
         return true;
       }
@@ -516,7 +509,7 @@ public class FlinkBroadcastStateInternals<K> implements StateInternals {
     }
 
     @Override
-    public boolean equals(@Nullable Object o) {
+    public boolean equals(Object o) {
       if (this == o) {
         return true;
       }
@@ -648,7 +641,7 @@ public class FlinkBroadcastStateInternals<K> implements StateInternals {
     }
 
     @Override
-    public boolean equals(@Nullable Object o) {
+    public boolean equals(Object o) {
       if (this == o) {
         return true;
       }
@@ -783,7 +776,7 @@ public class FlinkBroadcastStateInternals<K> implements StateInternals {
     }
 
     @Override
-    public boolean equals(@Nullable Object o) {
+    public boolean equals(Object o) {
       if (this == o) {
         return true;
       }

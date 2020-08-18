@@ -23,7 +23,6 @@ import java.util.Map;
 import org.apache.beam.sdk.extensions.sql.impl.rel.BeamEnumerableConverter;
 import org.apache.beam.sdk.extensions.sql.impl.rel.BeamIOSinkRel;
 import org.apache.beam.sdk.extensions.sql.impl.rel.BeamIOSourceRel;
-import org.apache.beam.sdk.extensions.sql.impl.rel.BeamLogicalConvention;
 import org.apache.beam.sdk.extensions.sql.impl.utils.CalciteUtils;
 import org.apache.beam.sdk.extensions.sql.meta.BeamSqlTable;
 import org.apache.beam.sdk.options.PipelineOptions;
@@ -98,12 +97,7 @@ public class BeamCalciteTable extends AbstractQueryableTable
   @Override
   public RelNode toRel(RelOptTable.ToRelContext context, RelOptTable relOptTable) {
     return new BeamIOSourceRel(
-        context.getCluster(),
-        context.getCluster().traitSetOf(BeamLogicalConvention.INSTANCE),
-        relOptTable,
-        beamTable,
-        pipelineOptionsMap,
-        this);
+        context.getCluster(), relOptTable, beamTable, pipelineOptionsMap, this);
   }
 
   @Override

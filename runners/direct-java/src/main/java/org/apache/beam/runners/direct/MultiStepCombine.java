@@ -26,7 +26,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import javax.annotation.Nonnull;
-import org.apache.beam.model.pipeline.v1.RunnerApi.FunctionSpec;
+import javax.annotation.Nullable;
+import org.apache.beam.model.pipeline.v1.RunnerApi;
 import org.apache.beam.runners.core.construction.PTransformTranslation;
 import org.apache.beam.runners.core.construction.PTransformTranslation.RawPTransform;
 import org.apache.beam.runners.core.construction.SingleInputOutputOverrideFactory;
@@ -56,19 +57,10 @@ import org.apache.beam.sdk.values.PValue;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.WindowingStrategy;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterables;
-import org.checkerframework.checker.nullness.qual.EnsuresNonNull;
-import org.checkerframework.checker.nullness.qual.NonNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
-import org.checkerframework.checker.nullness.qual.RequiresNonNull;
-import org.checkerframework.dataflow.qual.SideEffectFree;
 import org.joda.time.Instant;
 
 /** A {@link Combine} that performs the combine in multiple steps. */
-class MultiStepCombine<
-        K extends @Nullable Object,
-        InputT extends @Nullable Object,
-        AccumT extends @Nullable Object,
-        OutputT extends @Nullable Object>
+class MultiStepCombine<K, InputT, AccumT, OutputT>
     extends RawPTransform<PCollection<KV<K, InputT>>, PCollection<KV<K, OutputT>>> {
   public static PTransformMatcher matcher() {
     return new PTransformMatcher() {
@@ -124,11 +116,7 @@ class MultiStepCombine<
     };
   }
 
-  static class Factory<
-          K extends @Nullable Object,
-          InputT extends @Nullable Object,
-          AccumT extends @Nullable Object,
-          OutputT extends @Nullable Object>
+  static class Factory<K, InputT, AccumT, OutputT>
       extends SingleInputOutputOverrideFactory<
           PCollection<KV<K, InputT>>,
           PCollection<KV<K, OutputT>>,
@@ -163,7 +151,7 @@ class MultiStepCombine<
       @SuppressWarnings("unchecked")
       PCollection<KV<K, OutputT>> output =
           (PCollection<KV<K, OutputT>>) Iterables.getOnlyElement(transform.getOutputs().values());
-      return PTransformReplacement.of(input, MultiStepCombine.of(fn, output.getCoder()));
+      return PTransformReplacement.of(input, new MultiStepCombine<>(fn, output.getCoder()));
     }
   }
 
@@ -172,13 +160,8 @@ class MultiStepCombine<
   private final CombineFn<InputT, AccumT, OutputT> combineFn;
   private final Coder<KV<K, OutputT>> outputCoder;
 
-  public static <
-          K extends @Nullable Object,
-          InputT extends @Nullable Object,
-          AccumT extends @Nullable Object,
-          OutputT extends @Nullable Object>
-      MultiStepCombine<K, InputT, AccumT, OutputT> of(
-          CombineFn<InputT, AccumT, OutputT> combineFn, Coder<KV<K, OutputT>> outputCoder) {
+  public static <K, InputT, AccumT, OutputT> MultiStepCombine<K, InputT, AccumT, OutputT> of(
+      CombineFn<InputT, AccumT, OutputT> combineFn, Coder<KV<K, OutputT>> outputCoder) {
     return new MultiStepCombine<>(combineFn, outputCoder);
   }
 
@@ -188,13 +171,15 @@ class MultiStepCombine<
     this.outputCoder = outputCoder;
   }
 
+  @Nonnull
   @Override
-  public @NonNull String getUrn() {
+  public String getUrn() {
     return "beam:directrunner:transforms:multistepcombine:v1";
   }
 
+  @Nullable
   @Override
-  public @Nullable FunctionSpec getSpec() {
+  public RunnerApi.FunctionSpec getSpec() {
     return null;
   }
 
@@ -222,20 +207,16 @@ class MultiStepCombine<
     return input
         .apply(
             ParDo.of(
-                CombineInputs.of(
+                new CombineInputs<>(
                     combineFn,
                     input.getWindowingStrategy().getTimestampCombiner(),
                     inputCoder.getKeyCoder())))
         .setCoder(KvCoder.of(inputCoder.getKeyCoder(), accumulatorCoder))
         .apply(GroupByKey.create())
-        .apply(MergeAndExtractAccumulatorOutput.of(combineFn, outputCoder));
+        .apply(new MergeAndExtractAccumulatorOutput<>(combineFn, outputCoder));
   }
 
-  private static class CombineInputs<
-          K extends @Nullable Object,
-          InputT extends @Nullable Object,
-          AccumT extends @Nullable Object>
-      extends DoFn<KV<K, InputT>, KV<K, AccumT>> {
+  private static class CombineInputs<K, InputT, AccumT> extends DoFn<KV<K, InputT>, KV<K, AccumT>> {
     private final CombineFn<InputT, AccumT, ?> combineFn;
     private final TimestampCombiner timestampCombiner;
     private final Coder<K> keyCoder;
@@ -244,9 +225,9 @@ class MultiStepCombine<
      * Per-bundle state. Accumulators and output timestamps should only be tracked while a bundle is
      * being processed, and must be cleared when a bundle is completed.
      */
-    private transient @Nullable Map<WindowedStructuralKey<K>, AccumT> accumulators;
+    private transient Map<WindowedStructuralKey<K>, AccumT> accumulators;
 
-    private transient @Nullable Map<WindowedStructuralKey<K>, Instant> timestamps;
+    private transient Map<WindowedStructuralKey<K>, Instant> timestamps;
 
     private CombineInputs(
         CombineFn<InputT, AccumT, ?> combineFn,
@@ -257,76 +238,42 @@ class MultiStepCombine<
       this.keyCoder = keyCoder;
     }
 
-    public static <
-            K extends @Nullable Object,
-            InputT extends @Nullable Object,
-            AccumT extends @Nullable Object>
-        CombineInputs<K, InputT, AccumT> of(
-            CombineFn<InputT, AccumT, ?> combineFn,
-            TimestampCombiner timestampCombiner,
-            Coder<K> coder) {
-      return new CombineInputs<>(combineFn, timestampCombiner, coder);
-    }
-
     @StartBundle
-    @EnsuresNonNull({"accumulators", "timestamps"})
     public void startBundle() {
       accumulators = new LinkedHashMap<>();
       timestamps = new LinkedHashMap<>();
     }
 
     @ProcessElement
-    @RequiresNonNull({"accumulators", "timestamps"})
     public void processElement(ProcessContext context, BoundedWindow window) {
-      // Establish immutable non-null handles to demonstrate that calling other
-      // methods cannot make them null
-      final Map<WindowedStructuralKey<K>, Instant> timestamps = this.timestamps;
-      final Map<WindowedStructuralKey<K>, AccumT> accumulators = this.accumulators;
-
-      Instant assignedTimestamp = timestampCombiner.assign(window, context.timestamp());
-
       WindowedStructuralKey<K> key =
           WindowedStructuralKey.create(keyCoder, context.element().getKey(), window);
-
-      @Nullable AccumT accumulator = accumulators.get(key);
+      AccumT accumulator = accumulators.get(key);
+      Instant assignedTs = timestampCombiner.assign(window, context.timestamp());
       if (accumulator == null) {
         accumulator = combineFn.createAccumulator();
+        accumulators.put(key, accumulator);
+        timestamps.put(key, assignedTs);
       }
-
-      @Nullable Instant combinedTimestamp = timestamps.get(key);
-      if (combinedTimestamp == null) {
-        combinedTimestamp = assignedTimestamp;
-      }
-
       accumulators.put(key, combineFn.addInput(accumulator, context.element().getValue()));
-      timestamps.put(key, timestampCombiner.combine(assignedTimestamp, combinedTimestamp));
+      timestamps.put(key, timestampCombiner.combine(assignedTs, timestamps.get(key)));
     }
 
     @FinishBundle
-    @RequiresNonNull({"accumulators", "timestamps"})
     public void outputAccumulators(FinishBundleContext context) {
-      // Establish immutable non-null handles to demonstrate that calling other
-      // methods cannot make them null
-      final Map<WindowedStructuralKey<K>, AccumT> accumulators = this.accumulators;
-      final Map<WindowedStructuralKey<K>, Instant> timestamps = this.timestamps;
-
-      for (Map.Entry<WindowedStructuralKey<K>, Instant> timestampEntry : timestamps.entrySet()) {
-        WindowedStructuralKey<K> key = timestampEntry.getKey();
-        Instant timestamp = timestampEntry.getValue();
-        // Note that preCombineAccum may be null because no data arrives, or may be null because
-        // the accumulator type allows null. For this reason, we must iterate the timestamp entrySet
-        AccumT preCombineAccum = accumulators.get(key);
+      for (Map.Entry<WindowedStructuralKey<K>, AccumT> preCombineEntry : accumulators.entrySet()) {
         context.output(
-            KV.of(key.getKey(), combineFn.compact(preCombineAccum)), timestamp, key.getWindow());
+            KV.of(preCombineEntry.getKey().getKey(), combineFn.compact(preCombineEntry.getValue())),
+            timestamps.get(preCombineEntry.getKey()),
+            preCombineEntry.getKey().getWindow());
       }
-      this.accumulators = null;
-      this.timestamps = null;
+      accumulators = null;
+      timestamps = null;
     }
   }
 
-  static class WindowedStructuralKey<K extends @Nullable Object> {
-    @SideEffectFree
-    public static <K extends @Nullable Object> WindowedStructuralKey<K> create(
+  static class WindowedStructuralKey<K> {
+    public static <K> WindowedStructuralKey<K> create(
         Coder<K> keyCoder, K key, BoundedWindow window) {
       return new WindowedStructuralKey<>(StructuralKey.of(key, keyCoder), window);
     }
@@ -348,7 +295,7 @@ class MultiStepCombine<
     }
 
     @Override
-    public boolean equals(@Nullable Object other) {
+    public boolean equals(Object other) {
       if (!(other instanceof MultiStepCombine.WindowedStructuralKey)) {
         return false;
       }
@@ -370,10 +317,7 @@ class MultiStepCombine<
    * <p>Required to ensure that Immutability Enforcement is not applied. Accumulators are explicitly
    * mutable.
    */
-  static class MergeAndExtractAccumulatorOutput<
-          K extends @Nullable Object,
-          AccumT extends @Nullable Object,
-          OutputT extends @Nullable Object>
+  static class MergeAndExtractAccumulatorOutput<K, AccumT, OutputT>
       extends RawPTransform<PCollection<KV<K, Iterable<AccumT>>>, PCollection<KV<K, OutputT>>> {
     private final CombineFn<?, AccumT, OutputT> combineFn;
     private final Coder<KV<K, OutputT>> outputCoder;
@@ -382,15 +326,6 @@ class MultiStepCombine<
         CombineFn<?, AccumT, OutputT> combineFn, Coder<KV<K, OutputT>> outputCoder) {
       this.combineFn = combineFn;
       this.outputCoder = outputCoder;
-    }
-
-    public static <
-            K extends @Nullable Object,
-            AccumT extends @Nullable Object,
-            OutputT extends @Nullable Object>
-        MergeAndExtractAccumulatorOutput<K, AccumT, OutputT> of(
-            CombineFn<?, AccumT, OutputT> combineFn, Coder<KV<K, OutputT>> outputCoder) {
-      return new MergeAndExtractAccumulatorOutput<>(combineFn, outputCoder);
     }
 
     CombineFn<?, AccumT, OutputT> getCombineFn() {
@@ -409,8 +344,9 @@ class MultiStepCombine<
       return DIRECT_MERGE_ACCUMULATORS_EXTRACT_OUTPUT_URN;
     }
 
+    @Nullable
     @Override
-    public @Nullable FunctionSpec getSpec() {
+    public RunnerApi.FunctionSpec getSpec() {
       return null;
     }
   }
@@ -423,6 +359,7 @@ class MultiStepCombine<
       this.ctxt = ctxt;
     }
 
+    @Nullable
     @Override
     public <InputT> TransformEvaluator<InputT> forApplication(
         AppliedPTransform<?, ?, ?> application, CommittedBundle<?> inputBundle) throws Exception {
@@ -443,10 +380,7 @@ class MultiStepCombine<
     public void cleanup() throws Exception {}
   }
 
-  private static class MergeAccumulatorsAndExtractOutputEvaluator<
-          K extends @Nullable Object,
-          AccumT extends @Nullable Object,
-          OutputT extends @Nullable Object>
+  private static class MergeAccumulatorsAndExtractOutputEvaluator<K, AccumT, OutputT>
       implements TransformEvaluator<KV<K, Iterable<AccumT>>> {
     private final AppliedPTransform<
             PCollection<KV<K, Iterable<AccumT>>>,

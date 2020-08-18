@@ -27,6 +27,7 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import javax.annotation.Nullable;
 import org.apache.beam.model.fnexecution.v1.BeamFnApi.StateKey;
 import org.apache.beam.runners.core.SideInputReader;
 import org.apache.beam.sdk.coders.Coder;
@@ -36,7 +37,6 @@ import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.state.BagState;
 import org.apache.beam.sdk.state.CombiningState;
 import org.apache.beam.sdk.state.MapState;
-import org.apache.beam.sdk.state.OrderedListState;
 import org.apache.beam.sdk.state.ReadableState;
 import org.apache.beam.sdk.state.ReadableStates;
 import org.apache.beam.sdk.state.SetState;
@@ -47,19 +47,19 @@ import org.apache.beam.sdk.state.ValueState;
 import org.apache.beam.sdk.state.WatermarkHoldState;
 import org.apache.beam.sdk.transforms.Combine.CombineFn;
 import org.apache.beam.sdk.transforms.CombineWithContext.CombineFnWithContext;
-import org.apache.beam.sdk.transforms.Materializations;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.TimestampCombiner;
 import org.apache.beam.sdk.util.CombineFnUtil;
+import org.apache.beam.sdk.util.WindowedValue;
+import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.TupleTag;
-import org.apache.beam.vendor.grpc.v1p26p0.com.google.protobuf.ByteString;
+import org.apache.beam.vendor.grpc.v1p21p0.com.google.protobuf.ByteString;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Maps;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /** Provides access to side inputs and state via a {@link BeamFnStateClient}. */
-public class FnApiStateAccessor<K> implements SideInputReader, StateBinder {
+public class FnApiStateAccessor implements SideInputReader, StateBinder {
   private final PipelineOptions pipelineOptions;
   private final Map<StateKey, Object> stateKeyObjectCache;
   private final Map<TupleTag<?>, SideInputSpec> sideInputSpecMap;
@@ -79,9 +79,9 @@ public class FnApiStateAccessor<K> implements SideInputReader, StateBinder {
       Supplier<String> processBundleInstructionId,
       Map<TupleTag<?>, SideInputSpec> sideInputSpecMap,
       BeamFnStateClient beamFnStateClient,
-      Coder<K> keyCoder,
+      Coder<?> keyCoder,
       Coder<BoundedWindow> windowCoder,
-      Supplier<K> currentKeySupplier,
+      Supplier<WindowedValue<?>> currentElementSupplier,
       Supplier<BoundedWindow> currentWindowSupplier) {
     this.pipelineOptions = pipelineOptions;
     this.stateKeyObjectCache = Maps.newHashMap();
@@ -93,14 +93,22 @@ public class FnApiStateAccessor<K> implements SideInputReader, StateBinder {
     this.currentWindowSupplier = currentWindowSupplier;
     this.encodedCurrentKeySupplier =
         memoizeFunction(
-            currentKeySupplier,
-            key -> {
+            currentElementSupplier,
+            element -> {
+              checkState(
+                  element.getValue() instanceof KV,
+                  "Accessing state in unkeyed context. Current element is not a KV: %s.",
+                  element);
               checkState(
                   keyCoder != null, "Accessing state in unkeyed context, no key coder available");
 
               ByteString.Output encodedKeyOut = ByteString.newOutput();
               try {
-                ((Coder) keyCoder).encode(key, encodedKeyOut, Coder.Context.NESTED);
+                ((Coder) keyCoder)
+                    .encode(
+                        ((KV<?, ?>) element.getValue()).getKey(),
+                        encodedKeyOut,
+                        Coder.Context.NESTED);
               } catch (IOException e) {
                 throw new IllegalStateException(e);
               }
@@ -126,14 +134,12 @@ public class FnApiStateAccessor<K> implements SideInputReader, StateBinder {
     return new Supplier<ResultT>() {
       private ArgT memoizedArg;
       private ResultT memoizedResult;
-      private boolean initialized;
 
       @Override
       public ResultT get() {
         ArgT currentArg = arg.get();
-        if (currentArg != memoizedArg || !initialized) {
+        if (currentArg != memoizedArg) {
           memoizedResult = f.apply(this.memoizedArg = currentArg);
-          initialized = true;
         }
         return memoizedResult;
       }
@@ -141,11 +147,13 @@ public class FnApiStateAccessor<K> implements SideInputReader, StateBinder {
   }
 
   @Override
-  public @Nullable <T> T get(PCollectionView<T> view, BoundedWindow window) {
+  @Nullable
+  public <T> T get(PCollectionView<T> view, BoundedWindow window) {
     TupleTag<?> tag = view.getTagInternal();
 
     SideInputSpec sideInputSpec = sideInputSpecMap.get(tag);
     checkArgument(sideInputSpec != null, "Attempting to access unknown side input %s.", view);
+    KvCoder<?, ?> kvCoder = (KvCoder) sideInputSpec.getCoder();
 
     ByteString.Output encodedWindowOut = ByteString.newOutput();
     try {
@@ -156,64 +164,28 @@ public class FnApiStateAccessor<K> implements SideInputReader, StateBinder {
       throw new IllegalStateException(e);
     }
     ByteString encodedWindow = encodedWindowOut.toByteString();
+
     StateKey.Builder cacheKeyBuilder = StateKey.newBuilder();
-    Object sideInputAccessor;
-
-    switch (sideInputSpec.getAccessPattern()) {
-      case Materializations.ITERABLE_MATERIALIZATION_URN:
-        cacheKeyBuilder
-            .getIterableSideInputBuilder()
-            .setTransformId(ptransformId)
-            .setSideInputId(tag.getId())
-            .setWindow(encodedWindow);
-        sideInputAccessor =
-            new IterableSideInput<>(
-                beamFnStateClient,
-                processBundleInstructionId.get(),
-                ptransformId,
-                tag.getId(),
-                encodedWindow,
-                sideInputSpec.getCoder());
-        break;
-
-      case Materializations.MULTIMAP_MATERIALIZATION_URN:
-        checkState(
-            sideInputSpec.getCoder() instanceof KvCoder,
-            "Expected %s but received %s.",
-            KvCoder.class,
-            sideInputSpec.getCoder().getClass());
-        KvCoder<?, ?> kvCoder = (KvCoder) sideInputSpec.getCoder();
-        cacheKeyBuilder
-            .getMultimapSideInputBuilder()
-            .setTransformId(ptransformId)
-            .setSideInputId(tag.getId())
-            .setWindow(encodedWindow);
-        sideInputAccessor =
-            new MultimapSideInput<>(
-                beamFnStateClient,
-                processBundleInstructionId.get(),
-                ptransformId,
-                tag.getId(),
-                encodedWindow,
-                kvCoder.getKeyCoder(),
-                kvCoder.getValueCoder());
-        break;
-
-      default:
-        throw new IllegalStateException(
-            String.format(
-                "This SDK is only capable of dealing with %s materializations "
-                    + "but was asked to handle %s for PCollectionView with tag %s.",
-                ImmutableList.of(
-                    Materializations.ITERABLE_MATERIALIZATION_URN,
-                    Materializations.MULTIMAP_MATERIALIZATION_URN),
-                sideInputSpec.getAccessPattern(),
-                tag));
-    }
-
+    cacheKeyBuilder
+        .getMultimapSideInputBuilder()
+        .setTransformId(ptransformId)
+        .setSideInputId(tag.getId())
+        .setWindow(encodedWindow);
     return (T)
         stateKeyObjectCache.computeIfAbsent(
-            cacheKeyBuilder.build(), key -> sideInputSpec.getViewFn().apply(sideInputAccessor));
+            cacheKeyBuilder.build(),
+            key ->
+                sideInputSpec
+                    .getViewFn()
+                    .apply(
+                        new MultimapSideInput<>(
+                            beamFnStateClient,
+                            processBundleInstructionId.get(),
+                            ptransformId,
+                            tag.getId(),
+                            encodedWindow,
+                            kvCoder.getKeyCoder(),
+                            kvCoder.getValueCoder())));
   }
 
   @Override
@@ -332,13 +304,6 @@ public class FnApiStateAccessor<K> implements SideInputReader, StateBinder {
       Coder<KeyT> mapKeyCoder,
       Coder<ValueT> mapValueCoder) {
     throw new UnsupportedOperationException("TODO: Add support for a map state to the Fn API.");
-  }
-
-  @Override
-  public <T> OrderedListState<T> bindOrderedList(
-      String id, StateSpec<OrderedListState<T>> spec, Coder<T> elemCoder) {
-    throw new UnsupportedOperationException(
-        "TODO: Add support for a sorted-list state to the Fn API.");
   }
 
   @Override
@@ -504,7 +469,5 @@ public class FnApiStateAccessor<K> implements SideInputReader, StateBinder {
     } catch (Exception e) {
       throw new IllegalStateException(e);
     }
-    stateFinalizers.clear();
-    stateKeyObjectCache.clear();
   }
 }

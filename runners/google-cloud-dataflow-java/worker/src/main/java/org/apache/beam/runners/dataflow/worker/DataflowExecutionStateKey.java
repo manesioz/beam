@@ -18,10 +18,10 @@
 package org.apache.beam.runners.dataflow.worker;
 
 import com.google.auto.value.AutoValue;
+import javax.annotation.Nullable;
 import org.apache.beam.runners.dataflow.worker.counters.NameContext;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ComparisonChain;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Ordering;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Execution states are uniquely identified by the step name, the state name, and for states
@@ -40,12 +40,14 @@ public abstract class DataflowExecutionStateKey implements Comparable<DataflowEx
    * Return the step that is associated to some IO operation, such as reading of Shuffle or side
    * inputs.
    */
-  public abstract @Nullable String getRequestingStepName();
+  @Nullable
+  public abstract String getRequestingStepName();
 
   /**
    * Return the collection index that is associated to some operation, such as reading side inputs.
    */
-  public abstract @Nullable Integer getInputIndex();
+  @Nullable
+  public abstract Integer getInputIndex();
 
   /**
    * Create a new {@link DataflowExecutionStateKey} representing the given step and activity.

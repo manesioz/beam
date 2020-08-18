@@ -20,7 +20,6 @@ package org.apache.beam.runners.spark.util;
 import java.io.Serializable;
 import java.util.Arrays;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.primitives.UnsignedBytes;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /** Serializable byte array. */
 public class ByteArray implements Serializable, Comparable<ByteArray> {
@@ -36,7 +35,7 @@ public class ByteArray implements Serializable, Comparable<ByteArray> {
   }
 
   @Override
-  public boolean equals(@Nullable Object o) {
+  public boolean equals(Object o) {
     if (o == null || getClass() != o.getClass()) {
       return false;
     }

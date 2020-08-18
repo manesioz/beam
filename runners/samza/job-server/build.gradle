@@ -1,3 +1,5 @@
+import org.apache.beam.gradle.BeamModulePlugin
+
 /*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -24,7 +26,6 @@ mainClassName = "org.apache.beam.runners.samza.SamzaJobServerDriver"
 applyJavaNature(
     automaticModuleName: 'org.apache.beam.runners.samza.jobserver',
     validateShadowJar: false,
-    enableChecker: true,
     exportJavadoc: false,
     shadowClosure: {
       append "reference.conf"

@@ -20,22 +20,15 @@ package org.apache.beam.sdk.io.hbase;
 import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions.checkArgument;
 import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions.checkNotNull;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
-import java.util.Objects;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
-import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.coders.Coder;
-import org.apache.beam.sdk.coders.SerializableCoder;
-import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.io.BoundedSource;
 import org.apache.beam.sdk.io.hadoop.SerializableConfiguration;
 import org.apache.beam.sdk.io.range.ByteKey;
@@ -63,9 +56,6 @@ import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.client.Table;
 import org.apache.hadoop.hbase.filter.Filter;
-import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
-import org.apache.hadoop.hbase.protobuf.generated.ClientProtos;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -118,16 +108,16 @@ import org.slf4j.LoggerFactory;
  * }</pre>
  *
  * <p>{@link HBaseIO#readAll()} allows to execute multiple {@link Scan}s to multiple {@link Table}s.
- * These queries are encapsulated via an initial {@link PCollection} of {@link Read}s and can be
- * used to create advanced compositional patterns like reading from a Source and then based on the
- * data create new HBase scans.
+ * These queries are encapsulated via an initial {@link PCollection} of {@link HBaseQuery}s and can
+ * be used to create advanced compositional patterns like reading from a Source and then based on
+ * the data create new HBase scans.
  *
  * <p><b>Note:</b> {@link HBaseIO.ReadAll} only works with <a
  * href="https://beam.apache.org/documentation/runners/capability-matrix/">runners that support
  * Splittable DoFn</a>.
  *
  * <pre>{@code
- * PCollection<Read> queries = ...;
+ * PCollection<HBaseQuery> queries = ...;
  * queries.apply("readAll", HBaseIO.readAll().withConfiguration(configuration));
  * }</pre>
  *
@@ -156,7 +146,7 @@ import org.slf4j.LoggerFactory;
  * be different in some aspects, but the idea is that users can easily migrate from one to the other
  * .
  */
-@Experimental(Kind.SOURCE_SINK)
+@Experimental(Experimental.Kind.SOURCE_SINK)
 public class HBaseIO {
   private static final Logger LOG = LoggerFactory.getLogger(HBaseIO.class);
 
@@ -170,7 +160,7 @@ public class HBaseIO {
    * Filter} may also optionally be specified using {@link HBaseIO.Read#withFilter}.
    */
   public static Read read() {
-    return new Read(null, "", new Scan());
+    return new Read(null, "", new SerializableScan(new Scan()));
   }
 
   /**
@@ -182,56 +172,60 @@ public class HBaseIO {
   public static class Read extends PTransform<PBegin, PCollection<Result>> {
     /** Reads from the HBase instance indicated by the* given configuration. */
     public Read withConfiguration(Configuration configuration) {
-      checkArgument(configuration != null, "configuration cannot be null");
-      return new Read(new Configuration(configuration), tableId, scan);
+      checkArgument(configuration != null, "configuration can not be null");
+      return new Read(new SerializableConfiguration(configuration), tableId, serializableScan);
     }
 
     /** Reads from the specified table. */
     public Read withTableId(String tableId) {
-      checkArgument(tableId != null, "tableId cannot be null");
-      return new Read(configuration, tableId, scan);
+      checkArgument(tableId != null, "tableIdcan not be null");
+      return new Read(serializableConfiguration, tableId, serializableScan);
     }
 
     /** Filters the rows read from HBase using the given* scan. */
     public Read withScan(Scan scan) {
-      checkArgument(scan != null, "scan cannot be null");
-      return new Read(configuration, tableId, scan);
+      checkArgument(scan != null, "scancan not be null");
+      return new Read(serializableConfiguration, tableId, new SerializableScan(scan));
     }
 
     /** Filters the rows read from HBase using the given* row filter. */
     public Read withFilter(Filter filter) {
-      checkArgument(filter != null, "filter cannot be null");
-      return withScan(scan.setFilter(filter));
+      checkArgument(filter != null, "filtercan not be null");
+      return withScan(serializableScan.get().setFilter(filter));
     }
 
     /** Reads only rows in the specified range. */
     public Read withKeyRange(ByteKeyRange keyRange) {
-      checkArgument(keyRange != null, "keyRange cannot be null");
+      checkArgument(keyRange != null, "keyRangecan not be null");
       byte[] startRow = keyRange.getStartKey().getBytes();
       byte[] stopRow = keyRange.getEndKey().getBytes();
-      return withScan(scan.setStartRow(startRow).setStopRow(stopRow));
+      return withScan(serializableScan.get().setStartRow(startRow).setStopRow(stopRow));
     }
 
     /** Reads only rows in the specified range. */
     public Read withKeyRange(byte[] startRow, byte[] stopRow) {
-      checkArgument(startRow != null, "startRow cannot be null");
-      checkArgument(stopRow != null, "stopRow cannot be null");
+      checkArgument(startRow != null, "startRowcan not be null");
+      checkArgument(stopRow != null, "stopRowcan not be null");
       ByteKeyRange keyRange =
           ByteKeyRange.of(ByteKey.copyFrom(startRow), ByteKey.copyFrom(stopRow));
       return withKeyRange(keyRange);
     }
 
-    private Read(Configuration configuration, String tableId, Scan scan) {
-      this.configuration = configuration;
+    private Read(
+        SerializableConfiguration serializableConfiguration,
+        String tableId,
+        SerializableScan serializableScan) {
+      this.serializableConfiguration = serializableConfiguration;
       this.tableId = tableId;
-      this.scan = scan;
+      this.serializableScan = serializableScan;
     }
 
     @Override
     public PCollection<Result> expand(PBegin input) {
-      checkArgument(configuration != null, "withConfiguration() is required");
+      checkArgument(serializableConfiguration != null, "withConfiguration() is required");
       checkArgument(!tableId.isEmpty(), "withTableId() is required");
-      try (Connection connection = ConnectionFactory.createConnection(configuration)) {
+      try (Connection connection =
+          ConnectionFactory.createConnection(serializableConfiguration.get())) {
         Admin admin = connection.getAdmin();
         checkArgument(
             admin.tableExists(TableName.valueOf(tableId)), "Table %s does not exist", tableId);
@@ -246,13 +240,13 @@ public class HBaseIO {
     @Override
     public void populateDisplayData(DisplayData.Builder builder) {
       super.populateDisplayData(builder);
-      builder.add(DisplayData.item("configuration", configuration.toString()));
+      builder.add(DisplayData.item("configuration", serializableConfiguration.get().toString()));
       builder.add(DisplayData.item("tableId", tableId));
-      builder.addIfNotNull(DisplayData.item("scan", scan.toString()));
+      builder.addIfNotNull(DisplayData.item("scan", serializableScan.get().toString()));
     }
 
     public Configuration getConfiguration() {
-      return configuration;
+      return serializableConfiguration.get();
     }
 
     public String getTableId() {
@@ -260,108 +254,54 @@ public class HBaseIO {
     }
 
     public Scan getScan() {
-      return scan;
+      return serializableScan.get();
     }
 
     /** Returns the range of keys that will be read from the table. */
     public ByteKeyRange getKeyRange() {
-      byte[] startRow = scan.getStartRow();
-      byte[] stopRow = scan.getStopRow();
+      byte[] startRow = serializableScan.get().getStartRow();
+      byte[] stopRow = serializableScan.get().getStopRow();
       return ByteKeyRange.of(ByteKey.copyFrom(startRow), ByteKey.copyFrom(stopRow));
     }
 
-    @Override
-    public boolean equals(@Nullable Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (o == null || getClass() != o.getClass()) {
-        return false;
-      }
-      Read read = (Read) o;
-      return configuration.toString().equals(read.configuration.toString())
-          && Objects.equals(tableId, read.tableId)
-          && scan.toString().equals(read.scan.toString());
-    }
-
-    @Override
-    public int hashCode() {
-      return Objects.hash(configuration, tableId, scan);
-    }
-
-    /**
-     * The writeReplace method allows the developer to provide a replacement object that will be
-     * serialized instead of the original one. We use this to keep the enclosed class immutable. For
-     * more details on the technique see <a
-     * href="https://lingpipe-blog.com/2009/08/10/serializing-immutable-singletons-serialization-proxy/">this
-     * article</a>.
-     */
-    private Object writeReplace() {
-      return new SerializationProxy(this);
-    }
-
-    private static class SerializationProxy implements Serializable {
-      public SerializationProxy() {}
-
-      public SerializationProxy(Read read) {
-        configuration = read.configuration;
-        tableId = read.tableId;
-        scan = read.scan;
-      }
-
-      private void writeObject(ObjectOutputStream out) throws IOException {
-        SerializableCoder.of(SerializableConfiguration.class)
-            .encode(new SerializableConfiguration(this.configuration), out);
-        StringUtf8Coder.of().encode(this.tableId, out);
-        ProtobufUtil.toScan(this.scan).writeDelimitedTo(out);
-      }
-
-      private void readObject(ObjectInputStream in) throws IOException {
-        this.configuration = SerializableCoder.of(SerializableConfiguration.class).decode(in).get();
-        this.tableId = StringUtf8Coder.of().decode(in);
-        this.scan = ProtobufUtil.toScan(ClientProtos.Scan.parseDelimitedFrom(in));
-      }
-
-      Object readResolve() {
-        return HBaseIO.read().withConfiguration(configuration).withTableId(tableId).withScan(scan);
-      }
-
-      private Configuration configuration;
-      private String tableId;
-      private Scan scan;
-    }
-
-    @SuppressFBWarnings("SE_BAD_FIELD")
-    private final Configuration configuration;
-
+    private final SerializableConfiguration serializableConfiguration;
     private final String tableId;
-
-    @SuppressFBWarnings("SE_BAD_FIELD")
-    private final Scan scan;
+    private final SerializableScan serializableScan;
   }
 
   /**
    * A {@link PTransform} that works like {@link #read}, but executes read operations coming from a
-   * {@link PCollection} of {@link Read}.
+   * {@link PCollection} of {@link HBaseQuery}.
    */
-  @Experimental(Kind.SPLITTABLE_DO_FN)
   public static ReadAll readAll() {
-    return new ReadAll();
+    return new ReadAll(null);
   }
 
   /** Implementation of {@link #readAll}. */
-  public static class ReadAll extends PTransform<PCollection<Read>, PCollection<Result>> {
-    private ReadAll() {}
+  public static class ReadAll extends PTransform<PCollection<HBaseQuery>, PCollection<Result>> {
+
+    private ReadAll(SerializableConfiguration serializableConfiguration) {
+      this.serializableConfiguration = serializableConfiguration;
+    }
+
+    /** Reads from the HBase instance indicated by the* given configuration. */
+    public ReadAll withConfiguration(Configuration configuration) {
+      checkArgument(configuration != null, "configuration can not be null");
+      return new ReadAll(new SerializableConfiguration(configuration));
+    }
 
     @Override
-    public PCollection<Result> expand(PCollection<Read> input) {
-      return input.apply(ParDo.of(new HBaseReadSplittableDoFn()));
+    public PCollection<Result> expand(PCollection<HBaseQuery> input) {
+      checkArgument(serializableConfiguration != null, "withConfiguration() is required");
+      return input.apply(ParDo.of(new HBaseReadSplittableDoFn(serializableConfiguration)));
     }
+
+    private SerializableConfiguration serializableConfiguration;
   }
 
   static class HBaseSource extends BoundedSource<Result> {
     private final Read read;
-    private @Nullable Long estimatedSizeBytes;
+    @Nullable private Long estimatedSizeBytes;
 
     HBaseSource(Read read, @Nullable Long estimatedSizeBytes) {
       this.read = read;
@@ -372,9 +312,10 @@ public class HBaseIO {
       checkNotNull(startKey, "startKey");
       Read newRead =
           new Read(
-              read.configuration,
+              read.serializableConfiguration,
               read.tableId,
-              new Scan(read.scan).setStartRow(startKey.getBytes()));
+              new SerializableScan(
+                  new Scan(read.serializableScan.get()).setStartRow(startKey.getBytes())));
       return new HBaseSource(newRead, estimatedSizeBytes);
     }
 
@@ -382,23 +323,26 @@ public class HBaseIO {
       checkNotNull(endKey, "endKey");
       Read newRead =
           new Read(
-              read.configuration, read.tableId, new Scan(read.scan).setStopRow(endKey.getBytes()));
+              read.serializableConfiguration,
+              read.tableId,
+              new SerializableScan(
+                  new Scan(read.serializableScan.get()).setStopRow(endKey.getBytes())));
       return new HBaseSource(newRead, estimatedSizeBytes);
     }
 
     @Override
     public long getEstimatedSizeBytes(PipelineOptions pipelineOptions) throws Exception {
       if (estimatedSizeBytes == null) {
-        try (Connection connection = ConnectionFactory.createConnection(read.configuration)) {
+        try (Connection connection =
+            ConnectionFactory.createConnection(read.serializableConfiguration.get())) {
           estimatedSizeBytes =
-              HBaseUtils.estimateSizeBytes(
-                  connection, read.tableId, HBaseUtils.getByteKeyRange(read.scan));
+              HBaseUtils.estimateSizeBytes(connection, read.tableId, read.serializableScan.get());
         }
         LOG.debug(
             "Estimated size {} bytes for table {} and scan {}",
             estimatedSizeBytes,
             read.tableId,
-            read.scan);
+            read.serializableScan.get());
       }
       return estimatedSizeBytes;
     }
@@ -415,14 +359,12 @@ public class HBaseIO {
 
       try (Connection connection = ConnectionFactory.createConnection(read.getConfiguration())) {
         List<HRegionLocation> regionLocations =
-            HBaseUtils.getRegionLocations(
-                connection, read.tableId, HBaseUtils.getByteKeyRange(read.scan));
+            HBaseUtils.getRegionLocations(connection, read.tableId, read.serializableScan.get());
         LOG.debug("Suggested {} source(s) based on size", numSplits);
         LOG.debug("Suggested {} source(s) based on number of regions", regionLocations.size());
 
         List<ByteKeyRange> ranges =
-            HBaseUtils.getRanges(
-                regionLocations, read.tableId, HBaseUtils.getByteKeyRange(read.scan));
+            HBaseUtils.getRanges(regionLocations, read.tableId, read.serializableScan.get());
         final int numSources = ranges.size();
         LOG.debug("Spliting into {} source(s)", numSources);
         if (numSources > 0) {
@@ -434,11 +376,12 @@ public class HBaseIO {
             sources.add(
                 new HBaseSource(
                     new Read(
-                        read.configuration,
+                        read.serializableConfiguration,
                         read.tableId,
-                        new Scan(read.scan)
-                            .setStartRow(range.getStartKey().getBytes())
-                            .setStopRow(range.getEndKey().getBytes())),
+                        new SerializableScan(
+                            new Scan(read.serializableScan.get())
+                                .setStartRow(range.getStartKey().getBytes())
+                                .setStopRow(range.getEndKey().getBytes()))),
                     estimatedSizeBytes));
           }
           return sources;
@@ -480,7 +423,7 @@ public class HBaseIO {
 
     HBaseReader(HBaseSource source) {
       this.source = source;
-      Scan scan = source.read.scan;
+      Scan scan = source.read.serializableScan.get();
       ByteKeyRange range =
           ByteKeyRange.of(
               ByteKey.copyFrom(scan.getStartRow()), ByteKey.copyFrom(scan.getStopRow()));
@@ -490,13 +433,13 @@ public class HBaseIO {
     @Override
     public boolean start() throws IOException {
       HBaseSource source = getCurrentSource();
-      Configuration configuration = source.read.configuration;
+      Configuration configuration = source.read.serializableConfiguration.get();
       String tableId = source.read.tableId;
       connection = ConnectionFactory.createConnection(configuration);
       TableName tableName = TableName.valueOf(tableId);
       Table table = connection.getTable(tableName);
       // [BEAM-2319] We have to clone the Scan because the underlying scanner may mutate it.
-      Scan scanClone = new Scan(source.read.scan);
+      Scan scanClone = new Scan(source.read.serializableScan.get());
       scanner = table.getScanner(scanClone);
       iter = scanner.iterator();
       return advance();
@@ -552,7 +495,8 @@ public class HBaseIO {
     }
 
     @Override
-    public final synchronized @Nullable HBaseSource splitAtFraction(double fraction) {
+    @Nullable
+    public final synchronized HBaseSource splitAtFraction(double fraction) {
       ByteKey splitKey;
       try {
         splitKey = rangeTracker.getRange().interpolateKey(fraction);
@@ -591,7 +535,7 @@ public class HBaseIO {
    * which table to write.
    */
   public static Write write() {
-    return new Write(null /* Configuration */, "");
+    return new Write(null /* SerializableConfiguration */, "");
   }
 
   /**
@@ -603,123 +547,66 @@ public class HBaseIO {
   public static class Write extends PTransform<PCollection<Mutation>, PDone> {
     /** Writes to the HBase instance indicated by the* given Configuration. */
     public Write withConfiguration(Configuration configuration) {
-      checkArgument(configuration != null, "configuration cannot be null");
-      return new Write(configuration, tableId);
+      checkArgument(configuration != null, "configuration can not be null");
+      return new Write(new SerializableConfiguration(configuration), tableId);
     }
 
     /** Writes to the specified table. */
     public Write withTableId(String tableId) {
-      checkArgument(tableId != null, "tableId cannot be null");
-      return new Write(configuration, tableId);
+      checkArgument(tableId != null, "tableIdcan not be null");
+      return new Write(serializableConfiguration, tableId);
     }
 
-    private Write(Configuration configuration, String tableId) {
-      this.configuration = configuration;
+    private Write(SerializableConfiguration serializableConfiguration, String tableId) {
+      this.serializableConfiguration = serializableConfiguration;
       this.tableId = tableId;
     }
 
     @Override
     public PDone expand(PCollection<Mutation> input) {
-      checkArgument(configuration != null, "withConfiguration() is required");
+      checkArgument(serializableConfiguration != null, "withConfiguration() is required");
       checkArgument(tableId != null && !tableId.isEmpty(), "withTableId() is required");
-      try (Connection connection = ConnectionFactory.createConnection(configuration)) {
+      try (Connection connection =
+          ConnectionFactory.createConnection(serializableConfiguration.get())) {
         Admin admin = connection.getAdmin();
         checkArgument(
             admin.tableExists(TableName.valueOf(tableId)), "Table %s does not exist", tableId);
       } catch (IOException e) {
         LOG.warn("Error checking whether table {} exists; proceeding.", tableId, e);
       }
-      input.apply(ParDo.of(new HBaseWriterFn(this)));
+      input.apply(ParDo.of(new HBaseWriterFn(tableId, serializableConfiguration)));
       return PDone.in(input.getPipeline());
     }
 
     @Override
     public void populateDisplayData(DisplayData.Builder builder) {
       super.populateDisplayData(builder);
-      builder.add(DisplayData.item("configuration", configuration.toString()));
+      builder.add(DisplayData.item("configuration", serializableConfiguration.get().toString()));
       builder.add(DisplayData.item("tableId", tableId));
-    }
-
-    public Configuration getConfiguration() {
-      return configuration;
     }
 
     public String getTableId() {
       return tableId;
     }
 
-    @Override
-    public boolean equals(@Nullable Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (o == null || getClass() != o.getClass()) {
-        return false;
-      }
-      Write write = (Write) o;
-      return configuration.toString().equals(write.configuration.toString())
-          && Objects.equals(tableId, write.tableId);
+    public Configuration getConfiguration() {
+      return serializableConfiguration.get();
     }
-
-    @Override
-    public int hashCode() {
-      return Objects.hash(configuration, tableId);
-    }
-
-    /**
-     * The writeReplace method allows the developer to provide a replacement object that will be
-     * serialized instead of the original one. We use this to keep the enclosed class immutable. For
-     * more details on the technique see <a
-     * href="https://lingpipe-blog.com/2009/08/10/serializing-immutable-singletons-serialization-proxy/">this
-     * article</a>.
-     */
-    private Object writeReplace() {
-      return new SerializationProxy(this);
-    }
-
-    private static class SerializationProxy implements Serializable {
-      public SerializationProxy() {}
-
-      public SerializationProxy(Write write) {
-        configuration = write.configuration;
-        tableId = write.tableId;
-      }
-
-      private void writeObject(ObjectOutputStream out) throws IOException {
-        SerializableCoder.of(SerializableConfiguration.class)
-            .encode(new SerializableConfiguration(this.configuration), out);
-        StringUtf8Coder.of().encode(this.tableId, out);
-      }
-
-      private void readObject(ObjectInputStream in) throws IOException {
-        this.configuration = SerializableCoder.of(SerializableConfiguration.class).decode(in).get();
-        this.tableId = StringUtf8Coder.of().decode(in);
-      }
-
-      Object readResolve() {
-        return HBaseIO.write().withConfiguration(configuration).withTableId(tableId);
-      }
-
-      private Configuration configuration;
-      private String tableId;
-    }
-
-    @SuppressFBWarnings("SE_BAD_FIELD")
-    private final Configuration configuration;
 
     private final String tableId;
+    private final SerializableConfiguration serializableConfiguration;
 
     private class HBaseWriterFn extends DoFn<Mutation, Void> {
 
-      HBaseWriterFn(Write write) {
-        checkNotNull(write.tableId, "tableId");
-        checkNotNull(write.configuration, "configuration");
-        this.write = write;
+      HBaseWriterFn(String tableId, SerializableConfiguration serializableConfiguration) {
+        this.tableId = checkNotNull(tableId, "tableId");
+        this.serializableConfiguration =
+            checkNotNull(serializableConfiguration, "serializableConfiguration");
       }
 
       @Setup
       public void setup() throws Exception {
-        connection = ConnectionFactory.createConnection(configuration);
+        connection = ConnectionFactory.createConnection(serializableConfiguration.get());
       }
 
       @StartBundle
@@ -758,11 +645,13 @@ public class HBaseIO {
         builder.delegate(Write.this);
       }
 
-      private final Write write;
-      private long recordsWritten;
+      private final String tableId;
+      private final SerializableConfiguration serializableConfiguration;
 
-      private transient Connection connection;
-      private transient BufferedMutator mutator;
+      private Connection connection;
+      private BufferedMutator mutator;
+
+      private long recordsWritten;
     }
   }
 }

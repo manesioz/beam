@@ -53,7 +53,6 @@ import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
 import org.apache.beam.sdk.transforms.windowing.TimestampCombiner;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterables;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.hamcrest.Matchers;
 import org.joda.time.Instant;
 import org.junit.Before;
@@ -673,7 +672,7 @@ public abstract class StateInternalsTest {
     public void verifyDeterministic() throws NonDeterministicException {}
 
     @Override
-    public boolean equals(@Nullable Object other) {
+    public boolean equals(Object other) {
       return other == this;
     }
 

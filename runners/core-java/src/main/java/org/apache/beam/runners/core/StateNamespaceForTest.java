@@ -19,7 +19,6 @@ package org.apache.beam.runners.core;
 
 import java.io.IOException;
 import java.util.Objects;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /** A simple {@link StateNamespace} used for testing. */
 public class StateNamespaceForTest implements StateNamespace {
@@ -40,7 +39,7 @@ public class StateNamespaceForTest implements StateNamespace {
   }
 
   @Override
-  public boolean equals(@Nullable Object obj) {
+  public boolean equals(Object obj) {
     if (this == obj) {
       return true;
     }

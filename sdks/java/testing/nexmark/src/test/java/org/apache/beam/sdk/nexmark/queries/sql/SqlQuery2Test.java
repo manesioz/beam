@@ -29,12 +29,8 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Immutabl
 import org.joda.time.Instant;
 import org.junit.Rule;
 import org.junit.Test;
-import org.junit.experimental.runners.Enclosed;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
 
 /** Unit tests for {@link SqlQuery2}. */
-@RunWith(Enclosed.class)
 public class SqlQuery2Test {
 
   private static final List<Bid> BIDS =
@@ -69,40 +65,24 @@ public class SqlQuery2Test {
   private static final List<AuctionPrice> BIDS_EVERY_THIRD =
       ImmutableList.of(newAuctionPrice(BIDS.get(2)), newAuctionPrice(BIDS.get(5)));
 
-  private abstract static class SqlQuery2TestCases {
-    protected abstract SqlQuery2 getQuery(long skipFactor);
+  @Rule public TestPipeline testPipeline = TestPipeline.create();
 
-    @Rule public TestPipeline testPipeline = TestPipeline.create();
+  @Test
+  public void testSkipsEverySecondElement() throws Exception {
+    PCollection<Event> bids = testPipeline.apply(Create.of(BIDS_EVENTS));
 
-    @Test
-    public void testSkipsEverySecondElement() {
-      PCollection<Event> bids = testPipeline.apply(Create.of(BIDS_EVENTS));
-      PAssert.that(bids.apply(getQuery(2))).containsInAnyOrder(BIDS_EVEN);
-      testPipeline.run();
-    }
+    PAssert.that(bids.apply(new SqlQuery2(2))).containsInAnyOrder(BIDS_EVEN);
 
-    @Test
-    public void testSkipsEveryThirdElement() {
-      PCollection<Event> bids = testPipeline.apply(Create.of(BIDS_EVENTS));
-      PAssert.that(bids.apply(getQuery(3))).containsInAnyOrder(BIDS_EVERY_THIRD);
-      testPipeline.run();
-    }
+    testPipeline.run();
   }
 
-  @RunWith(JUnit4.class)
-  public static class SqlQuery2TestCalcite extends SqlQuery2TestCases {
-    @Override
-    protected SqlQuery2 getQuery(long skipFactor) {
-      return SqlQuery2.calciteSqlQuery2(skipFactor);
-    }
-  }
+  @Test
+  public void testSkipsEveryThirdElement() throws Exception {
+    PCollection<Event> bids = testPipeline.apply(Create.of(BIDS_EVENTS));
 
-  @RunWith(JUnit4.class)
-  public static class SqlQuery2TestZetaSql extends SqlQuery2TestCases {
-    @Override
-    protected SqlQuery2 getQuery(long skipFactor) {
-      return SqlQuery2.zetaSqlQuery2(skipFactor);
-    }
+    PAssert.that(bids.apply(new SqlQuery2(3))).containsInAnyOrder(BIDS_EVERY_THIRD);
+
+    testPipeline.run();
   }
 
   private static Bid newBid(long id) {

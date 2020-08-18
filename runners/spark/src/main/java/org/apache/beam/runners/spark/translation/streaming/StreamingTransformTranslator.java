@@ -31,6 +31,7 @@ import java.util.Queue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
+import javax.annotation.Nullable;
 import org.apache.beam.runners.core.construction.PTransformTranslation;
 import org.apache.beam.runners.core.construction.ParDoTranslation;
 import org.apache.beam.runners.core.construction.SerializablePipelineOptions;
@@ -91,7 +92,6 @@ import org.apache.spark.streaming.api.java.JavaDStream;
 import org.apache.spark.streaming.api.java.JavaInputDStream;
 import org.apache.spark.streaming.api.java.JavaPairDStream;
 import org.apache.spark.streaming.api.java.JavaStreamingContext;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /** Supports translation between a Beam transform, and Spark's operations on DStreams. */
 public final class StreamingTransformTranslator {
@@ -510,7 +510,8 @@ public final class StreamingTransformTranslator {
     EVALUATORS.put(PTransformTranslation.RESHUFFLE_URN, reshuffle());
   }
 
-  private static @Nullable TransformEvaluator<?> getTranslator(PTransform<?, ?> transform) {
+  @Nullable
+  private static TransformEvaluator<?> getTranslator(PTransform<?, ?> transform) {
     @Nullable String urn = PTransformTranslation.urnForTransformOrNull(transform);
     return urn == null ? null : EVALUATORS.get(urn);
   }

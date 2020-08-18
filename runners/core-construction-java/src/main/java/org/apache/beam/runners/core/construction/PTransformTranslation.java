@@ -19,7 +19,6 @@ package org.apache.beam.runners.core.construction;
 
 import static org.apache.beam.runners.core.construction.BeamUrns.getUrn;
 import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions.checkArgument;
-import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions.checkState;
 
 import java.io.IOException;
 import java.util.Collection;
@@ -30,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.ServiceLoader;
 import java.util.Set;
+import javax.annotation.Nullable;
 import org.apache.beam.model.pipeline.v1.RunnerApi;
 import org.apache.beam.model.pipeline.v1.RunnerApi.FunctionSpec;
 import org.apache.beam.model.pipeline.v1.RunnerApi.StandardPTransforms;
@@ -38,7 +38,6 @@ import org.apache.beam.model.pipeline.v1.RunnerApi.StandardPTransforms.Splittabl
 import org.apache.beam.runners.core.construction.ExternalTranslation.ExternalTranslator;
 import org.apache.beam.runners.core.construction.ParDoTranslation.ParDoTranslator;
 import org.apache.beam.sdk.Pipeline;
-import org.apache.beam.sdk.io.Read;
 import org.apache.beam.sdk.runners.AppliedPTransform;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.display.DisplayData;
@@ -50,156 +49,77 @@ import org.apache.beam.sdk.values.PValue;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Joiner;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableMap;
-import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableSet;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableSortedSet;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterables;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Sets;
-import org.checkerframework.checker.nullness.qual.NonNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Utilities for converting {@link PTransform PTransforms} to {@link RunnerApi Runner API protocol
  * buffers}.
  */
 public class PTransformTranslation {
-  // We specifically copy the values here so that they can be used in switch case statements
-  // and we validate that the value matches the actual URN in the static block below.
 
-  // Primitives
-  public static final String PAR_DO_TRANSFORM_URN = "beam:transform:pardo:v1";
-  public static final String FLATTEN_TRANSFORM_URN = "beam:transform:flatten:v1";
-  public static final String GROUP_BY_KEY_TRANSFORM_URN = "beam:transform:group_by_key:v1";
-  public static final String IMPULSE_TRANSFORM_URN = "beam:transform:impulse:v1";
-  public static final String ASSIGN_WINDOWS_TRANSFORM_URN = "beam:transform:window_into:v1";
-  public static final String TEST_STREAM_TRANSFORM_URN = "beam:transform:teststream:v1";
-  public static final String MAP_WINDOWS_TRANSFORM_URN = "beam:transform:map_windows:v1";
-  public static final String MERGE_WINDOWS_TRANSFORM_URN = "beam:transform:merge_windows:v1";
+  public static final String PAR_DO_TRANSFORM_URN = getUrn(StandardPTransforms.Primitives.PAR_DO);
+  public static final String FLATTEN_TRANSFORM_URN = getUrn(StandardPTransforms.Primitives.FLATTEN);
+  public static final String GROUP_BY_KEY_TRANSFORM_URN =
+      getUrn(StandardPTransforms.Primitives.GROUP_BY_KEY);
+  public static final String IMPULSE_TRANSFORM_URN = getUrn(StandardPTransforms.Primitives.IMPULSE);
+  public static final String ASSIGN_WINDOWS_TRANSFORM_URN =
+      getUrn(StandardPTransforms.Primitives.ASSIGN_WINDOWS);
+  public static final String TEST_STREAM_TRANSFORM_URN =
+      getUrn(StandardPTransforms.Primitives.TEST_STREAM);
+  public static final String MAP_WINDOWS_TRANSFORM_URN =
+      getUrn(StandardPTransforms.Primitives.MAP_WINDOWS);
 
-  // Required runner implemented transforms. These transforms should never specify an environment.
-  public static final ImmutableSet<String> RUNNER_IMPLEMENTED_TRANSFORMS =
-      ImmutableSet.of(GROUP_BY_KEY_TRANSFORM_URN, IMPULSE_TRANSFORM_URN);
-
-  // DeprecatedPrimitives
   /**
    * @deprecated SDKs should move away from creating `Read` transforms and migrate to using Impulse
    *     + SplittableDoFns.
    */
-  @Deprecated public static final String READ_TRANSFORM_URN = "beam:transform:read:v1";
-
+  @Deprecated
+  public static final String READ_TRANSFORM_URN =
+      getUrn(StandardPTransforms.DeprecatedPrimitives.READ);
   /**
    * @deprecated runners should move away from translating `CreatePCollectionView` and treat this as
    *     part of the translation for a `ParDo` side input.
    */
   @Deprecated
-  public static final String CREATE_VIEW_TRANSFORM_URN = "beam:transform:create_view:v1";
+  public static final String CREATE_VIEW_TRANSFORM_URN =
+      getUrn(StandardPTransforms.DeprecatedPrimitives.CREATE_VIEW);
 
-  // Composites
-  public static final String COMBINE_PER_KEY_TRANSFORM_URN = "beam:transform:combine_per_key:v1";
-  public static final String COMBINE_GLOBALLY_TRANSFORM_URN = "beam:transform:combine_globally:v1";
-  public static final String RESHUFFLE_URN = "beam:transform:reshuffle:v1";
-  public static final String WRITE_FILES_TRANSFORM_URN = "beam:transform:write_files:v1";
-
-  // CombineComponents
-  public static final String COMBINE_PER_KEY_PRECOMBINE_TRANSFORM_URN =
-      "beam:transform:combine_per_key_precombine:v1";
-  public static final String COMBINE_PER_KEY_MERGE_ACCUMULATORS_TRANSFORM_URN =
-      "beam:transform:combine_per_key_merge_accumulators:v1";
-  public static final String COMBINE_PER_KEY_EXTRACT_OUTPUTS_TRANSFORM_URN =
-      "beam:transform:combine_per_key_extract_outputs:v1";
-  public static final String COMBINE_PER_KEY_CONVERT_TO_ACCUMULATORS_TRANSFORM_URN =
-      "beam:transform:combine_per_key_convert_to_accumulators:v1";
+  public static final String COMBINE_PER_KEY_TRANSFORM_URN =
+      getUrn(StandardPTransforms.Composites.COMBINE_PER_KEY);
+  public static final String COMBINE_GLOBALLY_TRANSFORM_URN =
+      getUrn(StandardPTransforms.Composites.COMBINE_GLOBALLY);
   public static final String COMBINE_GROUPED_VALUES_TRANSFORM_URN =
-      "beam:transform:combine_grouped_values:v1";
+      getUrn(CombineComponents.COMBINE_GROUPED_VALUES);
+  public static final String COMBINE_PER_KEY_PRECOMBINE_TRANSFORM_URN =
+      getUrn(CombineComponents.COMBINE_PER_KEY_PRECOMBINE);
+  public static final String COMBINE_PER_KEY_MERGE_ACCUMULATORS_TRANSFORM_URN =
+      getUrn(CombineComponents.COMBINE_PER_KEY_MERGE_ACCUMULATORS);
+  public static final String COMBINE_PER_KEY_EXTRACT_OUTPUTS_TRANSFORM_URN =
+      getUrn(CombineComponents.COMBINE_PER_KEY_EXTRACT_OUTPUTS);
+  public static final String RESHUFFLE_URN = getUrn(StandardPTransforms.Composites.RESHUFFLE);
+  public static final String WRITE_FILES_TRANSFORM_URN =
+      getUrn(StandardPTransforms.Composites.WRITE_FILES);
 
   // SplittableParDoComponents
   public static final String SPLITTABLE_PAIR_WITH_RESTRICTION_URN =
-      "beam:transform:sdf_pair_with_restriction:v1";
-  public static final String SPLITTABLE_TRUNCATE_SIZED_RESTRICTION_URN =
-      "beam:transform:sdf_truncate_sized_restrictions:v1";
-  /**
-   * @deprecated runners should move away from using `SplittableProcessKeyedElements` and prefer to
-   *     internalize any necessary SplittableDoFn expansion.
-   */
-  @Deprecated
+      getUrn(SplittableParDoComponents.PAIR_WITH_RESTRICTION);
+  public static final String SPLITTABLE_SPLIT_RESTRICTION_URN =
+      getUrn(SplittableParDoComponents.SPLIT_RESTRICTION);
   public static final String SPLITTABLE_PROCESS_KEYED_URN =
-      "beam:transform:sdf_process_keyed_elements:v1";
-  /**
-   * @deprecated runners should move away from using `SplittableProcessElements` and prefer to
-   *     internalize any necessary SplittableDoFn expansion.
-   */
-  @Deprecated
+      getUrn(SplittableParDoComponents.PROCESS_KEYED_ELEMENTS);
   public static final String SPLITTABLE_PROCESS_ELEMENTS_URN =
-      "beam:transform:sdf_process_elements:v1";
-
+      getUrn(SplittableParDoComponents.PROCESS_ELEMENTS);
   public static final String SPLITTABLE_SPLIT_AND_SIZE_RESTRICTIONS_URN =
-      "beam:transform:sdf_split_and_size_restrictions:v1";
+      getUrn(SplittableParDoComponents.SPLIT_AND_SIZE_RESTRICTIONS);
   public static final String SPLITTABLE_PROCESS_SIZED_ELEMENTS_AND_RESTRICTIONS_URN =
-      "beam:transform:sdf_process_sized_element_and_restrictions:v1";
+      getUrn(SplittableParDoComponents.PROCESS_SIZED_ELEMENTS_AND_RESTRICTIONS);
 
-  static {
-    // Primitives
-    checkState(PAR_DO_TRANSFORM_URN.equals(getUrn(StandardPTransforms.Primitives.PAR_DO)));
-    checkState(FLATTEN_TRANSFORM_URN.equals(getUrn(StandardPTransforms.Primitives.FLATTEN)));
-    checkState(
-        GROUP_BY_KEY_TRANSFORM_URN.equals(getUrn(StandardPTransforms.Primitives.GROUP_BY_KEY)));
-    checkState(IMPULSE_TRANSFORM_URN.equals(getUrn(StandardPTransforms.Primitives.IMPULSE)));
-    checkState(
-        ASSIGN_WINDOWS_TRANSFORM_URN.equals(getUrn(StandardPTransforms.Primitives.ASSIGN_WINDOWS)));
-    checkState(
-        TEST_STREAM_TRANSFORM_URN.equals(getUrn(StandardPTransforms.Primitives.TEST_STREAM)));
-    checkState(
-        MAP_WINDOWS_TRANSFORM_URN.equals(getUrn(StandardPTransforms.Primitives.MAP_WINDOWS)));
-    checkState(
-        MERGE_WINDOWS_TRANSFORM_URN.equals(getUrn(StandardPTransforms.Primitives.MERGE_WINDOWS)));
-
-    // DeprecatedPrimitives
-    checkState(READ_TRANSFORM_URN.equals(getUrn(StandardPTransforms.DeprecatedPrimitives.READ)));
-    checkState(
-        CREATE_VIEW_TRANSFORM_URN.equals(
-            getUrn(StandardPTransforms.DeprecatedPrimitives.CREATE_VIEW)));
-
-    // Composites
-    checkState(
-        COMBINE_PER_KEY_TRANSFORM_URN.equals(
-            getUrn(StandardPTransforms.Composites.COMBINE_PER_KEY)));
-    checkState(
-        COMBINE_GLOBALLY_TRANSFORM_URN.equals(
-            getUrn(StandardPTransforms.Composites.COMBINE_GLOBALLY)));
-    checkState(RESHUFFLE_URN.equals(getUrn(StandardPTransforms.Composites.RESHUFFLE)));
-    checkState(
-        WRITE_FILES_TRANSFORM_URN.equals(getUrn(StandardPTransforms.Composites.WRITE_FILES)));
-
-    // CombineComponents
-    checkState(
-        COMBINE_PER_KEY_PRECOMBINE_TRANSFORM_URN.equals(
-            getUrn(CombineComponents.COMBINE_PER_KEY_PRECOMBINE)));
-    checkState(
-        COMBINE_PER_KEY_MERGE_ACCUMULATORS_TRANSFORM_URN.equals(
-            getUrn(CombineComponents.COMBINE_PER_KEY_MERGE_ACCUMULATORS)));
-    checkState(
-        COMBINE_PER_KEY_EXTRACT_OUTPUTS_TRANSFORM_URN.equals(
-            getUrn(CombineComponents.COMBINE_PER_KEY_EXTRACT_OUTPUTS)));
-    checkState(
-        COMBINE_PER_KEY_CONVERT_TO_ACCUMULATORS_TRANSFORM_URN.equals(
-            getUrn(CombineComponents.COMBINE_PER_KEY_CONVERT_TO_ACCUMULATORS)));
-    checkState(
-        COMBINE_GROUPED_VALUES_TRANSFORM_URN.equals(
-            getUrn(CombineComponents.COMBINE_GROUPED_VALUES)));
-
-    // SplittableParDoComponents
-    checkState(
-        SPLITTABLE_PAIR_WITH_RESTRICTION_URN.equals(
-            getUrn(SplittableParDoComponents.PAIR_WITH_RESTRICTION)));
-    checkState(
-        SPLITTABLE_SPLIT_AND_SIZE_RESTRICTIONS_URN.equals(
-            getUrn(SplittableParDoComponents.SPLIT_AND_SIZE_RESTRICTIONS)));
-    checkState(
-        SPLITTABLE_PROCESS_SIZED_ELEMENTS_AND_RESTRICTIONS_URN.equals(
-            getUrn(SplittableParDoComponents.PROCESS_SIZED_ELEMENTS_AND_RESTRICTIONS)));
-    checkState(
-        SPLITTABLE_TRUNCATE_SIZED_RESTRICTION_URN.equals(
-            getUrn(SplittableParDoComponents.TRUNCATE_SIZED_RESTRICTION)));
-  }
+  public static final String ITERABLE_SIDE_INPUT =
+      getUrn(RunnerApi.StandardSideInputTypes.Enum.ITERABLE);
+  public static final String MULTIMAP_SIDE_INPUT =
+      getUrn(RunnerApi.StandardSideInputTypes.Enum.MULTIMAP);
 
   private static final Collection<TransformTranslator<?>> KNOWN_TRANSLATORS =
       loadKnownTranslators();
@@ -253,7 +173,8 @@ public class PTransformTranslation {
   }
 
   /** Returns the URN for the transform if it is known, otherwise {@code null}. */
-  public static @Nullable String urnForTransformOrNull(PTransform<?, ?> transform) {
+  @Nullable
+  public static String urnForTransformOrNull(PTransform<?, ?> transform) {
     TransformTranslator<?> transformTranslator =
         Iterables.find(
             KNOWN_TRANSLATORS,
@@ -273,7 +194,8 @@ public class PTransformTranslation {
   }
 
   /** Returns the URN for the transform if it is known, otherwise {@code null}. */
-  public static @Nullable String urnForTransformOrNull(RunnerApi.PTransform transform) {
+  @Nullable
+  public static String urnForTransformOrNull(RunnerApi.PTransform transform) {
     return transform.getSpec() == null ? null : transform.getSpec().getUrn();
   }
 
@@ -302,7 +224,7 @@ public class PTransformTranslation {
     private static final TransformTranslator<?> INSTANCE = new DefaultUnknownTransformTranslator();
 
     @Override
-    public @Nullable String getUrn(PTransform<?, ?> transform) {
+    public String getUrn(PTransform<?, ?> transform) {
       return null;
     }
 
@@ -312,7 +234,7 @@ public class PTransformTranslation {
     }
 
     @Override
-    public RunnerApi.@NonNull PTransform translate(
+    public RunnerApi.PTransform translate(
         AppliedPTransform<?, ?, ?> appliedPTransform,
         List<AppliedPTransform<?, ?, ?>> subtransforms,
         SdkComponents components)
@@ -353,15 +275,10 @@ public class PTransformTranslation {
 
       // A composite transform is permitted to have a null spec. There are also some pseudo-
       // primitives not yet supported by the portability framework that have null specs
-      String urn = "";
       if (spec != null) {
-        urn = spec.getUrn();
         transformBuilder.setSpec(spec);
       }
 
-      if (!RUNNER_IMPLEMENTED_TRANSFORMS.contains(urn)) {
-        transformBuilder.setEnvironmentId(components.getOnlyEnvironmentId());
-      }
       return transformBuilder.build();
     }
   }
@@ -425,22 +342,6 @@ public class PTransformTranslation {
               .translate(appliedPTransform, components);
       if (spec != null) {
         transformBuilder.setSpec(spec);
-
-        // Required runner implemented transforms should not have an environment id.
-        if (!RUNNER_IMPLEMENTED_TRANSFORMS.contains(spec.getUrn())) {
-          // TODO(BEAM-9309): Remove existing hacks around deprecated READ transform.
-          if (spec.getUrn().equals(READ_TRANSFORM_URN)) {
-            // Only assigning environment to Bounded reads. Not assigning an environment to
-            // Unbounded
-            // reads since they are a Runner translated transform, unless, in the future, we have an
-            // adapter available for splittable DoFn.
-            if (appliedPTransform.getTransform().getClass() == Read.Bounded.class) {
-              transformBuilder.setEnvironmentId(components.getOnlyEnvironmentId());
-            }
-          } else {
-            transformBuilder.setEnvironmentId(components.getOnlyEnvironmentId());
-          }
-        }
       }
       return transformBuilder.build();
     }
@@ -490,7 +391,7 @@ public class PTransformTranslation {
     }
 
     transformBuilder.setUniqueName(appliedPTransform.getFullName());
-    transformBuilder.addAllDisplayData(
+    transformBuilder.setDisplayData(
         DisplayDataTranslation.toProto(DisplayData.from(appliedPTransform.getTransform())));
     return transformBuilder;
   }
@@ -546,12 +447,14 @@ public class PTransformTranslation {
       extends PTransform<InputT, OutputT> {
 
     /** The URN for this transform, if standardized. */
-    public @Nullable String getUrn() {
+    @Nullable
+    public String getUrn() {
       return getSpec() == null ? null : getSpec().getUrn();
     }
 
     /** The payload for this transform, if any. */
-    public abstract @Nullable FunctionSpec getSpec();
+    @Nullable
+    public abstract FunctionSpec getSpec();
 
     /**
      * Build a new payload set in the context of the given {@link SdkComponents}, if applicable.

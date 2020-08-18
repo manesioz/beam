@@ -36,14 +36,11 @@ public class FnWithMetricsWrapper {
     this.stepName = stepName;
   }
 
-  public <T> T wrap(SupplierWithException<T> fn, boolean shouldUpdateMetrics) throws Exception {
+  public <T> T wrap(SupplierWithException<T> fn) throws Exception {
     try (Closeable closeable =
         MetricsEnvironment.scopedMetricsContainer(metricsContainer.getContainer(stepName))) {
       T result = fn.get();
-      // Skip updating metrics if not necessary to improve performance
-      if (shouldUpdateMetrics) {
-        metricsContainer.updateMetrics(stepName);
-      }
+      metricsContainer.updateMetrics();
       return result;
     }
   }

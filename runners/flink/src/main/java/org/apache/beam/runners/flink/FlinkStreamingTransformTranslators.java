@@ -29,6 +29,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import javax.annotation.Nullable;
 import org.apache.beam.runners.core.KeyedWorkItem;
 import org.apache.beam.runners.core.SplittableParDoViaKeyedWorkItems;
 import org.apache.beam.runners.core.SystemReduceFn;
@@ -48,7 +49,6 @@ import org.apache.beam.runners.flink.translation.wrappers.streaming.SingletonKey
 import org.apache.beam.runners.flink.translation.wrappers.streaming.SplittableDoFnOperator;
 import org.apache.beam.runners.flink.translation.wrappers.streaming.WindowDoFnOperator;
 import org.apache.beam.runners.flink.translation.wrappers.streaming.WorkItemKeySelector;
-import org.apache.beam.runners.flink.translation.wrappers.streaming.io.BeamStoppableFunction;
 import org.apache.beam.runners.flink.translation.wrappers.streaming.io.DedupingOperator;
 import org.apache.beam.runners.flink.translation.wrappers.streaming.io.TestStreamSource;
 import org.apache.beam.runners.flink.translation.wrappers.streaming.io.UnboundedSourceWrapper;
@@ -95,6 +95,7 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Maps;
 import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.functions.RichFlatMapFunction;
 import org.apache.flink.api.common.functions.RichMapFunction;
+import org.apache.flink.api.common.functions.StoppableFunction;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.tuple.Tuple2;
@@ -117,7 +118,6 @@ import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.tasks.ProcessingTimeCallback;
 import org.apache.flink.util.Collector;
 import org.apache.flink.util.OutputTag;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * This class contains all the mappings between Beam and Flink <b>streaming</b> transformations. The
@@ -453,6 +453,7 @@ class FlinkStreamingTransformTranslators {
           Map<TupleTag<?>, Coder<WindowedValue<?>>> tagsToCoders,
           Map<TupleTag<?>, Integer> tagsToIds,
           Coder<WindowedValue<InputT>> windowedInputCoder,
+          Coder<InputT> inputCoder,
           Map<TupleTag<?>, Coder<?>> outputCoders,
           Coder keyCoder,
           KeySelector<WindowedValue<InputT>, ?> keySelector,
@@ -504,6 +505,7 @@ class FlinkStreamingTransformTranslators {
       SingleOutputStreamOperator<WindowedValue<OutputT>> outputStream;
 
       Coder<WindowedValue<InputT>> windowedInputCoder = context.getWindowedInputCoder(input);
+      Coder<InputT> inputCoder = context.getInputCoder(input);
       Map<TupleTag<?>, Coder<?>> outputCoders = context.getOutputCoders();
 
       DataStream<WindowedValue<InputT>> inputDataStream = context.getInputDataStream(input);
@@ -544,6 +546,7 @@ class FlinkStreamingTransformTranslators {
                 tagsToCoders,
                 tagsToIds,
                 windowedInputCoder,
+                inputCoder,
                 outputCoders,
                 keyCoder,
                 keySelector,
@@ -571,6 +574,7 @@ class FlinkStreamingTransformTranslators {
                 tagsToCoders,
                 tagsToIds,
                 windowedInputCoder,
+                inputCoder,
                 outputCoders,
                 keyCoder,
                 keySelector,
@@ -690,6 +694,7 @@ class FlinkStreamingTransformTranslators {
               tagsToCoders,
               tagsToIds,
               windowedInputCoder,
+              inputCoder,
               outputCoders1,
               keyCoder,
               keySelector,
@@ -700,6 +705,7 @@ class FlinkStreamingTransformTranslators {
                   doFn1,
                   stepName,
                   windowedInputCoder,
+                  inputCoder,
                   outputCoders1,
                   mainOutputTag1,
                   additionalOutputTags1,
@@ -717,15 +723,14 @@ class FlinkStreamingTransformTranslators {
   }
 
   private static class SplittableProcessElementsStreamingTranslator<
-          InputT, OutputT, RestrictionT, PositionT, WatermarkEstimatorStateT>
+          InputT, OutputT, RestrictionT, PositionT>
       extends FlinkStreamingPipelineTranslator.StreamTransformTranslator<
           SplittableParDoViaKeyedWorkItems.ProcessElements<
-              InputT, OutputT, RestrictionT, PositionT, WatermarkEstimatorStateT>> {
+              InputT, OutputT, RestrictionT, PositionT>> {
 
     @Override
     public void translateNode(
-        SplittableParDoViaKeyedWorkItems.ProcessElements<
-                InputT, OutputT, RestrictionT, PositionT, WatermarkEstimatorStateT>
+        SplittableParDoViaKeyedWorkItems.ProcessElements<InputT, OutputT, RestrictionT, PositionT>
             transform,
         FlinkStreamingTranslationContext context) {
 
@@ -751,6 +756,7 @@ class FlinkStreamingTransformTranslators {
               tagsToCoders,
               tagsToIds,
               windowedInputCoder,
+              inputCoder,
               outputCoders1,
               keyCoder,
               keySelector,
@@ -761,6 +767,7 @@ class FlinkStreamingTransformTranslators {
                   doFn,
                   stepName,
                   windowedInputCoder,
+                  inputCoder,
                   outputCoders1,
                   mainOutputTag,
                   additionalOutputTags,
@@ -1278,13 +1285,12 @@ class FlinkStreamingTransformTranslators {
    */
   private static class SplittableParDoProcessElementsTranslator
       extends PTransformTranslation.TransformPayloadTranslator.NotSerializable<
-          SplittableParDoViaKeyedWorkItems.ProcessElements<?, ?, ?, ?, ?>> {
+          SplittableParDoViaKeyedWorkItems.ProcessElements<?, ?, ?, ?>> {
 
     private SplittableParDoProcessElementsTranslator() {}
 
     @Override
-    public String getUrn(
-        SplittableParDoViaKeyedWorkItems.ProcessElements<?, ?, ?, ?, ?> transform) {
+    public String getUrn(SplittableParDoViaKeyedWorkItems.ProcessElements<?, ?, ?, ?> transform) {
       return SPLITTABLE_PROCESS_URN;
     }
   }
@@ -1304,9 +1310,43 @@ class FlinkStreamingTransformTranslators {
               new CreateStreamingFlinkViewPayloadTranslator())
           .put(
               SplittableParDoViaKeyedWorkItems.ProcessElements.class,
-              PTransformTranslation.TransformPayloadTranslator.NotSerializable.forUrn(
-                  SPLITTABLE_PROCESS_URN))
+              new SplittableParDoProcessElementsTranslator())
+          .put(
+              SplittableParDoViaKeyedWorkItems.GBKIntoKeyedWorkItems.class,
+              new SplittableParDoGbkIntoKeyedWorkItemsPayloadTranslator())
           .build();
+    }
+  }
+
+  /**
+   * A translator just to vend the URN. This will need to be moved to runners-core-construction-java
+   * once SDF is reorganized appropriately.
+   */
+  private static class SplittableParDoProcessElementsPayloadTranslator
+      extends PTransformTranslation.TransformPayloadTranslator.NotSerializable<
+          SplittableParDoViaKeyedWorkItems.ProcessElements<?, ?, ?, ?>> {
+
+    private SplittableParDoProcessElementsPayloadTranslator() {}
+
+    @Override
+    public String getUrn(SplittableParDoViaKeyedWorkItems.ProcessElements<?, ?, ?, ?> transform) {
+      return SPLITTABLE_PROCESS_URN;
+    }
+  }
+
+  /**
+   * A translator just to vend the URN. This will need to be moved to runners-core-construction-java
+   * once SDF is reorganized appropriately.
+   */
+  private static class SplittableParDoGbkIntoKeyedWorkItemsPayloadTranslator
+      extends PTransformTranslation.TransformPayloadTranslator.NotSerializable<
+          SplittableParDoViaKeyedWorkItems.GBKIntoKeyedWorkItems<?, ?>> {
+
+    private SplittableParDoGbkIntoKeyedWorkItemsPayloadTranslator() {}
+
+    @Override
+    public String getUrn(SplittableParDoViaKeyedWorkItems.GBKIntoKeyedWorkItems<?, ?> transform) {
+      return SplittableParDo.SPLITTABLE_GBKIKWI_URN;
     }
   }
 
@@ -1372,7 +1412,7 @@ class FlinkStreamingTransformTranslators {
           OutputT, CheckpointMarkT extends UnboundedSource.CheckpointMark>
       extends RichParallelSourceFunction<WindowedValue<OutputT>>
       implements ProcessingTimeCallback,
-          BeamStoppableFunction,
+          StoppableFunction,
           CheckpointListener,
           CheckpointedFunction {
 

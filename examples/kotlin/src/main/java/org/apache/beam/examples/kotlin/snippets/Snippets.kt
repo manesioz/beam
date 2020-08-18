@@ -15,8 +15,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-@file:Suppress("UNUSED_VARIABLE")
-
 package org.apache.beam.examples.kotlin.snippets
 
 import com.google.api.services.bigquery.model.*
@@ -39,29 +37,7 @@ import org.apache.beam.sdk.transforms.join.KeyedPCollectionTuple
 import org.apache.beam.sdk.values.*
 
 /** Code snippets used in webdocs.  */
-@Suppress("unused")
 object Snippets {
-
-    val tableSchema: TableSchema by lazy {
-        TableSchema().setFields(
-                ImmutableList.of(
-                        TableFieldSchema()
-                                .setName("year")
-                                .setType("INTEGER")
-                                .setMode("REQUIRED"),
-                        TableFieldSchema()
-                                .setName("month")
-                                .setType("INTEGER")
-                                .setMode("REQUIRED"),
-                        TableFieldSchema()
-                                .setName("day")
-                                .setType("INTEGER")
-                                .setMode("REQUIRED"),
-                        TableFieldSchema()
-                                .setName("maxTemp")
-                                .setType("FLOAT")
-                                .setMode("NULLABLE")))
-    }
 
     @DefaultCoder(AvroCoder::class)
     internal class Quote(
@@ -283,7 +259,25 @@ object Snippets {
                                         }
 
                                         override fun getSchema(destination: Long?): TableSchema {
-                                            return tableSchema
+                                            return TableSchema()
+                                                    .setFields(
+                                                            ImmutableList.of(
+                                                                    TableFieldSchema()
+                                                                            .setName("year")
+                                                                            .setType("INTEGER")
+                                                                            .setMode("REQUIRED"),
+                                                                    TableFieldSchema()
+                                                                            .setName("month")
+                                                                            .setType("INTEGER")
+                                                                            .setMode("REQUIRED"),
+                                                                    TableFieldSchema()
+                                                                            .setName("day")
+                                                                            .setType("INTEGER")
+                                                                            .setMode("REQUIRED"),
+                                                                    TableFieldSchema()
+                                                                            .setName("maxTemp")
+                                                                            .setType("FLOAT")
+                                                                            .setMode("NULLABLE")))
                                         }
                                     })
                             .withFormatFunction {
@@ -301,6 +295,20 @@ object Snippets {
             if (writeProject.isNotEmpty() && writeDataset.isNotEmpty() && writeTable.isNotEmpty()) {
                 tableSpec = "$writeProject:$writeDataset.${writeTable}_partitioning"
             }
+
+            val tableSchema = TableSchema()
+                    .setFields(
+                            ImmutableList.of(
+                                    TableFieldSchema().setName("year").setType("INTEGER").setMode("REQUIRED"),
+                                    TableFieldSchema()
+                                            .setName("month")
+                                            .setType("INTEGER")
+                                            .setMode("REQUIRED"),
+                                    TableFieldSchema().setName("day").setType("INTEGER").setMode("REQUIRED"),
+                                    TableFieldSchema()
+                                            .setName("maxTemp")
+                                            .setType("FLOAT")
+                                            .setMode("NULLABLE")))
 
             // [START BigQueryTimePartitioning]
             weatherData.apply<WriteResult>(

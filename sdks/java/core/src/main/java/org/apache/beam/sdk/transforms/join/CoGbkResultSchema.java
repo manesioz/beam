@@ -22,7 +22,6 @@ import java.util.HashMap;
 import java.util.List;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.TupleTagList;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * A schema for the results of a {@link CoGroupByKey}. This maintains the full set of {@link
@@ -80,7 +79,7 @@ public class CoGbkResultSchema implements Serializable {
   }
 
   @Override
-  public boolean equals(@Nullable Object obj) {
+  public boolean equals(Object obj) {
     if (obj == this) {
       return true;
     }

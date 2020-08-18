@@ -18,11 +18,11 @@
 package org.apache.beam.sdk.io;
 
 import com.google.auto.value.AutoValue;
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.SerializableCoder;
 import org.apache.beam.sdk.io.UnboundedSource.UnboundedReader;
@@ -43,7 +43,6 @@ import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.TypeDescriptor;
 import org.apache.beam.sdk.values.ValueWithRecordId;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.util.concurrent.Uninterruptibles;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 
@@ -180,9 +179,6 @@ public class BoundedReadFromUnboundedSource<T> extends PTransform<PBegin, PColle
 
   private static class ReadFn<T> extends DoFn<Shard<T>, ValueWithRecordId<T>> {
     @ProcessElement
-    @SuppressFBWarnings(
-        value = "RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE",
-        justification = "https://github.com/spotbugs/spotbugs/issues/756")
     public void process(
         @Element Shard<T> shard, OutputReceiver<ValueWithRecordId<T>> out, PipelineOptions options)
         throws Exception {
@@ -232,12 +228,13 @@ public class BoundedReadFromUnboundedSource<T> extends PTransform<PBegin, PColle
    */
   @AutoValue
   abstract static class Shard<T> implements Serializable {
-
-    abstract @Nullable UnboundedSource<T, ?> getSource();
+    @Nullable
+    abstract UnboundedSource<T, ?> getSource();
 
     abstract long getMaxNumRecords();
 
-    abstract @Nullable Duration getMaxReadTime();
+    @Nullable
+    abstract Duration getMaxReadTime();
 
     abstract Builder<T> toBuilder();
 

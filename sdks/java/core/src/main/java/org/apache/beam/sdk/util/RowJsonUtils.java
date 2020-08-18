@@ -24,17 +24,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import java.io.IOException;
 import org.apache.beam.sdk.annotations.Internal;
-import org.apache.beam.sdk.util.RowJson.UnsupportedRowJsonException;
+import org.apache.beam.sdk.util.RowJsonDeserializer.UnsupportedRowJsonException;
 import org.apache.beam.sdk.values.Row;
 
-/**
- * Utilities for working with {@link RowJson.RowJsonSerializer} and {@link
- * RowJson.RowJsonDeserializer}.
- */
+/** Utilities for working with {@link RowJsonSerializer} and {@link RowJsonDeserializer}. */
 @Internal
 public class RowJsonUtils {
 
-  public static ObjectMapper newObjectMapperWith(RowJson.RowJsonDeserializer deserializer) {
+  public static ObjectMapper newObjectMapperWith(RowJsonDeserializer deserializer) {
     SimpleModule module = new SimpleModule("rowDeserializationModule");
     module.addDeserializer(Row.class, deserializer);
 
@@ -44,7 +41,7 @@ public class RowJsonUtils {
     return objectMapper;
   }
 
-  public static ObjectMapper newObjectMapperWith(RowJson.RowJsonSerializer serializer) {
+  public static ObjectMapper newObjectMapperWith(RowJsonSerializer serializer) {
     SimpleModule module = new SimpleModule("rowSerializationModule");
     module.addSerializer(Row.class, serializer);
 
@@ -68,7 +65,7 @@ public class RowJsonUtils {
     try {
       return objectMapper.writeValueAsString(row);
     } catch (JsonProcessingException e) {
-      throw new IllegalArgumentException("Unable to serilize row: " + row, e);
+      throw new IllegalArgumentException("Unable to serilize row: " + row);
     }
   }
 }

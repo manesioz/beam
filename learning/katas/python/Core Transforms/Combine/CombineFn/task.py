@@ -37,9 +37,10 @@ class AverageFn(beam.CombineFn):
         return sum / count if count else float('NaN')
 
 
-with beam.Pipeline() as p:
+p = beam.Pipeline()
 
-  (p | beam.Create([10, 20, 50, 70, 90])
-     | beam.CombineGlobally(AverageFn())
-     | LogElements())
+(p | beam.Create([10, 20, 50, 70, 90])
+   | beam.CombineGlobally(AverageFn())
+   | LogElements())
 
+p.run()

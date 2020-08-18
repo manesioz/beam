@@ -14,7 +14,17 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-from test_helper import failed, passed, get_file_output, test_is_not_empty
+from test_helper import run_common_tests, failed, passed, get_answer_placeholders, get_file_output
+
+
+def test_combine_placeholders():
+    placeholders = get_answer_placeholders()
+    placeholder = placeholders[0]
+
+    if 'beam.CombinePerKey' in placeholder:
+        passed()
+    else:
+        failed('Use beam.CombinePerKey')
 
 
 def test_output():
@@ -25,7 +35,7 @@ def test_output():
     PLAYER_3 = 'Player 3'
 
     answers = [str((PLAYER_1, 115)), str((PLAYER_2, 85)), str((PLAYER_3, 25))]
-    print(answers)
+    print answers
 
     if all(num in output for num in answers):
         passed()
@@ -34,5 +44,6 @@ def test_output():
 
 
 if __name__ == '__main__':
-    test_is_not_empty()
+    run_common_tests()
+    test_combine_placeholders()
     test_output()

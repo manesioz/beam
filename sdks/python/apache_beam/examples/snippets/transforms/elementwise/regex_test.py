@@ -16,8 +16,6 @@
 # limitations under the License.
 #
 
-# pytype: skip-file
-
 from __future__ import absolute_import
 from __future__ import print_function
 
@@ -25,105 +23,123 @@ import unittest
 
 import mock
 
-from apache_beam.examples.snippets.util import assert_matches_stdout
 from apache_beam.testing.test_pipeline import TestPipeline
+from apache_beam.testing.util import assert_that
+from apache_beam.testing.util import equal_to
 
 from . import regex
 
 
 def check_matches(actual):
-  expected = '''[START plants_matches]
-🍓, Strawberry, perennial
-🥕, Carrot, biennial
-🍆, Eggplant, perennial
-🍅, Tomato, annual
-🥔, Potato, perennial
-[END plants_matches]'''.splitlines()[1:-1]
-  assert_matches_stdout(actual, expected)
+  # [START plants_matches]
+  plants_matches = [
+      '🍓, Strawberry, perennial',
+      '🥕, Carrot, biennial',
+      '🍆, Eggplant, perennial',
+      '🍅, Tomato, annual',
+      '🥔, Potato, perennial',
+  ]
+  # [END plants_matches]
+  assert_that(actual, equal_to(plants_matches))
 
 
 def check_all_matches(actual):
-  expected = '''[START plants_all_matches]
-['🍓, Strawberry, perennial', '🍓', 'Strawberry', 'perennial']
-['🥕, Carrot, biennial', '🥕', 'Carrot', 'biennial']
-['🍆, Eggplant, perennial', '🍆', 'Eggplant', 'perennial']
-['🍅, Tomato, annual', '🍅', 'Tomato', 'annual']
-['🥔, Potato, perennial', '🥔', 'Potato', 'perennial']
-[END plants_all_matches]'''.splitlines()[1:-1]
-  assert_matches_stdout(actual, expected)
+  # [START plants_all_matches]
+  plants_all_matches = [
+      ['🍓, Strawberry, perennial', '🍓', 'Strawberry', 'perennial'],
+      ['🥕, Carrot, biennial', '🥕', 'Carrot', 'biennial'],
+      ['🍆, Eggplant, perennial', '🍆', 'Eggplant', 'perennial'],
+      ['🍅, Tomato, annual', '🍅', 'Tomato', 'annual'],
+      ['🥔, Potato, perennial', '🥔', 'Potato', 'perennial'],
+  ]
+  # [END plants_all_matches]
+  assert_that(actual, equal_to(plants_all_matches))
 
 
 def check_matches_kv(actual):
-  expected = '''[START plants_matches_kv]
-('🍓', '🍓, Strawberry, perennial')
-('🥕', '🥕, Carrot, biennial')
-('🍆', '🍆, Eggplant, perennial')
-('🍅', '🍅, Tomato, annual')
-('🥔', '🥔, Potato, perennial')
-[END plants_matches_kv]'''.splitlines()[1:-1]
-  assert_matches_stdout(actual, expected)
+  # [START plants_matches_kv]
+  plants_matches_kv = [
+      ('🍓', '🍓, Strawberry, perennial'),
+      ('🥕', '🥕, Carrot, biennial'),
+      ('🍆', '🍆, Eggplant, perennial'),
+      ('🍅', '🍅, Tomato, annual'),
+      ('🥔', '🥔, Potato, perennial'),
+  ]
+  # [END plants_matches_kv]
+  assert_that(actual, equal_to(plants_matches_kv))
 
 
 def check_find_all(actual):
-  expected = '''[START plants_find_all]
-['🍓, Strawberry, perennial']
-['🥕, Carrot, biennial']
-['🍆, Eggplant, perennial', '🍌, Banana, perennial']
-['🍅, Tomato, annual', '🍉, Watermelon, annual']
-['🥔, Potato, perennial']
-[END plants_find_all]'''.splitlines()[1:-1]
-  assert_matches_stdout(actual, expected)
+  # [START plants_find_all]
+  plants_find_all = [
+      ['🍓, Strawberry, perennial'],
+      ['🥕, Carrot, biennial'],
+      ['🍆, Eggplant, perennial', '🍌, Banana, perennial'],
+      ['🍅, Tomato, annual', '🍉, Watermelon, annual'],
+      ['🥔, Potato, perennial'],
+  ]
+  # [END plants_find_all]
+  assert_that(actual, equal_to(plants_find_all))
 
 
 def check_find_kv(actual):
-  expected = '''[START plants_find_kv]
-('🍓', '🍓, Strawberry, perennial')
-('🥕', '🥕, Carrot, biennial')
-('🍆', '🍆, Eggplant, perennial')
-('🍌', '🍌, Banana, perennial')
-('🍅', '🍅, Tomato, annual')
-('🍉', '🍉, Watermelon, annual')
-('🥔', '🥔, Potato, perennial')
-[END plants_find_kv]'''.splitlines()[1:-1]
-  assert_matches_stdout(actual, expected)
+  # [START plants_find_kv]
+  plants_find_all = [
+      ('🍓', '🍓, Strawberry, perennial'),
+      ('🥕', '🥕, Carrot, biennial'),
+      ('🍆', '🍆, Eggplant, perennial'),
+      ('🍌', '🍌, Banana, perennial'),
+      ('🍅', '🍅, Tomato, annual'),
+      ('🍉', '🍉, Watermelon, annual'),
+      ('🥔', '🥔, Potato, perennial'),
+  ]
+  # [END plants_find_kv]
+  assert_that(actual, equal_to(plants_find_all))
 
 
 def check_replace_all(actual):
-  expected = '''[START plants_replace_all]
-🍓,Strawberry,perennial
-🥕,Carrot,biennial
-🍆,Eggplant,perennial
-🍅,Tomato,annual
-🥔,Potato,perennial
-[END plants_replace_all]'''.splitlines()[1:-1]
-  assert_matches_stdout(actual, expected)
+  # [START plants_replace_all]
+  plants_replace_all = [
+      '🍓,Strawberry,perennial',
+      '🥕,Carrot,biennial',
+      '🍆,Eggplant,perennial',
+      '🍅,Tomato,annual',
+      '🥔,Potato,perennial',
+  ]
+  # [END plants_replace_all]
+  assert_that(actual, equal_to(plants_replace_all))
 
 
 def check_replace_first(actual):
-  expected = '''[START plants_replace_first]
-🍓: Strawberry, perennial
-🥕: Carrot, biennial
-🍆: Eggplant, perennial
-🍅: Tomato, annual
-🥔: Potato, perennial
-[END plants_replace_first]'''.splitlines()[1:-1]
-  assert_matches_stdout(actual, expected)
+  # [START plants_replace_first]
+  plants_replace_first = [
+      '🍓: Strawberry, perennial',
+      '🥕: Carrot, biennial',
+      '🍆: Eggplant, perennial',
+      '🍅: Tomato, annual',
+      '🥔: Potato, perennial',
+  ]
+  # [END plants_replace_first]
+  assert_that(actual, equal_to(plants_replace_first))
 
 
 def check_split(actual):
-  expected = '''[START plants_split]
-['🍓', 'Strawberry', 'perennial']
-['🥕', 'Carrot', 'biennial']
-['🍆', 'Eggplant', 'perennial']
-['🍅', 'Tomato', 'annual']
-['🥔', 'Potato', 'perennial']
-[END plants_split]'''.splitlines()[1:-1]
-  assert_matches_stdout(actual, expected)
+  # [START plants_split]
+  plants_split = [
+      ['🍓', 'Strawberry', 'perennial'],
+      ['🥕', 'Carrot', 'biennial'],
+      ['🍆', 'Eggplant', 'perennial'],
+      ['🍅', 'Tomato', 'annual'],
+      ['🥔', 'Potato', 'perennial'],
+  ]
+  # [END plants_split]
+  assert_that(actual, equal_to(plants_split))
 
 
 @mock.patch('apache_beam.Pipeline', TestPipeline)
-@mock.patch(
-    'apache_beam.examples.snippets.transforms.elementwise.regex.print', str)
+# pylint: disable=line-too-long
+@mock.patch('apache_beam.examples.snippets.transforms.elementwise.regex.print', lambda elem: elem)
+# pylint: enable=line-too-long
 class RegexTest(unittest.TestCase):
   def test_matches(self):
     regex.regex_matches(check_matches)

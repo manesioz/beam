@@ -21,9 +21,9 @@ import com.fasterxml.jackson.annotation.JsonFilter;
 import com.google.auto.value.AutoValue;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.annotations.Experimental.Kind;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * The results of a single current metric.
@@ -62,7 +62,8 @@ public abstract class MetricResult<T> {
   }
 
   /** Return the value of this metric across all attempts of executing all parts of the pipeline. */
-  public abstract @Nullable T getCommittedOrNull();
+  @Nullable
+  public abstract T getCommittedOrNull();
 
   /** Return the value of this metric across all attempts of executing all parts of the pipeline. */
   public abstract T getAttempted();

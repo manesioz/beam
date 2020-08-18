@@ -21,7 +21,6 @@ import com.google.api.services.bigquery.model.TableFieldSchema
 import com.google.api.services.bigquery.model.TableReference
 import com.google.api.services.bigquery.model.TableRow
 import com.google.api.services.bigquery.model.TableSchema
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings
 import org.apache.beam.examples.kotlin.common.ExampleBigQueryTableOptions
 import org.apache.beam.examples.kotlin.common.ExampleOptions
 import org.apache.beam.examples.kotlin.common.ExampleUtils
@@ -41,7 +40,6 @@ import org.apache.beam.sdk.transforms.windowing.*
 import org.apache.beam.sdk.values.KV
 import org.apache.beam.sdk.values.PCollection
 import org.apache.beam.sdk.values.PCollectionList
-import org.checkerframework.checker.nullness.qual.Nullable
 import org.joda.time.Duration
 import org.joda.time.Instant
 
@@ -353,7 +351,6 @@ object TriggerExample {
      * Calculate total flow and number of records for each freeway and format the results to TableRow
      * objects, to save to BigQuery.
      */
-    @SuppressFBWarnings("NP_METHOD_PARAMETER_TIGHTENS_ANNOTATION") // kotlin-specific spotbugs false positive
     internal class TotalFlow(private val triggerType: String) : PTransform<PCollection<KV<String, Int>>, PCollection<TableRow>>() {
 
         override fun expand(flowInfo: PCollection<KV<String, Int>>): PCollection<TableRow> {

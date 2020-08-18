@@ -107,12 +107,7 @@ func Render(edges []*graph.MultiEdge, nodes []*graph.Node, w io.Writer) error {
 
 	// Render the graph elements: nodes and the edges
 	w.Write([]byte(header))
-	seen := make(map[*graph.Node]bool)
-	for _, node := range nodes {
-		if seen[node] {
-			continue
-		}
-		seen[node] = true
+	for node := range uniqNodes {
 		err := nodeTmpl.Execute(w, struct{ Name, Label string }{node.String(), uniqNodes[node].String()})
 		if err != nil {
 			return err

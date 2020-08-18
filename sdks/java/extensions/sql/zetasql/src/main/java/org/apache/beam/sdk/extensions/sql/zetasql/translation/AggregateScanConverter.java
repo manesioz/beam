@@ -20,6 +20,7 @@ package org.apache.beam.sdk.extensions.sql.zetasql.translation;
 import static com.google.zetasql.ZetaSQLResolvedNodeKind.ResolvedNodeKind.RESOLVED_CAST;
 import static com.google.zetasql.ZetaSQLResolvedNodeKind.ResolvedNodeKind.RESOLVED_COLUMN_REF;
 import static com.google.zetasql.ZetaSQLResolvedNodeKind.ResolvedNodeKind.RESOLVED_GET_STRUCT_FIELD;
+import static org.apache.beam.sdk.extensions.sql.zetasql.TypeUtils.toSimpleRelDataType;
 
 import com.google.zetasql.FunctionSignature;
 import com.google.zetasql.ZetaSQLType.TypeKind;
@@ -33,8 +34,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import org.apache.beam.sdk.extensions.sql.zetasql.ZetaSqlCalciteTranslationUtils;
-import org.apache.beam.vendor.calcite.v1_20_0.org.apache.calcite.rel.RelCollations;
+import org.apache.beam.sdk.extensions.sql.zetasql.SqlStdOperatorMappingTable;
 import org.apache.beam.vendor.calcite.v1_20_0.org.apache.calcite.rel.RelNode;
 import org.apache.beam.vendor.calcite.v1_20_0.org.apache.calcite.rel.core.AggregateCall;
 import org.apache.beam.vendor.calcite.v1_20_0.org.apache.calcite.rel.logical.LogicalAggregate;
@@ -42,9 +42,9 @@ import org.apache.beam.vendor.calcite.v1_20_0.org.apache.calcite.rel.logical.Log
 import org.apache.beam.vendor.calcite.v1_20_0.org.apache.calcite.rel.type.RelDataType;
 import org.apache.beam.vendor.calcite.v1_20_0.org.apache.calcite.rex.RexNode;
 import org.apache.beam.vendor.calcite.v1_20_0.org.apache.calcite.sql.SqlAggFunction;
+import org.apache.beam.vendor.calcite.v1_20_0.org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.beam.vendor.calcite.v1_20_0.org.apache.calcite.util.ImmutableBitSet;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
-import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableMap;
 
 /** Converts aggregate calls. */
 class AggregateScanConverter extends RelConverter<ResolvedAggregateScan> {
@@ -62,7 +62,7 @@ class AggregateScanConverter extends RelConverter<ResolvedAggregateScan> {
 
   @Override
   public RelNode convert(ResolvedAggregateScan zetaNode, List<RelNode> inputs) {
-    LogicalProject input = convertAggregateScanInputScanToLogicalProject(zetaNode, inputs.get(0));
+    RelNode input = convertAggregateScanInputScanToLogicalProject(zetaNode, inputs.get(0));
 
     // Calcite LogicalAggregate's GroupSet is indexes of group fields starting from 0.
     int groupFieldsListSize = zetaNode.getGroupByList().size();
@@ -86,18 +86,9 @@ class AggregateScanConverter extends RelConverter<ResolvedAggregateScan> {
       aggregateCalls = new ArrayList<>();
       // For aggregate calls, their input ref follow after GROUP BY input ref.
       int columnRefoff = groupFieldsListSize;
-      boolean nullable = false;
-      if (input.getProjects().size() > columnRefoff) {
-        nullable = input.getProjects().get(columnRefoff).getType().isNullable();
-      }
       for (ResolvedComputedColumn computedColumn : zetaNode.getAggregateList()) {
-        AggregateCall aggCall = convertAggCall(computedColumn, columnRefoff, nullable);
-        aggregateCalls.add(aggCall);
-        if (!aggCall.getArgList().isEmpty()) {
-          // Only increment column reference offset when aggregates use them (BEAM-8042).
-          // Ex: COUNT(*) does not have arguments, while COUNT(`field`) does.
-          columnRefoff++;
-        }
+        aggregateCalls.add(convertAggCall(computedColumn, columnRefoff));
+        columnRefoff++;
       }
     }
 
@@ -106,6 +97,7 @@ class AggregateScanConverter extends RelConverter<ResolvedAggregateScan> {
             getCluster(),
             input.getTraitSet(),
             input,
+            false,
             groupSet,
             ImmutableList.of(groupSet),
             aggregateCalls);
@@ -113,7 +105,7 @@ class AggregateScanConverter extends RelConverter<ResolvedAggregateScan> {
     return logicalAggregate;
   }
 
-  private LogicalProject convertAggregateScanInputScanToLogicalProject(
+  private RelNode convertAggregateScanInputScanToLogicalProject(
       ResolvedAggregateScan node, RelNode input) {
     // AggregateScan's input is the source of data (e.g. TableScan), which is different from the
     // design of CalciteSQL, in which the LogicalAggregate's input is a LogicalProject, whose input
@@ -131,8 +123,7 @@ class AggregateScanConverter extends RelConverter<ResolvedAggregateScan> {
               .convertRexNodeFromResolvedExpr(
                   computedColumn.getExpr(),
                   node.getInputScan().getColumnList(),
-                  input.getRowType().getFieldList(),
-                  ImmutableMap.of()));
+                  input.getRowType().getFieldList()));
       fieldNames.add(getTrait().resolveAlias(computedColumn.getColumn()));
     }
 
@@ -157,12 +148,11 @@ class AggregateScanConverter extends RelConverter<ResolvedAggregateScan> {
                 .convertRexNodeFromResolvedExpr(
                     resolvedExpr,
                     node.getInputScan().getColumnList(),
-                    input.getRowType().getFieldList(),
-                    ImmutableMap.of()));
+                    input.getRowType().getFieldList()));
         fieldNames.add(getTrait().resolveAlias(resolvedComputedColumn.getColumn()));
       } else if (aggregateFunctionCall.getArgumentList() != null
           && aggregateFunctionCall.getArgumentList().size() > 1) {
-        throw new IllegalArgumentException(
+        throw new RuntimeException(
             aggregateFunctionCall.getFunction().getName() + " has more than one argument.");
       }
     }
@@ -170,8 +160,7 @@ class AggregateScanConverter extends RelConverter<ResolvedAggregateScan> {
     return LogicalProject.create(input, projects, fieldNames);
   }
 
-  private AggregateCall convertAggCall(
-      ResolvedComputedColumn computedColumn, int columnRefOff, boolean nullable) {
+  private AggregateCall convertAggCall(ResolvedComputedColumn computedColumn, int columnRefOff) {
     ResolvedAggregateFunctionCall aggregateFunctionCall =
         (ResolvedAggregateFunctionCall) computedColumn.getExpr();
 
@@ -184,13 +173,13 @@ class AggregateScanConverter extends RelConverter<ResolvedAggregateScan> {
           .getType()
           .getKind()
           .equals(TypeKind.TYPE_INT64)) {
-        throw new UnsupportedOperationException(AVG_ILLEGAL_LONG_INPUT_TYPE);
+        throw new RuntimeException(AVG_ILLEGAL_LONG_INPUT_TYPE);
       }
     }
 
     // Reject aggregation DISTINCT
     if (aggregateFunctionCall.getDistinct()) {
-      throw new UnsupportedOperationException(
+      throw new RuntimeException(
           "Does not support "
               + aggregateFunctionCall.getFunction().getSqlName()
               + " DISTINCT. 'SELECT DISTINCT' syntax could be used to deduplicate before"
@@ -199,10 +188,10 @@ class AggregateScanConverter extends RelConverter<ResolvedAggregateScan> {
 
     SqlAggFunction sqlAggFunction =
         (SqlAggFunction)
-            SqlOperatorMappingTable.ZETASQL_FUNCTION_TO_CALCITE_SQL_OPERATOR.get(
+            SqlStdOperatorMappingTable.ZETASQL_FUNCTION_TO_CALCITE_SQL_OPERATOR.get(
                 aggregateFunctionCall.getFunction().getName());
     if (sqlAggFunction == null) {
-      throw new UnsupportedOperationException(
+      throw new RuntimeException(
           "Does not support ZetaSQL aggregate function: "
               + aggregateFunctionCall.getFunction().getName());
     }
@@ -217,18 +206,25 @@ class AggregateScanConverter extends RelConverter<ResolvedAggregateScan> {
           || expr.nodeKind() == RESOLVED_GET_STRUCT_FIELD) {
         argList.add(columnRefOff);
       } else {
-        throw new UnsupportedOperationException(
+        throw new RuntimeException(
             "Aggregate function only accepts Column Reference or CAST(Column Reference) as its"
                 + " input.");
       }
     }
 
-    RelDataType returnType =
-        ZetaSqlCalciteTranslationUtils.toCalciteType(
-            computedColumn.getColumn().getType(), nullable, getCluster().getRexBuilder());
+    // TODO: there should be a general way to decide if a return type of a aggcall is nullable.
+    RelDataType returnType;
+    if (sqlAggFunction.equals(SqlStdOperatorTable.ANY_VALUE)) {
+      returnType =
+          toSimpleRelDataType(
+              computedColumn.getColumn().getType().getKind(), getCluster().getRexBuilder(), true);
+    } else {
+      returnType =
+          toSimpleRelDataType(
+              computedColumn.getColumn().getType().getKind(), getCluster().getRexBuilder(), false);
+    }
 
     String aggName = getTrait().resolveAlias(computedColumn.getColumn());
-    return AggregateCall.create(
-        sqlAggFunction, false, false, false, argList, -1, RelCollations.EMPTY, returnType, aggName);
+    return AggregateCall.create(sqlAggFunction, false, false, argList, -1, returnType, aggName);
   }
 }

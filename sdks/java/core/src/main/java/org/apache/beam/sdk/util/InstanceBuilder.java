@@ -26,9 +26,9 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.List;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.values.TypeDescriptor;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Joiner;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Utility for creating objects dynamically.
@@ -174,10 +174,10 @@ public class InstanceBuilder<T> {
   private final List<Object> arguments = new ArrayList<>();
 
   /** Name of factory method, or null to invoke the constructor. */
-  private @Nullable String methodName;
+  @Nullable private String methodName;
 
   /** Factory class, or null to instantiate {@code type}. */
-  private @Nullable Class<?> factoryClass;
+  @Nullable private Class<?> factoryClass;
 
   private InstanceBuilder(Class<T> type) {
     this.type = type;

@@ -23,16 +23,19 @@ import static org.junit.Assert.assertThat;
 import org.apache.beam.model.fnexecution.v1.ProvisionApi.GetProvisionInfoRequest;
 import org.apache.beam.model.fnexecution.v1.ProvisionApi.GetProvisionInfoResponse;
 import org.apache.beam.model.fnexecution.v1.ProvisionApi.ProvisionInfo;
+import org.apache.beam.model.fnexecution.v1.ProvisionApi.Resources;
+import org.apache.beam.model.fnexecution.v1.ProvisionApi.Resources.Cpu;
+import org.apache.beam.model.fnexecution.v1.ProvisionApi.Resources.Disk;
+import org.apache.beam.model.fnexecution.v1.ProvisionApi.Resources.Memory;
 import org.apache.beam.model.fnexecution.v1.ProvisionServiceGrpc;
 import org.apache.beam.model.fnexecution.v1.ProvisionServiceGrpc.ProvisionServiceBlockingStub;
-import org.apache.beam.runners.fnexecution.GrpcContextHeaderAccessorProvider;
 import org.apache.beam.runners.fnexecution.GrpcFnServer;
 import org.apache.beam.runners.fnexecution.InProcessServerFactory;
-import org.apache.beam.vendor.grpc.v1p26p0.com.google.protobuf.ListValue;
-import org.apache.beam.vendor.grpc.v1p26p0.com.google.protobuf.NullValue;
-import org.apache.beam.vendor.grpc.v1p26p0.com.google.protobuf.Struct;
-import org.apache.beam.vendor.grpc.v1p26p0.com.google.protobuf.Value;
-import org.apache.beam.vendor.grpc.v1p26p0.io.grpc.inprocess.InProcessChannelBuilder;
+import org.apache.beam.vendor.grpc.v1p21p0.com.google.protobuf.ListValue;
+import org.apache.beam.vendor.grpc.v1p21p0.com.google.protobuf.NullValue;
+import org.apache.beam.vendor.grpc.v1p21p0.com.google.protobuf.Struct;
+import org.apache.beam.vendor.grpc.v1p21p0.com.google.protobuf.Value;
+import org.apache.beam.vendor.grpc.v1p21p0.io.grpc.inprocess.InProcessChannelBuilder;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -63,12 +66,23 @@ public class StaticGrpcProvisionServiceTest {
                             .build())
                     .build())
             .build();
-    ProvisionInfo info = ProvisionInfo.newBuilder().setPipelineOptions(options).build();
+    Resources resourceLimits =
+        Resources.newBuilder()
+            .setCpu(Cpu.newBuilder().setShares(0.75F).buildPartial())
+            .setMemory(Memory.newBuilder().setSize(2L * 1024L * 1024L * 1024L).build())
+            .setSemiPersistentDisk(Disk.newBuilder().setSize(1024L * 1024L * 1024L * 1024L).build())
+            .build();
+    ProvisionInfo info =
+        ProvisionInfo.newBuilder()
+            .setJobId("id")
+            .setJobName("name")
+            .setWorkerId("worker")
+            .setPipelineOptions(options)
+            .setResourceLimits(resourceLimits)
+            .build();
     GrpcFnServer<StaticGrpcProvisionService> server =
         GrpcFnServer.allocatePortAndCreateFor(
-            StaticGrpcProvisionService.create(
-                info, GrpcContextHeaderAccessorProvider.getHeaderAccessor()),
-            InProcessServerFactory.create());
+            StaticGrpcProvisionService.create(info), InProcessServerFactory.create());
 
     ProvisionServiceBlockingStub stub =
         ProvisionServiceGrpc.newBlockingStub(

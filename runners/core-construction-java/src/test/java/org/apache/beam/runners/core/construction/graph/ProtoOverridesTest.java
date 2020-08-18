@@ -25,7 +25,7 @@ import static org.junit.Assert.assertThat;
 
 import java.nio.charset.StandardCharsets;
 import org.apache.beam.model.pipeline.v1.RunnerApi;
-import org.apache.beam.model.pipeline.v1.RunnerApi.AccumulationMode;
+import org.apache.beam.model.pipeline.v1.RunnerApi.AccumulationMode.Enum;
 import org.apache.beam.model.pipeline.v1.RunnerApi.Coder;
 import org.apache.beam.model.pipeline.v1.RunnerApi.Components;
 import org.apache.beam.model.pipeline.v1.RunnerApi.ComponentsOrBuilder;
@@ -36,7 +36,7 @@ import org.apache.beam.model.pipeline.v1.RunnerApi.PTransform;
 import org.apache.beam.model.pipeline.v1.RunnerApi.Pipeline;
 import org.apache.beam.model.pipeline.v1.RunnerApi.WindowingStrategy;
 import org.apache.beam.runners.core.construction.graph.ProtoOverrides.TransformReplacement;
-import org.apache.beam.vendor.grpc.v1p26p0.com.google.protobuf.ByteString;
+import org.apache.beam.vendor.grpc.v1p21p0.com.google.protobuf.ByteString;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -80,9 +80,7 @@ public class ProtoOverridesTest {
                         ByteString.copyFrom("foo-bar-baz".getBytes(StandardCharsets.UTF_8))))
             .build();
     WindowingStrategy introducedWS =
-        WindowingStrategy.newBuilder()
-            .setAccumulationMode(AccumulationMode.Enum.ACCUMULATING)
-            .build();
+        WindowingStrategy.newBuilder().setAccumulationMode(Enum.ACCUMULATING).build();
     RunnerApi.Components extraComponents =
         Components.newBuilder()
             .putPcollections(

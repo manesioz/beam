@@ -17,15 +17,12 @@
  */
 
 import PrecommitJobBuilder
-import CommonJobProperties as common
 
 PrecommitJobBuilder builder = new PrecommitJobBuilder(
     scope: this,
     nameBase: 'Java',
     gradleTask: ':javaPreCommit',
-    gradleSwitches: [
-      '-PdisableSpotlessCheck=true'
-    ], // spotless checked in separate pre-commit
+    gradleSwitches: ['-PdisableSpotlessCheck=true'], // spotless checked in separate pre-commit
     triggerPathPatterns: [
       '^model/.*$',
       '^sdks/java/.*$',
@@ -33,14 +30,11 @@ PrecommitJobBuilder builder = new PrecommitJobBuilder(
       '^examples/java/.*$',
       '^examples/kotlin/.*$',
       '^release/.*$',
-    ],
-    excludePathPatterns: [
-      '^sdks/java/extensions/sql/.*$'
     ]
-    )
+)
 builder.build {
   publishers {
-    common.setArchiveJunitWithStabilityHistory(delegate, '**/build/test-results/**/*.xml')
+    archiveJunit('**/build/test-results/**/*.xml')
     recordIssues {
       tools {
         errorProne()
@@ -52,7 +46,7 @@ builder.build {
           node / 'spotBugs' << 'io.jenkins.plugins.analysis.warnings.SpotBugs' {
             pattern('**/build/reports/spotbugs/*.xml')
           }
-        }
+       }
       }
       enabledForFailure(true)
     }

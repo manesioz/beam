@@ -24,15 +24,14 @@ import com.google.api.services.dataflow.model.CounterUpdate;
 import com.google.api.services.dataflow.model.SideInputInfo;
 import java.io.Closeable;
 import java.io.IOException;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
+import javax.annotation.Nullable;
 import org.apache.beam.runners.core.SideInputReader;
 import org.apache.beam.runners.core.StateInternals;
 import org.apache.beam.runners.core.StateNamespaces;
@@ -55,14 +54,13 @@ import org.apache.beam.sdk.state.TimeDomain;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.TupleTag;
-import org.apache.beam.vendor.grpc.v1p26p0.com.google.protobuf.ByteString;
+import org.apache.beam.vendor.grpc.v1p21p0.com.google.protobuf.ByteString;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.annotations.VisibleForTesting;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Optional;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Supplier;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.FluentIterable;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableMap;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableSet;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.slf4j.Logger;
@@ -82,7 +80,7 @@ public class StreamingModeExecutionContext extends DataflowExecutionContext<Step
    * <p>This key should not be mistaken for the sharding key of the computation, which is always
    * present.
    */
-  private @Nullable Object key = null;
+  @Nullable private Object key = null;
 
   private final String computationId;
   private final Map<TupleTag<?>, Map<BoundedWindow, Object>> sideInputCache;
@@ -147,6 +145,19 @@ public class StreamingModeExecutionContext extends DataflowExecutionContext<Step
       // TODO: Take in the requesting step name and side input index for streaming.
       super(nameContext, stateName, null, null, metricsContainer, profileScope);
       this.worker = worker;
+    }
+
+    /*
+     * Report the lull to the StreamingDataflowWorker that is stuck in addition to logging the
+     * lull.
+     */
+    @Override
+    public void reportLull(Thread trackedThread, long millis) {
+      super.reportLull(trackedThread, millis);
+      // Also report the failure to the list of pending failures to report on the worker thread
+      // so that the failure gets communicated to the StreamingDataflowWorker.
+      String errorMessage = getLullMessage(trackedThread, Duration.millis(millis));
+      worker.addFailure(errorMessage);
     }
 
     /**
@@ -276,7 +287,8 @@ public class StreamingModeExecutionContext extends DataflowExecutionContext<Step
    * <p>If the side input was ready and null, returns {@literal Optional.absent()}. If the side
    * input was ready and non-null returns {@literal Optional.present(...)}.
    */
-  private @Nullable <T> Optional<T> fetchSideInput(
+  @Nullable
+  private <T> Optional<T> fetchSideInput(
       PCollectionView<T> view,
       BoundedWindow sideInputWindow,
       String stateFamily,
@@ -315,7 +327,8 @@ public class StreamingModeExecutionContext extends DataflowExecutionContext<Step
     return work.getTimers().getTimersList();
   }
 
-  public @Nullable ByteString getSerializedKey() {
+  @Nullable
+  public ByteString getSerializedKey() {
     return work == null ? null : work.getKey();
   }
 
@@ -521,7 +534,7 @@ public class StreamingModeExecutionContext extends DataflowExecutionContext<Step
               synchronizedProcessingTime);
 
       this.cachedFiredTimers = null;
-      this.toBeFiredTimersOrdered = null;
+      this.cachedFiredUserTimers = null;
     }
 
     public void flushState() {
@@ -552,76 +565,31 @@ public class StreamingModeExecutionContext extends DataflowExecutionContext<Step
       if (!cachedFiredTimers.hasNext()) {
         return null;
       }
-      TimerData nextTimer = cachedFiredTimers.next();
-      // system timers ( GC timer) must be explicitly deleted if only there is a hold.
-      // if timestamp is not equals to outputTimestamp then there should be a hold
-      if (!nextTimer.getTimestamp().equals(nextTimer.getOutputTimestamp())) {
-        systemTimerInternals.deleteTimer(nextTimer);
-      }
-      return nextTimer;
+      return cachedFiredTimers.next();
     }
 
-    private PriorityQueue<TimerData> toBeFiredTimersOrdered = null;
-
-    // to track if timer is reset earlier mid-bundle.
-    // Map of timer's id to timer's firing time to check
-    // the actual firing time of a timer.
-    private Map<String, Instant> firedTimer = new HashMap<>();
+    // Lazily initialized
+    private Iterator<TimerData> cachedFiredUserTimers = null;
 
     public <W extends BoundedWindow> TimerData getNextFiredUserTimer(Coder<W> windowCoder) {
-      if (toBeFiredTimersOrdered == null) {
-
-        toBeFiredTimersOrdered = new PriorityQueue<>(Comparator.comparing(TimerData::getTimestamp));
-        FluentIterable.from(StreamingModeExecutionContext.this.getFiredTimers())
-            .filter(
-                timer ->
-                    WindmillTimerInternals.isUserTimer(timer)
-                        && timer.getStateFamily().equals(stateFamily))
-            .transform(
-                timer ->
-                    WindmillTimerInternals.windmillTimerToTimerData(
-                        WindmillNamespacePrefix.USER_NAMESPACE_PREFIX, timer, windowCoder))
-            .iterator()
-            .forEachRemaining(
-                timerData -> {
-                  firedTimer.put(
-                      timerData.getTimerId() + '+' + timerData.getTimerFamilyId(),
-                      timerData.getTimestamp());
-                  toBeFiredTimersOrdered.add(timerData);
-                });
+      if (cachedFiredUserTimers == null) {
+        cachedFiredUserTimers =
+            FluentIterable.<Timer>from(StreamingModeExecutionContext.this.getFiredTimers())
+                .filter(
+                    timer ->
+                        WindmillTimerInternals.isUserTimer(timer)
+                            && timer.getStateFamily().equals(stateFamily))
+                .transform(
+                    timer ->
+                        WindmillTimerInternals.windmillTimerToTimerData(
+                            WindmillNamespacePrefix.USER_NAMESPACE_PREFIX, timer, windowCoder))
+                .iterator();
       }
 
-      Instant currentInputWatermark = userTimerInternals.currentInputWatermarkTime();
-
-      if (userTimerInternals.hasTimerBefore(currentInputWatermark)) {
-        List<TimerData> currentTimers = userTimerInternals.getCurrentTimers();
-
-        for (TimerData timerData : currentTimers) {
-          firedTimer.put(
-              timerData.getTimerId() + '+' + timerData.getTimerFamilyId(),
-              timerData.getTimestamp());
-          toBeFiredTimersOrdered.add(timerData);
-        }
-      }
-
-      TimerData nextTimer = null;
-
-      // fire timer only if its timestamp matched. Else it is either reset or obsolete.
-      while (!toBeFiredTimersOrdered.isEmpty()) {
-        nextTimer = toBeFiredTimersOrdered.poll();
-        String timerUniqueId = nextTimer.getTimerId() + '+' + nextTimer.getTimerFamilyId();
-        if (firedTimer.containsKey(timerUniqueId)
-            && firedTimer.get(timerUniqueId).isEqual(nextTimer.getTimestamp())) {
-          break;
-        } else {
-          nextTimer = null;
-        }
-      }
-
-      if (nextTimer == null) {
+      if (!cachedFiredUserTimers.hasNext()) {
         return null;
       }
-
+      TimerData nextTimer = cachedFiredUserTimers.next();
       // User timers must be explicitly deleted when delivered, to release the implied hold
       userTimerInternals.deleteTimer(nextTimer);
       return nextTimer;
@@ -629,18 +597,12 @@ public class StreamingModeExecutionContext extends DataflowExecutionContext<Step
 
     @Override
     public <W extends BoundedWindow> void setStateCleanupTimer(
-        String timerId,
-        W window,
-        Coder<W> windowCoder,
-        Instant cleanupTime,
-        Instant cleanupOutputTimestamp) {
+        String timerId, W window, Coder<W> windowCoder, Instant cleanupTime) {
       timerInternals()
           .setTimer(
               StateNamespaces.window(windowCoder, window),
               timerId,
-              "",
               cleanupTime,
-              cleanupOutputTimestamp,
               TimeDomain.EVENT_TIME);
     }
 
@@ -804,11 +766,7 @@ public class StreamingModeExecutionContext extends DataflowExecutionContext<Step
 
     @Override
     public <W extends BoundedWindow> void setStateCleanupTimer(
-        String timerId,
-        W window,
-        Coder<W> windowCoder,
-        Instant cleanupTime,
-        Instant cleanupOutputTimestamp) {
+        String timerId, W window, Coder<W> windowCoder, Instant cleanupTime) {
       throw new UnsupportedOperationException(
           String.format(
               "setStateCleanupTimer should not be called on %s, only on a system %s",

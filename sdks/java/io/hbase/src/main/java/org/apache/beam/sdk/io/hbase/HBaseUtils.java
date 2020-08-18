@@ -17,7 +17,6 @@
  */
 package org.apache.beam.sdk.io.hbase;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -45,11 +44,10 @@ class HBaseUtils {
    * information. The size can vary between calls because the data can be compressed based on the
    * HBase configuration.
    */
-  static long estimateSizeBytes(Connection connection, String tableId, ByteKeyRange range)
-      throws Exception {
+  static long estimateSizeBytes(Connection connection, String tableId, Scan scan) throws Exception {
     // This code is based on RegionSizeCalculator in hbase-server
     long estimatedSizeBytes = 0L;
-    List<HRegionLocation> regionLocations = getRegionLocations(connection, tableId, range);
+    List<HRegionLocation> regionLocations = getRegionLocations(connection, tableId, scan);
 
     // builds set of regions who are part of the table scan
     Set<byte[]> tableRegions = new TreeSet<>(Bytes.BYTES_COMPARATOR);
@@ -76,10 +74,10 @@ class HBaseUtils {
   }
 
   /** Returns a list of region locations for a given table and scan. */
-  static List<HRegionLocation> getRegionLocations(
-      Connection connection, String tableId, ByteKeyRange range) throws Exception {
-    byte[] startRow = range.getStartKey().getBytes();
-    byte[] stopRow = range.getEndKey().getBytes();
+  static List<HRegionLocation> getRegionLocations(Connection connection, String tableId, Scan scan)
+      throws Exception {
+    byte[] startRow = scan.getStartRow();
+    byte[] stopRow = scan.getStopRow();
 
     final List<HRegionLocation> regionLocations = new ArrayList<>();
 
@@ -105,9 +103,9 @@ class HBaseUtils {
 
   /** Returns the list of ranges intersecting a list of regions for the given table and scan. */
   static List<ByteKeyRange> getRanges(
-      List<HRegionLocation> regionLocations, String tableId, ByteKeyRange range) {
-    byte[] startRow = range.getStartKey().getBytes();
-    byte[] stopRow = range.getEndKey().getBytes();
+      List<HRegionLocation> regionLocations, String tableId, Scan scan) {
+    byte[] startRow = scan.getStartRow();
+    byte[] stopRow = scan.getStopRow();
 
     final List<ByteKeyRange> splits = new ArrayList<>();
     final boolean scanWithNoLowerBound = startRow.length == 0;
@@ -127,16 +125,5 @@ class HBaseUtils {
       splits.add(ByteKeyRange.of(ByteKey.copyFrom(splitStart), ByteKey.copyFrom(splitStop)));
     }
     return splits;
-  }
-
-  static ByteKeyRange getByteKeyRange(Scan scan) {
-    return ByteKeyRange.of(
-        ByteKey.copyFrom(scan.getStartRow()), ByteKey.copyFrom(scan.getStopRow()));
-  }
-
-  static Scan newScanInRange(Scan scan, ByteKeyRange range) throws IOException {
-    return new Scan(scan)
-        .setStartRow(range.getStartKey().getBytes())
-        .setStopRow(range.getEndKey().getBytes());
   }
 }

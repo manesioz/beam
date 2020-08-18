@@ -17,8 +17,6 @@
 
 """Unittest for testing utilities,"""
 
-# pytype: skip-file
-
 from __future__ import absolute_import
 
 import logging
@@ -34,6 +32,7 @@ from apache_beam.testing import test_utils as utils
 
 
 class TestUtilsTest(unittest.TestCase):
+
   def setUp(self):
     utils.patch_retry(self, utils)
     self.tmpdir = tempfile.mkdtemp()
@@ -74,7 +73,8 @@ class TestUtilsTest(unittest.TestCase):
   def test_temp_file_field_correct(self):
     with utils.TempDir() as tempdir:
       filename = tempdir.create_temp_file(
-          suffix='.txt', lines=[b'line1\n', b'line2\n', b'line3\n'])
+          suffix='.txt',
+          lines=[b'line1\n', b'line2\n', b'line3\n'])
       self.assertTrue(filename.endswith('.txt'))
 
       with open(filename, 'rb') as f:

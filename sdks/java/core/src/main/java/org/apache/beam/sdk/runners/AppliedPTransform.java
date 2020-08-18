@@ -19,7 +19,6 @@ package org.apache.beam.sdk.runners;
 
 import com.google.auto.value.AutoValue;
 import java.util.Map;
-import java.util.stream.Collectors;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.annotations.Internal;
 import org.apache.beam.sdk.transforms.PTransform;
@@ -71,12 +70,4 @@ public abstract class AppliedPTransform<
   public abstract TransformT getTransform();
 
   public abstract Pipeline getPipeline();
-
-  /** @return map of {@link TupleTag TupleTags} which are not side inputs. */
-  public Map<TupleTag<?>, PValue> getMainInputs() {
-    Map<TupleTag<?>, PValue> sideInputs = getTransform().getAdditionalInputs();
-    return getInputs().entrySet().stream()
-        .filter(e -> !sideInputs.containsKey(e.getKey()))
-        .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-  }
 }

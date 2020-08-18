@@ -20,10 +20,10 @@ package org.apache.beam.sdk.transforms.reflect;
 import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.MoreObjects.firstNonNull;
 
 import com.google.auto.value.AutoValue;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.transforms.DoFn;
-import org.apache.beam.vendor.bytebuddy.v1_10_8.net.bytebuddy.NamingStrategy;
-import org.apache.beam.vendor.bytebuddy.v1_10_8.net.bytebuddy.description.type.TypeDescription;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.apache.beam.vendor.bytebuddy.v1_9_3.net.bytebuddy.NamingStrategy;
+import org.apache.beam.vendor.bytebuddy.v1_9_3.net.bytebuddy.description.type.TypeDescription;
 
 /**
  * A naming strategy for ByteBuddy invokers ({@link DoFnInvoker} and {@link OnTimerInvoker}) that is
@@ -34,7 +34,8 @@ abstract class StableInvokerNamingStrategy extends NamingStrategy.AbstractBase {
 
   public abstract Class<? extends DoFn<?, ?>> getFnClass();
 
-  public abstract @Nullable String getSuffix();
+  @Nullable
+  public abstract String getSuffix();
 
   public static StableInvokerNamingStrategy forDoFnClass(Class<? extends DoFn<?, ?>> fnClass) {
     return new AutoValue_StableInvokerNamingStrategy(fnClass, null);

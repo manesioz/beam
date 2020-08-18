@@ -23,10 +23,10 @@ import java.io.OutputStream;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.testing.CoderProperties;
 import org.apache.beam.sdk.values.TypeDescriptor;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.hamcrest.CoreMatchers;
 import org.junit.Assert;
 import org.junit.Test;
@@ -55,7 +55,8 @@ public class StructuredCoderTest {
     }
 
     @Override
-    public @Nullable Boolean decode(InputStream inStream) throws CoderException, IOException {
+    @Nullable
+    public Boolean decode(InputStream inStream) throws CoderException, IOException {
       int value = inStream.read();
       if (value == 0) {
         return false;
@@ -112,8 +113,8 @@ public class StructuredCoderTest {
     }
 
     @Override
-    public @Nullable ObjectIdentityBoolean decode(InputStream inStream)
-        throws CoderException, IOException {
+    @Nullable
+    public ObjectIdentityBoolean decode(InputStream inStream) throws CoderException, IOException {
       int value = inStream.read();
       if (value == 0) {
         return new ObjectIdentityBoolean(false);

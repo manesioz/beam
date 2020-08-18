@@ -24,7 +24,7 @@ import com.google.cloud.spanner.Statement;
 import java.io.Serializable;
 import java.util.Arrays;
 import java.util.List;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import javax.annotation.Nullable;
 
 /** Encapsulates a spanner read operation. */
 @AutoValue
@@ -37,17 +37,23 @@ public abstract class ReadOperation implements Serializable {
         .build();
   }
 
-  public abstract @Nullable Statement getQuery();
+  @Nullable
+  public abstract Statement getQuery();
 
-  public abstract @Nullable String getTable();
+  @Nullable
+  public abstract String getTable();
 
-  public abstract @Nullable String getIndex();
+  @Nullable
+  public abstract String getIndex();
 
-  public abstract @Nullable List<String> getColumns();
+  @Nullable
+  public abstract List<String> getColumns();
 
-  public abstract @Nullable KeySet getKeySet();
+  @Nullable
+  public abstract KeySet getKeySet();
 
-  abstract @Nullable PartitionOptions getPartitionOptions();
+  @Nullable
+  abstract PartitionOptions getPartitionOptions();
 
   @AutoValue.Builder
   abstract static class Builder {

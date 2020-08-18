@@ -22,8 +22,6 @@ of test pipeline job. Customized verifier should extend
 `hamcrest.core.base_matcher.BaseMatcher` and override _matches.
 """
 
-# pytype: skip-file
-
 from __future__ import absolute_import
 
 import logging
@@ -40,7 +38,8 @@ __all__ = [
     'PipelineStateMatcher',
     'FileChecksumMatcher',
     'retry_on_io_error_and_server_error',
-]
+    ]
+
 
 try:
   from apitools.base.py.exceptions import HttpError
@@ -49,8 +48,6 @@ except ImportError:
 
 MAX_RETRIES = 4
 
-_LOGGER = logging.getLogger(__name__)
-
 
 class PipelineStateMatcher(BaseMatcher):
   """Matcher that verify pipeline job terminated in expected state
@@ -58,6 +55,7 @@ class PipelineStateMatcher(BaseMatcher):
   Matcher compares the actual pipeline terminate state with expected.
   By default, `PipelineState.DONE` is used as expected state.
   """
+
   def __init__(self, expected_state=PipelineState.DONE):
     self.expected_state = expected_state
 
@@ -87,6 +85,7 @@ class FileChecksumMatcher(BaseMatcher):
   Use apache_beam.io.filebasedsink to fetch file(s) from given path.
   File checksum is a hash string computed from content of file(s).
   """
+
   def __init__(self, file_path, expected_checksum, sleep_secs=None):
     """Initialize a FileChecksumMatcher object
 
@@ -102,9 +101,9 @@ class FileChecksumMatcher(BaseMatcher):
       if isinstance(sleep_secs, int):
         self.sleep_secs = sleep_secs
       else:
-        raise ValueError(
-            'Sleep seconds, if received, must be int. '
-            'But received: %r, %s' % (sleep_secs, type(sleep_secs)))
+        raise ValueError('Sleep seconds, if received, must be int. '
+                         'But received: %r, %s' % (sleep_secs,
+                                                   type(sleep_secs)))
     else:
       self.sleep_secs = None
 
@@ -112,7 +111,8 @@ class FileChecksumMatcher(BaseMatcher):
     self.expected_checksum = expected_checksum
 
   @retry.with_exponential_backoff(
-      num_retries=MAX_RETRIES, retry_filter=retry_on_io_error_and_server_error)
+      num_retries=MAX_RETRIES,
+      retry_filter=retry_on_io_error_and_server_error)
   def _read_with_retry(self):
     """Read path with retry if I/O failed"""
     read_lines = []
@@ -121,11 +121,8 @@ class FileChecksumMatcher(BaseMatcher):
     if not matched_path:
       raise IOError('No such file or directory: %s' % self.file_path)
 
-    _LOGGER.info(
-        'Find %d files in %s: \n%s',
-        len(matched_path),
-        self.file_path,
-        '\n'.join(matched_path))
+    logging.info('Find %d files in %s: \n%s',
+                 len(matched_path), self.file_path, '\n'.join(matched_path))
     for path in matched_path:
       with FileSystems.open(path, 'r') as f:
         for line in f:
@@ -135,7 +132,7 @@ class FileChecksumMatcher(BaseMatcher):
   def _matches(self, _):
     if self.sleep_secs:
       # Wait to have output file ready on FS
-      _LOGGER.info('Wait %d seconds...', self.sleep_secs)
+      logging.info('Wait %d seconds...', self.sleep_secs)
       time.sleep(self.sleep_secs)
 
     # Read from given file(s) path
@@ -143,11 +140,8 @@ class FileChecksumMatcher(BaseMatcher):
 
     # Compute checksum
     self.checksum = utils.compute_hash(read_lines)
-    _LOGGER.info(
-        'Read from given path %s, %d lines, checksum: %s.',
-        self.file_path,
-        len(read_lines),
-        self.checksum)
+    logging.info('Read from given path %s, %d lines, checksum: %s.',
+                 self.file_path, len(read_lines), self.checksum)
     return self.checksum == self.expected_checksum
 
   def describe_to(self, description):

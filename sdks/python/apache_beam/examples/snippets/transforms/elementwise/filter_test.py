@@ -16,8 +16,6 @@
 # limitations under the License.
 #
 
-# pytype: skip-file
-
 from __future__ import absolute_import
 from __future__ import print_function
 
@@ -25,34 +23,40 @@ import unittest
 
 import mock
 
-from apache_beam.examples.snippets.util import assert_matches_stdout
 from apache_beam.testing.test_pipeline import TestPipeline
+from apache_beam.testing.util import assert_that
+from apache_beam.testing.util import equal_to
 
 from . import filter
 
 
 def check_perennials(actual):
-  expected = '''[START perennials]
-{'icon': '🍓', 'name': 'Strawberry', 'duration': 'perennial'}
-{'icon': '🍆', 'name': 'Eggplant', 'duration': 'perennial'}
-{'icon': '🥔', 'name': 'Potato', 'duration': 'perennial'}
-[END perennials]'''.splitlines()[1:-1]
-  assert_matches_stdout(actual, expected)
+  # [START perennials]
+  perennials = [
+      {'icon': '🍓', 'name': 'Strawberry', 'duration': 'perennial'},
+      {'icon': '🍆', 'name': 'Eggplant', 'duration': 'perennial'},
+      {'icon': '🥔', 'name': 'Potato', 'duration': 'perennial'},
+  ]
+  # [END perennials]
+  assert_that(actual, equal_to(perennials))
 
 
 def check_valid_plants(actual):
-  expected = '''[START valid_plants]
-{'icon': '🍓', 'name': 'Strawberry', 'duration': 'perennial'}
-{'icon': '🥕', 'name': 'Carrot', 'duration': 'biennial'}
-{'icon': '🍆', 'name': 'Eggplant', 'duration': 'perennial'}
-{'icon': '🍅', 'name': 'Tomato', 'duration': 'annual'}
-[END valid_plants]'''.splitlines()[1:-1]
-  assert_matches_stdout(actual, expected)
+  # [START valid_plants]
+  valid_plants = [
+      {'icon': '🍓', 'name': 'Strawberry', 'duration': 'perennial'},
+      {'icon': '🥕', 'name': 'Carrot', 'duration': 'biennial'},
+      {'icon': '🍆', 'name': 'Eggplant', 'duration': 'perennial'},
+      {'icon': '🍅', 'name': 'Tomato', 'duration': 'annual'},
+  ]
+  # [END valid_plants]
+  assert_that(actual, equal_to(valid_plants))
 
 
 @mock.patch('apache_beam.Pipeline', TestPipeline)
-@mock.patch(
-    'apache_beam.examples.snippets.transforms.elementwise.filter.print', str)
+# pylint: disable=line-too-long
+@mock.patch('apache_beam.examples.snippets.transforms.elementwise.filter.print', lambda elem: elem)
+# pylint: enable=line-too-long
 class FilterTest(unittest.TestCase):
   def test_filter_function(self):
     filter.filter_function(check_perennials)

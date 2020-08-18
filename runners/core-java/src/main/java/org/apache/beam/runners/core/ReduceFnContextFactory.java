@@ -22,6 +22,7 @@ import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Prec
 
 import java.util.Collection;
 import java.util.Map;
+import javax.annotation.Nullable;
 import org.apache.beam.runners.core.StateNamespaces.WindowNamespace;
 import org.apache.beam.runners.core.TimerInternals.TimerData;
 import org.apache.beam.sdk.coders.Coder;
@@ -36,7 +37,6 @@ import org.apache.beam.sdk.transforms.windowing.PaneInfo;
 import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.WindowingStrategy;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableMap;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Instant;
 
 /** Factory for creating instances of the various {@link ReduceFn} contexts. */
@@ -51,8 +51,8 @@ class ReduceFnContextFactory<K, InputT, OutputT, W extends BoundedWindow> {
   private final StateInternals stateInternals;
   private final ActiveWindowSet<W> activeWindows;
   private final TimerInternals timerInternals;
-  private final @Nullable SideInputReader sideInputReader;
-  private final @Nullable PipelineOptions options;
+  @Nullable private final SideInputReader sideInputReader;
+  @Nullable private final PipelineOptions options;
 
   ReduceFnContextFactory(
       K key,
@@ -132,17 +132,12 @@ class ReduceFnContextFactory<K, InputT, OutputT, W extends BoundedWindow> {
 
     @Override
     public void setTimer(Instant timestamp, TimeDomain timeDomain) {
-      timerInternals.setTimer(TimerData.of(namespace, timestamp, timestamp, timeDomain));
-    }
-
-    @Override
-    public void setTimer(Instant timestamp, Instant outputTimestamp, TimeDomain timeDomain) {
-      timerInternals.setTimer(TimerData.of(namespace, timestamp, outputTimestamp, timeDomain));
+      timerInternals.setTimer(TimerData.of(namespace, timestamp, timeDomain));
     }
 
     @Override
     public void deleteTimer(Instant timestamp, TimeDomain timeDomain) {
-      timerInternals.deleteTimer(TimerData.of(namespace, timestamp, timestamp, timeDomain));
+      timerInternals.deleteTimer(TimerData.of(namespace, timestamp, timeDomain));
     }
 
     @Override
@@ -151,7 +146,8 @@ class ReduceFnContextFactory<K, InputT, OutputT, W extends BoundedWindow> {
     }
 
     @Override
-    public @Nullable Instant currentSynchronizedProcessingTime() {
+    @Nullable
+    public Instant currentSynchronizedProcessingTime() {
       return timerInternals.currentSynchronizedProcessingTime();
     }
 
@@ -521,8 +517,8 @@ class ReduceFnContextFactory<K, InputT, OutputT, W extends BoundedWindow> {
   }
 
   private static <W extends BoundedWindow> StateContext<W> stateContextFromComponents(
-      final @Nullable PipelineOptions options,
-      final @Nullable SideInputReader sideInputReader,
+      @Nullable final PipelineOptions options,
+      @Nullable final SideInputReader sideInputReader,
       final W mainInputWindow) {
     if (options == null || sideInputReader == null) {
       return StateContexts.windowOnlyContext(mainInputWindow);

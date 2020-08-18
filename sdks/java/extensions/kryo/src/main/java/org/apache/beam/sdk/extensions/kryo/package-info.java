@@ -17,7 +17,4 @@
  */
 
 /** Euphoria API focused on Beam coders. */
-@Internal
 package org.apache.beam.sdk.extensions.kryo;
-
-import org.apache.beam.sdk.annotations.Internal;

@@ -21,6 +21,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import org.apache.beam.fn.harness.control.ProcessBundleHandler;
+import org.apache.beam.model.fnexecution.v1.BeamFnApi.InstructionRequest;
 import org.apache.beam.model.pipeline.v1.Endpoints;
 import org.apache.beam.model.pipeline.v1.Endpoints.ApiServiceDescriptor;
 import org.apache.beam.sdk.coders.Coder;
@@ -95,7 +96,7 @@ public class QueueingBeamFnDataClient implements BeamFnDataClient {
    *
    * <p>This method is NOT thread safe. This should only be invoked by a single thread, and is
    * intended for use with a newly constructed QueueingBeamFnDataClient in {@link
-   * ProcessBundleHandler#processBundle}.
+   * ProcessBundleHandler#processBundle(InstructionRequest)}.
    */
   public void drainAndBlock() throws Exception {
     while (true) {

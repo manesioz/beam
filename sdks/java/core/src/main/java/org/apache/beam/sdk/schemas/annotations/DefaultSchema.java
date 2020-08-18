@@ -29,6 +29,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.util.List;
 import java.util.Map;
 import javax.annotation.CheckForNull;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.schemas.Schema;
@@ -39,7 +40,6 @@ import org.apache.beam.sdk.values.Row;
 import org.apache.beam.sdk.values.TypeDescriptor;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Maps;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * The {@link DefaultSchema} annotation specifies a {@link SchemaProvider} class to handle obtaining
@@ -85,7 +85,8 @@ public @interface DefaultSchema {
       }
     }
 
-    private @Nullable ProviderAndDescriptor getSchemaProvider(TypeDescriptor<?> typeDescriptor) {
+    @Nullable
+    private ProviderAndDescriptor getSchemaProvider(TypeDescriptor<?> typeDescriptor) {
       return cachedProviders.computeIfAbsent(
           typeDescriptor,
           type -> {

@@ -43,7 +43,7 @@ import org.apache.beam.sdk.transforms.Sum;
 import org.apache.beam.sdk.transforms.View;
 import org.apache.beam.sdk.transforms.windowing.GlobalWindow;
 import org.apache.beam.sdk.values.PCollectionView;
-import org.apache.beam.vendor.grpc.v1p26p0.com.google.protobuf.ByteString;
+import org.apache.beam.vendor.grpc.v1p21p0.com.google.protobuf.ByteString;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Supplier;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.cache.Cache;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.cache.CacheBuilder;
@@ -78,7 +78,9 @@ public class StateFetcherTest {
     ByteString encodedIterable = stream.toByteString();
 
     PCollectionView<String> view =
-        TestPipeline.create().apply(Create.empty(StringUtf8Coder.of())).apply(View.asSingleton());
+        TestPipeline.create()
+            .apply(Create.empty(StringUtf8Coder.of()))
+            .apply(View.<String>asSingleton());
 
     String tag = view.getTagInternal().getId();
 
@@ -131,7 +133,7 @@ public class StateFetcherTest {
     ByteString encodedIterable = stream.toByteString();
 
     PCollectionView<Void> view =
-        TestPipeline.create().apply(Create.empty(VoidCoder.of())).apply(View.asSingleton());
+        TestPipeline.create().apply(Create.empty(VoidCoder.of())).apply(View.<Void>asSingleton());
 
     String tag = view.getTagInternal().getId();
 
@@ -192,10 +194,14 @@ public class StateFetcherTest {
     StateFetcher fetcher = new StateFetcher(server, cache);
 
     PCollectionView<String> view1 =
-        TestPipeline.create().apply(Create.empty(StringUtf8Coder.of())).apply(View.asSingleton());
+        TestPipeline.create()
+            .apply(Create.empty(StringUtf8Coder.of()))
+            .apply(View.<String>asSingleton());
 
     PCollectionView<String> view2 =
-        TestPipeline.create().apply(Create.empty(StringUtf8Coder.of())).apply(View.asSingleton());
+        TestPipeline.create()
+            .apply(Create.empty(StringUtf8Coder.of()))
+            .apply(View.<String>asSingleton());
 
     String tag1 = view1.getTagInternal().getId();
     String tag2 = view2.getTagInternal().getId();

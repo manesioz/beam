@@ -36,7 +36,6 @@ import org.apache.beam.sdk.coders.CoderException;
 import org.apache.beam.sdk.coders.CustomCoder;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Coder using Kryo as (de)serialization mechanism. See {@link KryoCoderProvider} to get more
@@ -210,11 +209,8 @@ public class KryoCoder<T> extends CustomCoder<T> {
       }
       throw new CoderException("Cannot encode given object of type [" + value.getClass() + "].", e);
     } catch (IllegalArgumentException e) {
-      String message = e.getMessage();
-      if (message != null) {
-        if (message.startsWith("Class is not registered")) {
-          throw new CoderException(message);
-        }
+      if (e.getMessage().startsWith("Class is not registered")) {
+        throw new CoderException(e.getMessage());
       }
       throw e;
     }
@@ -284,7 +280,7 @@ public class KryoCoder<T> extends CustomCoder<T> {
   }
 
   @Override
-  public boolean equals(@Nullable Object other) {
+  public boolean equals(Object other) {
     if (other != null && getClass().equals(other.getClass())) {
       return instanceId.equals(((KryoCoder) other).instanceId);
     }

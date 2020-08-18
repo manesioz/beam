@@ -21,13 +21,18 @@ import static org.apache.beam.runners.flink.metrics.FlinkMetricContainer.getFlin
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertNotNull;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Matchers.anyObject;
+import static org.mockito.Matchers.anyString;
 import static org.mockito.Matchers.argThat;
 import static org.mockito.Matchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import org.apache.beam.model.pipeline.v1.MetricsApi;
+import org.apache.beam.model.pipeline.v1.MetricsApi.CounterData;
+import org.apache.beam.model.pipeline.v1.MetricsApi.DoubleDistributionData;
+import org.apache.beam.model.pipeline.v1.MetricsApi.IntDistributionData;
+import org.apache.beam.model.pipeline.v1.MetricsApi.Metric;
 import org.apache.beam.model.pipeline.v1.MetricsApi.MonitoringInfo;
 import org.apache.beam.runners.core.metrics.CounterCell;
 import org.apache.beam.runners.core.metrics.DistributionCell;
@@ -62,8 +67,6 @@ public class FlinkMetricContainerTest {
   @Mock private RuntimeContext runtimeContext;
   @Mock private MetricGroup metricGroup;
 
-  FlinkMetricContainer container;
-
   @Before
   public void beforeTest() {
     MockitoAnnotations.initMocks(this);
@@ -71,7 +74,6 @@ public class FlinkMetricContainerTest {
             anyString()))
         .thenReturn(new MetricsAccumulator());
     when(runtimeContext.getMetricGroup()).thenReturn(metricGroup);
-    container = new FlinkMetricContainer(runtimeContext);
   }
 
   @Test
@@ -86,6 +88,7 @@ public class FlinkMetricContainerTest {
     SimpleCounter flinkCounter = new SimpleCounter();
     when(metricGroup.counter("namespace.name")).thenReturn(flinkCounter);
 
+    FlinkMetricContainer container = new FlinkMetricContainer(runtimeContext);
     MetricsContainer step = container.getMetricsContainer("step");
     MetricName metricName = MetricName.named("namespace", "name");
     Counter counter = step.getCounter(metricName);
@@ -103,21 +106,24 @@ public class FlinkMetricContainerTest {
         new FlinkMetricContainer.FlinkGauge(GaugeResult.empty());
     when(metricGroup.gauge(eq("namespace.name"), anyObject())).thenReturn(flinkGauge);
 
+    FlinkMetricContainer container = new FlinkMetricContainer(runtimeContext);
     MetricsContainer step = container.getMetricsContainer("step");
     MetricName metricName = MetricName.named("namespace", "name");
     Gauge gauge = step.getGauge(metricName);
 
-    assertThat(flinkGauge.getValue(), is(-1L));
+    assertThat(flinkGauge.getValue(), is(GaugeResult.empty()));
     // first set will install the mocked gauge
     container.updateMetrics("step");
     gauge.set(1);
     gauge.set(42);
     container.updateMetrics("step");
-    assertThat(flinkGauge.getValue(), is(42L));
+    assertThat(flinkGauge.getValue().getValue(), is(42L));
   }
 
   @Test
   public void testMonitoringInfoUpdate() {
+    FlinkMetricContainer container = new FlinkMetricContainer(runtimeContext);
+
     SimpleCounter userCounter = new SimpleCounter();
     when(metricGroup.counter("ns1.metric1")).thenReturn(userCounter);
 
@@ -129,18 +135,18 @@ public class FlinkMetricContainerTest {
 
     MonitoringInfo userCountMonitoringInfo =
         new SimpleMonitoringInfoBuilder()
-            .setUrn(MonitoringInfoConstants.Urns.USER_SUM_INT64)
+            .setUrn(MonitoringInfoConstants.Urns.USER_COUNTER)
             .setLabel(MonitoringInfoConstants.Labels.NAMESPACE, "ns1")
             .setLabel(MonitoringInfoConstants.Labels.NAME, "metric1")
             .setLabel(MonitoringInfoConstants.Labels.PTRANSFORM, "anyPTransform")
-            .setInt64SumValue(111)
+            .setInt64Value(111)
             .build();
     assertNotNull(userCountMonitoringInfo);
 
     MonitoringInfo pCollectionScoped =
         new SimpleMonitoringInfoBuilder()
             .setUrn(MonitoringInfoConstants.Urns.ELEMENT_COUNT)
-            .setInt64SumValue(222)
+            .setInt64Value(222)
             .setLabel(MonitoringInfoConstants.Labels.PCOLLECTION, "pcoll")
             .setLabel(MonitoringInfoConstants.Labels.PTRANSFORM, "anyPTransform")
             .build();
@@ -149,7 +155,7 @@ public class FlinkMetricContainerTest {
     MonitoringInfo transformScoped =
         new SimpleMonitoringInfoBuilder()
             .setUrn(MonitoringInfoConstants.Urns.START_BUNDLE_MSECS)
-            .setInt64SumValue(333)
+            .setInt64Value(333)
             .setLabel(MonitoringInfoConstants.Labels.NAME, "myMetric")
             .setLabel(MonitoringInfoConstants.Labels.PTRANSFORM, "anyPTransform")
             .build();
@@ -167,42 +173,63 @@ public class FlinkMetricContainerTest {
 
   @Test
   public void testDropUnexpectedMonitoringInfoTypes() {
-    MetricsContainerImpl step = container.getMetricsContainer("step");
+    FlinkMetricContainer flinkContainer = new FlinkMetricContainer(runtimeContext);
+    MetricsContainerImpl step = flinkContainer.getMetricsContainer("step");
 
     MonitoringInfo intCounter =
-        new SimpleMonitoringInfoBuilder()
-            .setUrn(MonitoringInfoConstants.Urns.USER_SUM_INT64)
-            .setLabel(MonitoringInfoConstants.Labels.NAMESPACE, "ns1")
-            .setLabel(MonitoringInfoConstants.Labels.NAME, "int_counter")
-            .setLabel(MonitoringInfoConstants.Labels.PTRANSFORM, "step")
-            .setInt64SumValue(111)
+        MonitoringInfo.newBuilder()
+            .setUrn(MonitoringInfoConstants.Urns.USER_COUNTER)
+            .putLabels(MonitoringInfoConstants.Labels.NAMESPACE, "ns1")
+            .putLabels(MonitoringInfoConstants.Labels.NAME, "int_counter")
+            .putLabels(MonitoringInfoConstants.Labels.PTRANSFORM, "step")
+            .setMetric(
+                Metric.newBuilder().setCounterData(CounterData.newBuilder().setInt64Value(111)))
             .build();
 
     MonitoringInfo doubleCounter =
-        new SimpleMonitoringInfoBuilder()
-            .setUrn(MonitoringInfoConstants.Urns.USER_SUM_DOUBLE)
-            .setLabel(MonitoringInfoConstants.Labels.NAMESPACE, "ns2")
-            .setLabel(MonitoringInfoConstants.Labels.NAME, "double_counter")
-            .setLabel(MonitoringInfoConstants.Labels.PTRANSFORM, "step")
-            .setDoubleSumValue(222)
+        MonitoringInfo.newBuilder()
+            .setUrn(MonitoringInfoConstants.Urns.USER_COUNTER)
+            .putLabels(MonitoringInfoConstants.Labels.NAMESPACE, "ns2")
+            .putLabels(MonitoringInfoConstants.Labels.NAME, "double_counter")
+            .putLabels(MonitoringInfoConstants.Labels.PTRANSFORM, "step")
+            .setMetric(
+                Metric.newBuilder().setCounterData(CounterData.newBuilder().setDoubleValue(222)))
             .build();
 
     MonitoringInfo intDistribution =
-        new SimpleMonitoringInfoBuilder()
-            .setUrn(MonitoringInfoConstants.Urns.USER_DISTRIBUTION_INT64)
-            .setLabel(MonitoringInfoConstants.Labels.NAMESPACE, "ns3")
-            .setLabel(MonitoringInfoConstants.Labels.NAME, "int_distribution")
-            .setLabel(MonitoringInfoConstants.Labels.PTRANSFORM, "step")
-            .setInt64DistributionValue(DistributionData.create(30, 10, 1, 5))
+        MonitoringInfo.newBuilder()
+            .setUrn(MonitoringInfoConstants.Urns.USER_COUNTER)
+            .putLabels(MonitoringInfoConstants.Labels.NAMESPACE, "ns3")
+            .putLabels(MonitoringInfoConstants.Labels.NAME, "int_distribution")
+            .putLabels(MonitoringInfoConstants.Labels.PTRANSFORM, "step")
+            .setMetric(
+                Metric.newBuilder()
+                    .setDistributionData(
+                        MetricsApi.DistributionData.newBuilder()
+                            .setIntDistributionData(
+                                IntDistributionData.newBuilder()
+                                    .setSum(30)
+                                    .setCount(10)
+                                    .setMin(1)
+                                    .setMax(5))))
             .build();
 
     MonitoringInfo doubleDistribution =
-        new SimpleMonitoringInfoBuilder()
-            .setUrn(MonitoringInfoConstants.Urns.USER_DISTRIBUTION_DOUBLE)
-            .setLabel(MonitoringInfoConstants.Labels.NAMESPACE, "ns4")
-            .setLabel(MonitoringInfoConstants.Labels.NAME, "double_distribution")
-            .setLabel(MonitoringInfoConstants.Labels.PTRANSFORM, "step")
-            .setDoubleDistributionValue(10, 30, 1, 5)
+        MonitoringInfo.newBuilder()
+            .setUrn(MonitoringInfoConstants.Urns.USER_COUNTER)
+            .putLabels(MonitoringInfoConstants.Labels.NAMESPACE, "ns4")
+            .putLabels(MonitoringInfoConstants.Labels.NAME, "double_distribution")
+            .putLabels(MonitoringInfoConstants.Labels.PTRANSFORM, "step")
+            .setMetric(
+                Metric.newBuilder()
+                    .setDistributionData(
+                        MetricsApi.DistributionData.newBuilder()
+                            .setDoubleDistributionData(
+                                DoubleDistributionData.newBuilder()
+                                    .setSum(30)
+                                    .setCount(10)
+                                    .setMin(1)
+                                    .setMax(5))))
             .build();
 
     // Mock out the counter that Flink returns; the distribution gets created by
@@ -210,7 +237,7 @@ public class FlinkMetricContainerTest {
     SimpleCounter counter = new SimpleCounter();
     when(metricGroup.counter("ns1.int_counter")).thenReturn(counter);
 
-    container.updateMetrics(
+    flinkContainer.updateMetrics(
         "step", ImmutableList.of(intCounter, doubleCounter, intDistribution, doubleDistribution));
 
     // Flink's MetricGroup should only have asked for one counter (the integer-typed one) to be
@@ -253,6 +280,7 @@ public class FlinkMetricContainerTest {
         new FlinkMetricContainer.FlinkDistributionGauge(DistributionResult.IDENTITY_ELEMENT);
     when(metricGroup.gauge(eq("namespace.name"), anyObject())).thenReturn(flinkGauge);
 
+    FlinkMetricContainer container = new FlinkMetricContainer(runtimeContext);
     MetricsContainer step = container.getMetricsContainer("step");
     MetricName metricName = MetricName.named("namespace", "name");
     Distribution distribution = step.getDistribution(metricName);

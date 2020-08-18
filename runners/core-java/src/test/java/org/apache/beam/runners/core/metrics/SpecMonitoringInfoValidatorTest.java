@@ -23,63 +23,62 @@ import static org.junit.Assert.assertTrue;
 import org.apache.beam.model.pipeline.v1.MetricsApi.MonitoringInfo;
 import org.apache.beam.runners.core.metrics.MonitoringInfoConstants.TypeUrns;
 import org.apache.beam.runners.core.metrics.MonitoringInfoConstants.Urns;
+import org.junit.Before;
 import org.junit.Test;
 
-/** Tests for {@link SpecMonitoringInfoValidator}. */
+/** Relevant tests. */
 public class SpecMonitoringInfoValidatorTest {
 
+  SpecMonitoringInfoValidator testObject = null;
+
+  @Before
+  public void setUp() throws Exception {
+    testObject = new SpecMonitoringInfoValidator();
+  }
+
   @Test
-  public void validateReturnsErrorOnMissingUrnOrType() {
+  public void validateReturnsErrorOnInvalidMonitoringInfoType() {
     MonitoringInfo testInput =
         MonitoringInfo.newBuilder()
+            .setUrn("beam:metric:user")
             .putLabels(MonitoringInfoConstants.Labels.NAME, "anyCounter")
-            .putLabels(MonitoringInfoConstants.Labels.NAMESPACE, "")
-            .putLabels(MonitoringInfoConstants.Labels.PTRANSFORM, "anyString")
-            .setType(TypeUrns.SUM_INT64_TYPE)
+            .putLabels(MonitoringInfoConstants.Labels.NAMESPACE, "namespace")
+            .setType("beam:metrics:bad_value")
             .build();
-    assertTrue(new SpecMonitoringInfoValidator().validate(testInput).isPresent());
-
-    testInput =
-        MonitoringInfo.newBuilder()
-            .setUrn(Urns.USER_SUM_INT64)
-            .putLabels(MonitoringInfoConstants.Labels.NAME, "anyCounter")
-            .putLabels(MonitoringInfoConstants.Labels.NAMESPACE, "")
-            .putLabels(MonitoringInfoConstants.Labels.PTRANSFORM, "anyString")
-            .build();
-    assertTrue(new SpecMonitoringInfoValidator().validate(testInput).isPresent());
+    assertTrue(testObject.validate(testInput).isPresent());
   }
 
   @Test
   public void validateReturnsNoErrorOnValidMonitoringInfo() {
     MonitoringInfo testInput =
         MonitoringInfo.newBuilder()
-            .setUrn(Urns.USER_SUM_INT64)
+            .setUrn(Urns.USER_COUNTER)
             .putLabels(MonitoringInfoConstants.Labels.NAME, "anyCounter")
             .putLabels(MonitoringInfoConstants.Labels.NAMESPACE, "")
             .putLabels(MonitoringInfoConstants.Labels.PTRANSFORM, "anyString")
-            .setType(TypeUrns.SUM_INT64_TYPE)
+            .setType(TypeUrns.SUM_INT64)
             .build();
-    assertFalse(new SpecMonitoringInfoValidator().validate(testInput).isPresent());
+    assertFalse(testObject.validate(testInput).isPresent());
 
     testInput =
         MonitoringInfo.newBuilder()
-            .setUrn(Urns.USER_DISTRIBUTION_INT64)
+            .setUrn(Urns.USER_DISTRIBUTION_COUNTER)
             .putLabels(MonitoringInfoConstants.Labels.NAME, "anyDistribution")
             .putLabels(MonitoringInfoConstants.Labels.NAMESPACE, "namespace")
             .putLabels(MonitoringInfoConstants.Labels.PTRANSFORM, "anyString")
-            .setType(TypeUrns.DISTRIBUTION_INT64_TYPE)
+            .setType(TypeUrns.DISTRIBUTION_INT64)
             .putLabels("dummy", "value")
             .build();
-    assertFalse(new SpecMonitoringInfoValidator().validate(testInput).isPresent());
+    assertFalse(testObject.validate(testInput).isPresent());
 
     testInput =
         MonitoringInfo.newBuilder()
             .setUrn(MonitoringInfoConstants.Urns.ELEMENT_COUNT)
-            .setType(TypeUrns.SUM_INT64_TYPE)
+            .setType(TypeUrns.SUM_INT64)
             .putLabels(MonitoringInfoConstants.Labels.PTRANSFORM, "value")
             .putLabels(MonitoringInfoConstants.Labels.PCOLLECTION, "anotherValue")
             .build();
-    assertFalse(new SpecMonitoringInfoValidator().validate(testInput).isPresent());
+    assertFalse(testObject.validate(testInput).isPresent());
   }
 
   @Test
@@ -87,9 +86,9 @@ public class SpecMonitoringInfoValidatorTest {
     MonitoringInfo testInput =
         MonitoringInfo.newBuilder()
             .setUrn(MonitoringInfoConstants.Urns.ELEMENT_COUNT)
-            .setType(TypeUrns.SUM_INT64_TYPE)
+            .setType(TypeUrns.SUM_INT64)
             .putLabels(MonitoringInfoConstants.Labels.PTRANSFORM, "unexpectedLabel")
             .build();
-    assertTrue(new SpecMonitoringInfoValidator().validate(testInput).isPresent());
+    assertTrue(testObject.validate(testInput).isPresent());
   }
 }

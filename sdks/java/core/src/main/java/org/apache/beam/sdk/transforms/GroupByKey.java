@@ -22,12 +22,9 @@ import org.apache.beam.sdk.coders.Coder.NonDeterministicException;
 import org.apache.beam.sdk.coders.IterableCoder;
 import org.apache.beam.sdk.coders.KvCoder;
 import org.apache.beam.sdk.transforms.display.DisplayData;
-import org.apache.beam.sdk.transforms.windowing.AfterWatermark.AfterWatermarkEarlyAndLate;
-import org.apache.beam.sdk.transforms.windowing.AfterWatermark.FromEndOfWindow;
 import org.apache.beam.sdk.transforms.windowing.DefaultTrigger;
 import org.apache.beam.sdk.transforms.windowing.GlobalWindows;
 import org.apache.beam.sdk.transforms.windowing.InvalidWindows;
-import org.apache.beam.sdk.transforms.windowing.Never.NeverTrigger;
 import org.apache.beam.sdk.transforms.windowing.TimestampCombiner;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.transforms.windowing.WindowFn;
@@ -154,8 +151,9 @@ public class GroupByKey<K, V>
         && windowingStrategy.getTrigger() instanceof DefaultTrigger
         && input.isBounded() != IsBounded.BOUNDED) {
       throw new IllegalStateException(
-          "GroupByKey cannot be applied to non-bounded PCollection in the GlobalWindow without a"
-              + " trigger. Use a Window.into or Window.triggering transform prior to GroupByKey.");
+          "GroupByKey cannot be applied to non-bounded PCollection in "
+              + "the GlobalWindow without a trigger. Use a Window.into or Window.triggering transform "
+              + "prior to GroupByKey.");
     }
 
     // Validate the window merge function.
@@ -164,47 +162,6 @@ public class GroupByKey<K, V>
       throw new IllegalStateException(
           "GroupByKey must have a valid Window merge function.  " + "Invalid because: " + cause);
     }
-
-    // Validate that the trigger does not finish before garbage collection time
-    if (!triggerIsSafe(windowingStrategy)) {
-      throw new IllegalArgumentException(
-          String.format(
-              "Unsafe trigger '%s' may lose data, did you mean to wrap it in"
-                  + "`Repeatedly.forever(...)`?%nSee "
-                  + "https://s.apache.org/finishing-triggers-drop-data "
-                  + "for details.",
-              windowingStrategy.getTrigger()));
-    }
-  }
-
-  // Note that Never trigger finishes *at* GC time so it is OK, and
-  // AfterWatermark.fromEndOfWindow() finishes at end-of-window time so it is
-  // OK if there is no allowed lateness.
-  private static boolean triggerIsSafe(WindowingStrategy<?, ?> windowingStrategy) {
-    if (!windowingStrategy.getTrigger().mayFinish()) {
-      return true;
-    }
-
-    if (windowingStrategy.getTrigger() instanceof NeverTrigger) {
-      return true;
-    }
-
-    if (windowingStrategy.getTrigger() instanceof FromEndOfWindow
-        && windowingStrategy.getAllowedLateness().getMillis() == 0) {
-      return true;
-    }
-
-    if (windowingStrategy.getTrigger() instanceof AfterWatermarkEarlyAndLate
-        && windowingStrategy.getAllowedLateness().getMillis() == 0) {
-      return true;
-    }
-
-    if (windowingStrategy.getTrigger() instanceof AfterWatermarkEarlyAndLate
-        && ((AfterWatermarkEarlyAndLate) windowingStrategy.getTrigger()).getLateTrigger() != null) {
-      return true;
-    }
-
-    return false;
   }
 
   public WindowingStrategy<?, ?> updateWindowingStrategy(WindowingStrategy<?, ?> inputStrategy) {

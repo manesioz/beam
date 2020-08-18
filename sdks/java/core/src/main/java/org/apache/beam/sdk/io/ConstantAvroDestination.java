@@ -19,6 +19,7 @@ package org.apache.beam.sdk.io;
 
 import java.io.Serializable;
 import java.util.Map;
+import javax.annotation.Nullable;
 import org.apache.avro.Schema;
 import org.apache.avro.file.CodecFactory;
 import org.apache.beam.sdk.io.FileBasedSink.FilenamePolicy;
@@ -29,7 +30,6 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Function;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Supplier;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Suppliers;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.io.BaseEncoding;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /** Always returns a constant {@link FilenamePolicy}, {@link Schema}, metadata, and codec. */
 class ConstantAvroDestination<UserT, OutputT>
@@ -87,12 +87,14 @@ class ConstantAvroDestination<UserT, OutputT>
   }
 
   @Override
-  public @Nullable Void getDestination(UserT element) {
+  @Nullable
+  public Void getDestination(UserT element) {
     return (Void) null;
   }
 
   @Override
-  public @Nullable Void getDefaultDestination() {
+  @Nullable
+  public Void getDefaultDestination() {
     return (Void) null;
   }
 

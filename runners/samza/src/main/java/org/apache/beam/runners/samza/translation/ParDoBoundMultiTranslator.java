@@ -96,15 +96,12 @@ class ParDoBoundMultiTranslator<InT, OutT>
             .collect(
                 Collectors.toMap(e -> e.getKey(), e -> ((PCollection<?>) e.getValue()).getCoder()));
 
-    boolean isStateful = DoFnSignatures.isStateful(transform.getFn());
-    final Coder<?> keyCoder = isStateful ? ((KvCoder<?, ?>) input.getCoder()).getKeyCoder() : null;
+    final DoFnSignature signature = DoFnSignatures.getSignature(transform.getFn().getClass());
+    final Coder<?> keyCoder =
+        signature.usesState() ? ((KvCoder<?, ?>) input.getCoder()).getKeyCoder() : null;
 
-    if (DoFnSignatures.isSplittable(transform.getFn())) {
+    if (signature.processElement().isSplittable()) {
       throw new UnsupportedOperationException("Splittable DoFn is not currently supported");
-    }
-    if (DoFnSignatures.requiresTimeSortedInput(transform.getFn())) {
-      throw new UnsupportedOperationException(
-          "@RequiresTimeSortedInput annotation is not currently supported");
     }
 
     final MessageStream<OpMessage<InT>> inputStream = ctx.getMessageStream(input);
@@ -147,7 +144,6 @@ class ParDoBoundMultiTranslator<InT, OutT>
             transform.getFn(),
             keyCoder,
             (Coder<InT>) input.getCoder(),
-            null,
             outputCoders,
             transform.getSideInputs().values(),
             transform.getAdditionalOutputTags().getAll(),
@@ -258,7 +254,6 @@ class ParDoBoundMultiTranslator<InT, OutT>
             new NoOpDoFn<>(),
             null, // key coder not in use
             windowedInputCoder.getValueCoder(), // input coder not in use
-            windowedInputCoder,
             Collections.emptyMap(), // output coders not in use
             Collections.emptyList(), // sideInputs not in use until side input support
             new ArrayList<>(idToTupleTagMap.values()), // used by java runner only
@@ -313,7 +308,7 @@ class ParDoBoundMultiTranslator<InT, OutT>
         config.put(
             "stores." + storeId + ".factory",
             "org.apache.samza.storage.kv.RocksDbKeyValueStorageEngineFactory");
-        config.put("stores." + storeId + ".key.serde", "byteArraySerde");
+        config.put("stores." + storeId + ".key.serde", "byteSerde");
         config.put("stores." + storeId + ".msg.serde", "byteSerde");
 
         if (options.getStateDurable()) {

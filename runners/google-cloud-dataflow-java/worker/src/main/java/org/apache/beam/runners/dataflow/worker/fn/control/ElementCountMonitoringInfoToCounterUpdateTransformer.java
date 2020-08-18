@@ -17,21 +17,17 @@
  */
 package org.apache.beam.runners.dataflow.worker.fn.control;
 
-import static org.apache.beam.runners.core.metrics.MonitoringInfoEncodings.decodeInt64Counter;
-
 import com.google.api.services.dataflow.model.CounterUpdate;
 import com.google.api.services.dataflow.model.NameAndKind;
 import java.util.Map;
 import java.util.Optional;
+import javax.annotation.Nullable;
 import org.apache.beam.model.pipeline.v1.MetricsApi.MonitoringInfo;
 import org.apache.beam.runners.core.metrics.MonitoringInfoConstants;
-import org.apache.beam.runners.core.metrics.MonitoringInfoConstants.TypeUrns;
-import org.apache.beam.runners.core.metrics.MonitoringInfoConstants.Urns;
 import org.apache.beam.runners.core.metrics.SpecMonitoringInfoValidator;
 import org.apache.beam.runners.dataflow.worker.MetricsToCounterUpdateConverter.Kind;
 import org.apache.beam.runners.dataflow.worker.counters.DataflowCounterUpdateExtractor;
 import org.apache.beam.runners.dataflow.worker.counters.NameContext;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,6 +39,7 @@ public class ElementCountMonitoringInfoToCounterUpdateTransformer
 
   private final SpecMonitoringInfoValidator specValidator;
   private final Map<String, NameContext> pcollectionIdToNameContext;
+  private static final String SUPPORTED_URN = MonitoringInfoConstants.Urns.ELEMENT_COUNT;
 
   /**
    * @param specValidator SpecMonitoringInfoValidator to utilize for default validation.
@@ -69,16 +66,8 @@ public class ElementCountMonitoringInfoToCounterUpdateTransformer
     }
 
     String urn = monitoringInfo.getUrn();
-    if (!urn.equals(Urns.ELEMENT_COUNT)) {
+    if (!urn.equals(SUPPORTED_URN)) {
       throw new RuntimeException(String.format("Received unexpected counter urn: %s", urn));
-    }
-
-    String type = monitoringInfo.getType();
-    if (!type.equals(TypeUrns.SUM_INT64_TYPE)) {
-      throw new RuntimeException(
-          String.format(
-              "Received unexpected counter type. Expected type: %s, received: %s",
-              TypeUrns.SUM_INT64_TYPE, type));
     }
 
     if (!pcollectionIdToNameContext.containsKey(
@@ -98,14 +87,16 @@ public class ElementCountMonitoringInfoToCounterUpdateTransformer
    * @return CounterUpdate generated based on provided monitoringInfo
    */
   @Override
-  public @Nullable CounterUpdate transform(MonitoringInfo monitoringInfo) {
+  @Nullable
+  public CounterUpdate transform(MonitoringInfo monitoringInfo) {
     Optional<String> validationResult = validate(monitoringInfo);
     if (validationResult.isPresent()) {
       LOG.debug(validationResult.get());
       return null;
     }
 
-    long value = decodeInt64Counter(monitoringInfo.getPayload());
+    long value = monitoringInfo.getMetric().getCounterData().getInt64Value();
+
     final String pcollectionId =
         monitoringInfo.getLabelsMap().get(MonitoringInfoConstants.Labels.PCOLLECTION);
     final String pcollectionName = pcollectionIdToNameContext.get(pcollectionId).userName();
@@ -120,8 +111,8 @@ public class ElementCountMonitoringInfoToCounterUpdateTransformer
         .setInteger(DataflowCounterUpdateExtractor.longToSplitInt(value));
   }
 
-  /** @return URN that this transformer can convert to {@link CounterUpdate}s. */
+  /** @return iterable of Urns that this transformer can convert to CounterUpdates. */
   public static String getSupportedUrn() {
-    return Urns.ELEMENT_COUNT;
+    return SUPPORTED_URN;
   }
 }

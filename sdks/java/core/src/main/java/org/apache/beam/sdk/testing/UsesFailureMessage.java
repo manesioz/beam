@@ -17,11 +17,8 @@
  */
 package org.apache.beam.sdk.testing;
 
-import org.apache.beam.sdk.annotations.Internal;
-
 /**
  * Category tag for tests which validate that currect failure message is provided by failed
  * pipeline.
  */
-@Internal
 public interface UsesFailureMessage extends NeedsRunner {}

@@ -19,6 +19,7 @@ package org.apache.beam.sdk.io.gcp.bigquery;
 
 import java.util.List;
 import java.util.Map;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.io.gcp.bigquery.WriteBundlesToFiles.Result;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.values.KV;
@@ -27,7 +28,6 @@ import org.apache.beam.sdk.values.ShardedKey;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Lists;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Maps;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Partitions temporary files based on number of files and file sizes. Output key is a pair of
@@ -42,9 +42,8 @@ class WritePartition<DestinationT>
   private final PCollectionView<String> tempFilePrefix;
   private final int maxNumFiles;
   private final long maxSizeBytes;
-  private final RowWriterFactory<?, DestinationT> rowWriterFactory;
 
-  private @Nullable TupleTag<KV<ShardedKey<DestinationT>, List<String>>> multiPartitionsTag;
+  @Nullable private TupleTag<KV<ShardedKey<DestinationT>, List<String>>> multiPartitionsTag;
   private TupleTag<KV<ShardedKey<DestinationT>, List<String>>> singlePartitionTag;
 
   private static class PartitionData {
@@ -129,8 +128,7 @@ class WritePartition<DestinationT>
       int maxNumFiles,
       long maxSizeBytes,
       TupleTag<KV<ShardedKey<DestinationT>, List<String>>> multiPartitionsTag,
-      TupleTag<KV<ShardedKey<DestinationT>, List<String>>> singlePartitionTag,
-      RowWriterFactory<?, DestinationT> rowWriterFactory) {
+      TupleTag<KV<ShardedKey<DestinationT>, List<String>>> singlePartitionTag) {
     this.singletonTable = singletonTable;
     this.dynamicDestinations = dynamicDestinations;
     this.tempFilePrefix = tempFilePrefix;
@@ -138,7 +136,6 @@ class WritePartition<DestinationT>
     this.maxSizeBytes = maxSizeBytes;
     this.multiPartitionsTag = multiPartitionsTag;
     this.singlePartitionTag = singlePartitionTag;
-    this.rowWriterFactory = rowWriterFactory;
   }
 
   @ProcessElement
@@ -149,16 +146,16 @@ class WritePartition<DestinationT>
     // generate an empty table of that name.
     if (results.isEmpty() && singletonTable) {
       String tempFilePrefix = c.sideInput(this.tempFilePrefix);
+      TableRowWriter writer = new TableRowWriter(tempFilePrefix);
+      writer.close();
+      TableRowWriter.Result writerResult = writer.getResult();
       // Return a null destination in this case - the constant DynamicDestinations class will
       // resolve it to the singleton output table.
-      DestinationT destination = dynamicDestinations.getDestination(null);
-
-      BigQueryRowWriter<?> writer = rowWriterFactory.createRowWriter(tempFilePrefix, destination);
-      writer.close();
-      BigQueryRowWriter.Result writerResult = writer.getResult();
-
       results.add(
-          new Result<>(writerResult.resourceId.toString(), writerResult.byteSize, destination));
+          new Result<>(
+              writerResult.resourceId.toString(),
+              writerResult.byteSize,
+              dynamicDestinations.getDestination(null)));
     }
 
     Map<DestinationT, DestinationData> currentResults = Maps.newHashMap();

@@ -24,12 +24,12 @@
 set -e
 
 function clean_up(){
-  echo "Do you want to clean local clone repo ${LOCAL_CLONE_DIR}? [y|N]"
+  echo "Do you want to clean local clone repo? [y|N]"
   read confirmation
   if [[ $confirmation = "y" ]]; then
     cd ~
     rm -rf ${LOCAL_CLONE_DIR}
-    echo "Cleaned up local repo."
+    echo "Clean up local repo."
   fi
 }
 
@@ -73,7 +73,6 @@ echo "==============================================================="
 
 cd ~
 if [[ -d ${LOCAL_CLONE_DIR} ]]; then
-  echo "Deleting existing local clone repo ${LOCAL_CLONE_DIR}."
   rm -rf ${LOCAL_CLONE_DIR}
 fi
 mkdir ${LOCAL_CLONE_DIR}
@@ -102,7 +101,7 @@ echo "==============================================================="
 echo "Please make sure all changes above are expected. Do you confirm to commit?: [y|N]"
 read confirmation
 if [[ $confirmation != "y" ]]; then
-  echo "Exiting without committing any changes on master branch."
+  echo "Exit without committing any changes on master branch."
   clean_up
   exit
 fi
@@ -137,7 +136,7 @@ echo "==============================================================="
 echo "Please make sure all changes above are expected. Do you confirm to commit?: [y|N]"
 read confirmation
 if [[ $confirmation != "y" ]]; then
-  echo "Exiting without committing any changes on release branch."
+  echo "Exit without committing any changes on release branch."
   clean_up
   exit
 fi

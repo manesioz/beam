@@ -20,7 +20,6 @@ package com.google.cloud.spanner;
 import com.google.cloud.Timestamp;
 import com.google.protobuf.ByteString;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Objects;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * A fake {@link BatchTransactionId} object.
@@ -37,7 +36,7 @@ public class FakeBatchTransactionId extends BatchTransactionId {
   }
 
   @Override
-  public boolean equals(@Nullable Object o) {
+  public boolean equals(Object o) {
     if (this == o) {
       return true;
     }

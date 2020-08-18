@@ -17,10 +17,7 @@
  */
 package org.apache.beam.sdk.testing;
 
-import org.apache.beam.sdk.annotations.Internal;
-
 /** Category tags for tests which validate that a Beam runner can handle keys up to a given size. */
-@Internal
 public interface LargeKeys {
   /** Tests if a runner supports 10KB keys. */
   interface Above10KB {}

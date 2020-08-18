@@ -20,10 +20,11 @@ package org.apache.beam.fn.harness;
 import com.google.auto.service.AutoService;
 import java.io.IOException;
 import java.util.Map;
-import org.apache.beam.model.pipeline.v1.RunnerApi.FunctionSpec;
 import org.apache.beam.model.pipeline.v1.RunnerApi.PTransform;
+import org.apache.beam.model.pipeline.v1.RunnerApi.SdkFunctionSpec;
+import org.apache.beam.model.pipeline.v1.RunnerApi.StandardPTransforms;
+import org.apache.beam.runners.core.construction.BeamUrns;
 import org.apache.beam.runners.core.construction.PCollectionViewTranslation;
-import org.apache.beam.runners.core.construction.PTransformTranslation;
 import org.apache.beam.sdk.function.ThrowingFunction;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.WindowMappingFn;
@@ -44,7 +45,7 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Immutabl
  * to associate each input with its output. The nonce is represented as an opaque set of bytes.
  */
 public class WindowMappingFnRunner {
-  static final String URN = PTransformTranslation.MAP_WINDOWS_TRANSFORM_URN;
+  static final String URN = BeamUrns.getUrn(StandardPTransforms.Primitives.MAP_WINDOWS);
 
   /**
    * A registrar which provides a factory to handle mapping main input windows onto side input
@@ -64,7 +65,8 @@ public class WindowMappingFnRunner {
   static <T, W1 extends BoundedWindow, W2 extends BoundedWindow>
       ThrowingFunction<KV<T, W1>, KV<T, W2>> createMapFunctionForPTransform(
           String ptransformId, PTransform pTransform) throws IOException {
-    FunctionSpec windowMappingFnPayload = FunctionSpec.parseFrom(pTransform.getSpec().getPayload());
+    SdkFunctionSpec windowMappingFnPayload =
+        SdkFunctionSpec.parseFrom(pTransform.getSpec().getPayload());
     WindowMappingFn<W2> windowMappingFn =
         (WindowMappingFn<W2>)
             PCollectionViewTranslation.windowMappingFnFromProto(windowMappingFnPayload);

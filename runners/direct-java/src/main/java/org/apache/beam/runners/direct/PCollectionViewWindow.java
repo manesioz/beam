@@ -20,7 +20,6 @@ package org.apache.beam.runners.direct;
 import java.util.Objects;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.values.PCollectionView;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * A pair of a {@link PCollectionView} and a {@link BoundedWindow}, which can be thought of as
@@ -51,7 +50,7 @@ final class PCollectionViewWindow<T> {
   }
 
   @Override
-  public boolean equals(@Nullable Object otherObject) {
+  public boolean equals(Object otherObject) {
     if (!(otherObject instanceof PCollectionViewWindow)) {
       return false;
     }

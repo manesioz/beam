@@ -48,7 +48,6 @@ import org.apache.samza.system.MessageType;
 import org.apache.samza.system.SystemConsumer;
 import org.apache.samza.system.SystemStreamPartition;
 import org.joda.time.Instant;
-import org.junit.Ignore;
 import org.junit.Test;
 
 /** Tests for {@link UnboundedSourceSystem}. */
@@ -175,7 +174,6 @@ public class UnboundedSourceSystemTest {
   }
 
   @Test
-  @Ignore("https://issues.apache.org/jira/browse/BEAM-10521")
   public void testMultipleAdvanceWatermark() throws IOException, InterruptedException {
     final Instant now = Instant.now();
     final Instant nowPlusOne = now.plus(1L);

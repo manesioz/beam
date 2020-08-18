@@ -27,6 +27,7 @@ import java.nio.ByteOrder;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.channels.WritableByteChannel;
 import java.util.NoSuchElementException;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.coders.ByteArrayCoder;
@@ -47,7 +48,6 @@ import org.apache.beam.sdk.values.PDone;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.annotations.VisibleForTesting;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.hash.HashFunction;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.hash.Hashing;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * {@link PTransform}s for reading and writing TensorFlow TFRecord files.
@@ -108,8 +108,8 @@ public class TFRecordIO {
   /** Implementation of {@link #read}. */
   @AutoValue
   public abstract static class Read extends PTransform<PBegin, PCollection<byte[]>> {
-
-    abstract @Nullable ValueProvider<String> getFilepattern();
+    @Nullable
+    abstract ValueProvider<String> getFilepattern();
 
     abstract boolean getValidate();
 
@@ -256,16 +256,19 @@ public class TFRecordIO {
   @AutoValue
   public abstract static class Write extends PTransform<PCollection<byte[]>, PDone> {
     /** The directory to which files will be written. */
-    abstract @Nullable ValueProvider<ResourceId> getOutputPrefix();
+    @Nullable
+    abstract ValueProvider<ResourceId> getOutputPrefix();
 
     /** The suffix of each file written, combined with prefix and shardTemplate. */
-    abstract @Nullable String getFilenameSuffix();
+    @Nullable
+    abstract String getFilenameSuffix();
 
     /** Requested number of shards. 0 for automatic. */
     abstract int getNumShards();
 
     /** The shard template of each file written, combined with prefix and suffix. */
-    abstract @Nullable String getShardTemplate();
+    @Nullable
+    abstract String getShardTemplate();
 
     /** Option to indicate the output sink's compression type. Default is NONE. */
     abstract Compression getCompression();
@@ -428,8 +431,8 @@ public class TFRecordIO {
 
   /** A {@link FileIO.Sink} for use with {@link FileIO#write} and {@link FileIO#writeDynamic}. */
   public static class Sink implements FileIO.Sink<byte[]> {
-    private transient @Nullable WritableByteChannel channel;
-    private transient @Nullable TFRecordCodec codec;
+    @Nullable private transient WritableByteChannel channel;
+    @Nullable private transient TFRecordCodec codec;
 
     @Override
     public void open(WritableByteChannel channel) throws IOException {
@@ -526,7 +529,7 @@ public class TFRecordIO {
       private long startOfRecord;
       private volatile long startOfNextRecord;
       private volatile boolean elementIsPresent;
-      private byte @Nullable [] currentValue;
+      private @Nullable byte[] currentValue;
       private @Nullable ReadableByteChannel inChannel;
       private @Nullable TFRecordCodec codec;
 
@@ -640,8 +643,7 @@ public class TFRecordIO {
    * Codec for TFRecords file format. See
    * https://www.tensorflow.org/versions/r1.11/api_guides/python/python_io#TFRecords_Format_Details
    */
-  @VisibleForTesting
-  static class TFRecordCodec {
+  private static class TFRecordCodec {
     private static final int HEADER_LEN = (Long.SIZE + Integer.SIZE) / Byte.SIZE;
     private static final int FOOTER_LEN = Integer.SIZE / Byte.SIZE;
     private static HashFunction crc32c = Hashing.crc32c();
@@ -665,17 +667,17 @@ public class TFRecordIO {
       return HEADER_LEN + data.length + FOOTER_LEN;
     }
 
-    public byte @Nullable [] read(ReadableByteChannel inChannel) throws IOException {
+    public @Nullable byte[] read(ReadableByteChannel inChannel) throws IOException {
       header.clear();
-      int headerBytes = read(inChannel, header);
-      if (headerBytes == 0) {
+      int headerBytes = inChannel.read(header);
+      if (headerBytes <= 0) {
         return null;
       }
       checkState(headerBytes == HEADER_LEN, "Not a valid TFRecord. Fewer than 12 bytes.");
 
       header.rewind();
-      long length64 = header.getLong();
-      long lengthHash = hashLong(length64);
+      long length = header.getLong();
+      long lengthHash = hashLong(length);
       int maskedCrc32OfLength = header.getInt();
       if (lengthHash != maskedCrc32OfLength) {
         throw new IOException(
@@ -683,16 +685,18 @@ public class TFRecordIO {
                 "Mismatch of length mask when reading a record. Expected %d but received %d.",
                 maskedCrc32OfLength, lengthHash));
       }
-      int length = (int) length64;
-      if (length != length64) {
-        throw new IOException(String.format("length overflow %d", length64));
+
+      ByteBuffer data = ByteBuffer.allocate((int) length);
+      while (data.hasRemaining() && inChannel.read(data) >= 0) {}
+      if (data.hasRemaining()) {
+        throw new IOException(
+            String.format(
+                "EOF while reading record of length %d. Read only %d bytes. Input might be truncated.",
+                length, data.position()));
       }
 
-      ByteBuffer data = ByteBuffer.allocate(length);
-      readFully(inChannel, data);
-
       footer.clear();
-      readFully(inChannel, footer);
+      inChannel.read(footer);
       footer.rewind();
 
       int maskedCrc32OfData = footer.getInt();
@@ -713,36 +717,14 @@ public class TFRecordIO {
       header.clear();
       header.putLong(data.length).putInt(maskedCrc32OfLength);
       header.rewind();
-      writeFully(outChannel, header);
+      outChannel.write(header);
 
-      writeFully(outChannel, ByteBuffer.wrap(data));
+      outChannel.write(ByteBuffer.wrap(data));
 
       footer.clear();
       footer.putInt(maskedCrc32OfData);
       footer.rewind();
-      writeFully(outChannel, footer);
-    }
-
-    @VisibleForTesting
-    static void readFully(ReadableByteChannel in, ByteBuffer bb) throws IOException {
-      int expected = bb.remaining();
-      int actual = read(in, bb);
-      if (expected != actual) {
-        throw new IOException(String.format("expected %d, but got %d", expected, actual));
-      }
-    }
-
-    private static int read(ReadableByteChannel in, ByteBuffer bb) throws IOException {
-      int expected = bb.remaining();
-      while (bb.hasRemaining() && in.read(bb) >= 0) {}
-      return expected - bb.remaining();
-    }
-
-    @VisibleForTesting
-    static void writeFully(WritableByteChannel channel, ByteBuffer buffer) throws IOException {
-      while (buffer.hasRemaining()) {
-        channel.write(buffer);
-      }
+      outChannel.write(footer);
     }
   }
 }

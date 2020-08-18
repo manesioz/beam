@@ -17,7 +17,7 @@
  */
 
 plugins { id 'org.apache.beam.module' }
-applyJavaNature(enableChecker:false,
+applyJavaNature(
     exportJavadoc: false,
     automaticModuleName: 'org.apache.beam.sdk.testutils',
     archivesBaseName: 'beam-sdks-java-test-utils'
@@ -36,15 +36,4 @@ dependencies {
   testCompile library.java.hamcrest_core
   testCompile library.java.hamcrest_library
   testRuntimeOnly project(path: ":runners:direct-java", configuration: "shadowTest")
-}
-
-task verifyJavaVersion(type: Test) {
-  filter {
-    includeTestsMatching 'org.apache.beam.sdk.testutils.jvmverification.JvmVerification.verifyCodeIsCompiledWithJava8'
-    includeTestsMatching 'org.apache.beam.sdk.testutils.jvmverification.JvmVerification.verifyTestCodeIsCompiledWithJava11'
-    includeTestsMatching 'org.apache.beam.sdk.testutils.jvmverification.JvmVerification.verifyRunningJVMVersionIs11'
-  }
-  doLast {
-    println 'Java verified'
-  }
 }

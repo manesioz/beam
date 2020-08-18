@@ -14,15 +14,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# pytype: skip-file
-
 from __future__ import absolute_import
 from __future__ import print_function
 
 import argparse
 import logging
 import sys
-import typing
 import unittest
 from os import linesep
 from os import path
@@ -30,33 +27,21 @@ from os.path import exists
 from shutil import rmtree
 from tempfile import mkdtemp
 
-from past.builtins import unicode
-
 import apache_beam as beam
 from apache_beam import Impulse
 from apache_beam import Map
 from apache_beam import Pipeline
-from apache_beam.coders import VarIntCoder
 from apache_beam.io.external.generate_sequence import GenerateSequence
-from apache_beam.io.kafka import ReadFromKafka
-from apache_beam.io.kafka import WriteToKafka
+from apache_beam.io.external.kafka import ReadFromKafka
+from apache_beam.io.external.kafka import WriteToKafka
 from apache_beam.metrics import Metrics
 from apache_beam.options.pipeline_options import DebugOptions
-from apache_beam.options.pipeline_options import FlinkRunnerOptions
 from apache_beam.options.pipeline_options import PortableOptions
 from apache_beam.options.pipeline_options import StandardOptions
-from apache_beam.runners.portability import job_server
 from apache_beam.runners.portability import portable_runner
 from apache_beam.runners.portability import portable_runner_test
 from apache_beam.testing.util import assert_that
 from apache_beam.testing.util import equal_to
-from apache_beam.transforms import userstate
-from apache_beam.transforms.sql import SqlTransform
-
-_LOGGER = logging.getLogger(__name__)
-
-Row = typing.NamedTuple("Row", [("col1", int), ("col2", unicode)])
-beam.coders.registry.register_coder(Row, beam.coders.RowCoder)
 
 if __name__ == '__main__':
   # Run as
@@ -68,31 +53,19 @@ if __name__ == '__main__':
   #     [FlinkRunnerTest.test_method, ...]
 
   parser = argparse.ArgumentParser(add_help=True)
-  parser.add_argument(
-      '--flink_job_server_jar', help='Job server jar to submit jobs.')
-  parser.add_argument(
-      '--streaming',
-      default=False,
-      action='store_true',
-      help='Job type. batch or streaming')
-  parser.add_argument(
-      '--environment_type',
-      default='loopback',
-      help='Environment type. docker, process, or loopback.')
+  parser.add_argument('--flink_job_server_jar',
+                      help='Job server jar to submit jobs.')
+  parser.add_argument('--streaming', default=False, action='store_true',
+                      help='Job type. batch or streaming')
+  parser.add_argument('--environment_type', default='docker',
+                      help='Environment type. docker or process')
   parser.add_argument('--environment_config', help='Environment config.')
-  parser.add_argument(
-      '--extra_experiments',
-      default=[],
-      action='append',
-      help='Beam experiments config.')
+  parser.add_argument('--extra_experiments', default=[], action='append',
+                      help='Beam experiments config.')
   known_args, args = parser.parse_known_args(sys.argv)
   sys.argv = args
 
-  flink_job_server_jar = (
-      known_args.flink_job_server_jar or
-      job_server.JavaJarJobServer.path_to_beam_jar(
-          ':runners:flink:%s:job-server:shadowJar' %
-          FlinkRunnerOptions.PUBLISHED_FLINK_VERSIONS[-1]))
+  flink_job_server_jar = known_args.flink_job_server_jar
   streaming = known_args.streaming
   environment_type = known_args.environment_type.lower()
   environment_config = (
@@ -110,7 +83,7 @@ if __name__ == '__main__':
     @classmethod
     def tearDownClass(cls):
       if cls.conf_dir and exists(cls.conf_dir):
-        _LOGGER.info("removing conf dir: %s" % cls.conf_dir)
+        logging.info("removing conf dir: %s" % cls.conf_dir)
         rmtree(cls.conf_dir)
       super(FlinkRunnerTest, cls).tearDownClass()
 
@@ -131,13 +104,11 @@ if __name__ == '__main__':
         conf_path = path.join(cls.conf_dir, 'flink-conf.yaml')
         file_reporter = 'org.apache.beam.runners.flink.metrics.FileReporter'
         with open(conf_path, 'w') as f:
-          f.write(
-              linesep.join([
-                  'metrics.reporters: file',
-                  'metrics.reporter.file.class: %s' % file_reporter,
-                  'metrics.reporter.file.path: %s' % cls.test_metrics_path,
-                  'metrics.scope.operator: <operator_name>',
-              ]))
+          f.write(linesep.join([
+              'metrics.reporters: file',
+              'metrics.reporter.file.class: %s' % file_reporter,
+              'metrics.reporter.file.path: %s' % cls.test_metrics_path
+          ]))
 
     @classmethod
     def _subprocess_command(cls, job_port, expansion_port):
@@ -151,21 +122,13 @@ if __name__ == '__main__':
       try:
         return [
             'java',
-            '-Dorg.slf4j.simpleLogger.defaultLogLevel=warn',
-            '-jar',
-            flink_job_server_jar,
-            '--flink-master',
-            '[local]',
-            '--flink-conf-dir',
-            cls.conf_dir,
-            '--artifacts-dir',
-            tmp_dir,
-            '--job-port',
-            str(job_port),
-            '--artifact-port',
-            '0',
-            '--expansion-port',
-            str(expansion_port),
+            '-jar', flink_job_server_jar,
+            '--flink-master-url', '[local]',
+            '--flink-conf-dir', cls.conf_dir,
+            '--artifacts-dir', tmp_dir,
+            '--job-port', str(job_port),
+            '--artifact-port', '0',
+            '--expansion-port', str(expansion_port),
         ]
       finally:
         rmtree(tmp_dir)
@@ -174,16 +137,12 @@ if __name__ == '__main__':
     def get_runner(cls):
       return portable_runner.PortableRunner()
 
-    @classmethod
-    def get_expansion_service(cls):
-      # TODO Move expansion address resides into PipelineOptions
-      return 'localhost:%s' % cls.expansion_port
-
     def create_options(self):
       options = super(FlinkRunnerTest, self).create_options()
-      options.view_as(
-          DebugOptions).experiments = ['beam_fn_api'] + extra_experiments
+      options.view_as(DebugOptions).experiments = [
+          'beam_fn_api'] + extra_experiments
       options._all_options['parallelism'] = 2
+      options._all_options['shutdown_sources_on_final_watermark'] = True
       options.view_as(PortableOptions).environment_type = (
           environment_type.upper())
       if environment_config:
@@ -202,180 +161,105 @@ if __name__ == '__main__':
     def test_no_subtransform_composite(self):
       raise unittest.SkipTest("BEAM-4781")
 
-    def test_external_transform(self):
+    def test_external_transforms(self):
+      # TODO Move expansion address resides into PipelineOptions
+      def get_expansion_service():
+        return "localhost:" + str(self.expansion_port)
+
       with self.create_pipeline() as p:
         res = (
             p
-            | GenerateSequence(
-                start=1,
-                stop=10,
-                expansion_service=self.get_expansion_service()))
+            | GenerateSequence(start=1, stop=10,
+                               expansion_service=get_expansion_service()))
 
         assert_that(res, equal_to([i for i in range(1, 10)]))
 
-    def test_expand_kafka_read(self):
       # We expect to fail here because we do not have a Kafka cluster handy.
       # Nevertheless, we check that the transform is expanded by the
       # ExpansionService and that the pipeline fails during execution.
       with self.assertRaises(Exception) as ctx:
         with self.create_pipeline() as p:
           # pylint: disable=expression-not-assigned
-          (
-              p
-              | ReadFromKafka(
-                  consumer_config={
-                      'bootstrap.servers': 'notvalid1:7777, notvalid2:3531'
-                  },
-                  topics=['topic1', 'topic2'],
-                  key_deserializer='org.apache.kafka.'
-                  'common.serialization.'
-                  'ByteArrayDeserializer',
-                  value_deserializer='org.apache.kafka.'
-                  'common.serialization.'
-                  'LongDeserializer',
-                  expansion_service=self.get_expansion_service()))
-      self.assertTrue(
-          'No resolvable bootstrap urls given in bootstrap.servers' in str(
-              ctx.exception),
-          'Expected to fail due to invalid bootstrap.servers, but '
-          'failed due to:\n%s' % str(ctx.exception))
+          (p
+           | ReadFromKafka(consumer_config={'bootstrap.servers':
+                                            'notvalid1:7777, notvalid2:3531'},
+                           topics=['topic1', 'topic2'],
+                           key_deserializer='org.apache.kafka.'
+                                            'common.serialization.'
+                                            'ByteArrayDeserializer',
+                           value_deserializer='org.apache.kafka.'
+                                              'common.serialization.'
+                                              'LongDeserializer',
+                           expansion_service=get_expansion_service()))
+      self.assertTrue('No resolvable bootstrap urls given in bootstrap.servers'
+                      in str(ctx.exception),
+                      'Expected to fail due to invalid bootstrap.servers, but '
+                      'failed due to:\n%s' % str(ctx.exception))
 
-    def test_expand_kafka_write(self):
       # We just test the expansion but do not execute.
       # pylint: disable=expression-not-assigned
-      (
-          self.create_pipeline()
-          | Impulse()
-          | Map(lambda input: (1, input))
-          | WriteToKafka(
-              producer_config={
-                  'bootstrap.servers': 'localhost:9092, notvalid2:3531'
-              },
-              topic='topic1',
-              key_serializer='org.apache.kafka.'
-              'common.serialization.'
-              'LongSerializer',
-              value_serializer='org.apache.kafka.'
-              'common.serialization.'
-              'ByteArraySerializer',
-              expansion_service=self.get_expansion_service()))
-
-    def test_sql(self):
-      with self.create_pipeline() as p:
-        output = (
-            p
-            | 'Create' >> beam.Create([Row(x, str(x)) for x in range(5)])
-            | 'Sql' >> SqlTransform(
-                """SELECT col1, col2 || '*' || col2 as col2,
-                          power(col1, 2) as col3
-                   FROM PCOLLECTION
-                """,
-                expansion_service=self.get_expansion_service()))
-        assert_that(
-            output,
-            equal_to([(x, '{x}*{x}'.format(x=x), x * x) for x in range(5)]))
+      (self.create_pipeline()
+       | Impulse()
+       | Map(lambda input: (1, input))
+       | WriteToKafka(producer_config={'bootstrap.servers':
+                                       'localhost:9092, notvalid2:3531'},
+                      topic='topic1',
+                      key_serializer='org.apache.kafka.'
+                                     'common.serialization.'
+                                     'LongSerializer',
+                      value_serializer='org.apache.kafka.'
+                                       'common.serialization.'
+                                       'ByteArraySerializer',
+                      expansion_service=get_expansion_service()))
 
     def test_flattened_side_input(self):
       # Blocked on support for transcoding
       # https://jira.apache.org/jira/browse/BEAM-6523
-      super(FlinkRunnerTest,
-            self).test_flattened_side_input(with_transcoding=False)
+      super(FlinkRunnerTest, self).test_flattened_side_input(
+          with_transcoding=False)
 
     def test_metrics(self):
-      super(FlinkRunnerTest, self).test_metrics(check_gauge=False)
-
-    def test_flink_metrics(self):
-      """Run a simple DoFn that increments a counter and verifies state
-      caching metrics. Verifies that its expected value is written to a
-      temporary file by the FileReporter"""
+      """Run a simple DoFn that increments a counter, and verify that its
+       expected value is written to a temporary file by the FileReporter"""
 
       counter_name = 'elem_counter'
-      state_spec = userstate.BagStateSpec('state', VarIntCoder())
 
       class DoFn(beam.DoFn):
         def __init__(self):
           self.counter = Metrics.counter(self.__class__, counter_name)
-          _LOGGER.info('counter: %s' % self.counter.metric_name)
+          logging.info('counter: %s' % self.counter.metric_name)
 
-        def process(self, kv, state=beam.DoFn.StateParam(state_spec)):
-          # Trigger materialization
-          list(state.read())
-          state.add(1)
+        def process(self, v):
           self.counter.inc()
 
       options = self.create_options()
       # Test only supports parallelism of 1
       options._all_options['parallelism'] = 1
-      # Create multiple bundles to test cache metrics
-      options._all_options['max_bundle_size'] = 10
-      options._all_options['max_bundle_time_millis'] = 95130590130
-      experiments = options.view_as(DebugOptions).experiments or []
-      experiments.append('state_cache_size=123')
-      options.view_as(DebugOptions).experiments = experiments
+      n = 100
       with Pipeline(self.get_runner(), options) as p:
         # pylint: disable=expression-not-assigned
-        (
-            p
-            | "create" >> beam.Create(list(range(0, 110)))
-            | "mapper" >> beam.Map(lambda x: (x % 10, 'val'))
-            | "stateful" >> beam.ParDo(DoFn()))
+        (p
+         | beam.Create(list(range(n)))
+         | beam.ParDo(DoFn()))
 
-      lines_expected = {'counter: 110'}
-      if streaming:
-        lines_expected.update([
-            # Gauges for the last finished bundle
-            'stateful.beam.metric:statecache:capacity: 123',
-            'stateful.beam.metric:statecache:size: 10',
-            'stateful.beam.metric:statecache:get: 20',
-            'stateful.beam.metric:statecache:miss: 0',
-            'stateful.beam.metric:statecache:hit: 20',
-            'stateful.beam.metric:statecache:put: 0',
-            'stateful.beam.metric:statecache:evict: 0',
-            # Counters
-            'stateful.beam.metric:statecache:get_total: 220',
-            'stateful.beam.metric:statecache:miss_total: 10',
-            'stateful.beam.metric:statecache:hit_total: 210',
-            'stateful.beam.metric:statecache:put_total: 10',
-            'stateful.beam.metric:statecache:evict_total: 0',
-        ])
-      else:
-        # Batch has a different processing model. All values for
-        # a key are processed at once.
-        lines_expected.update([
-            # Gauges
-            'stateful).beam.metric:statecache:capacity: 123',
-            # For the first key, the cache token will not be set yet.
-            # It's lazily initialized after first access in StateRequestHandlers
-            'stateful).beam.metric:statecache:size: 10',
-            # We have 11 here because there are 110 / 10 elements per key
-            'stateful).beam.metric:statecache:get: 12',
-            'stateful).beam.metric:statecache:miss: 1',
-            'stateful).beam.metric:statecache:hit: 11',
-            # State is flushed back once per key
-            'stateful).beam.metric:statecache:put: 1',
-            'stateful).beam.metric:statecache:evict: 0',
-            # Counters
-            'stateful).beam.metric:statecache:get_total: 120',
-            'stateful).beam.metric:statecache:miss_total: 10',
-            'stateful).beam.metric:statecache:hit_total: 110',
-            'stateful).beam.metric:statecache:put_total: 10',
-            'stateful).beam.metric:statecache:evict_total: 0',
-        ])
-      lines_actual = set()
       with open(self.test_metrics_path, 'r') as f:
-        for line in f:
-          for metric_str in lines_expected:
-            metric_name = metric_str.split()[0]
-            if metric_str in line:
-              lines_actual.add(metric_str)
-            elif metric_name in line:
-              lines_actual.add(line)
-      self.assertSetEqual(lines_actual, lines_expected)
-
-    def test_sdf_with_watermark_tracking(self):
-      raise unittest.SkipTest("BEAM-2939")
+        lines = [line for line in f.readlines() if counter_name in line]
+        self.assertEqual(
+            len(lines), 1,
+            msg='Expected 1 line matching "{}":\n{}'.format(
+                counter_name, '\n'.join(lines))
+        )
+        line = lines[0]
+        self.assertTrue(
+            '{}: {}'.format(counter_name in line, n),
+            msg='Failed to find expected counter {} in line {}'.format(
+                counter_name, line)
+        )
 
     def test_sdf_with_sdf_initiated_checkpointing(self):
+      raise unittest.SkipTest("BEAM-2939")
+
+    def test_sdf_synthetic_source(self):
       raise unittest.SkipTest("BEAM-2939")
 
     def test_callbacks_with_exception(self):
@@ -392,20 +276,10 @@ if __name__ == '__main__':
     def create_options(self):
       options = super(FlinkRunnerTestOptimized, self).create_options()
       options.view_as(DebugOptions).experiments = [
-          'pre_optimize=all'
-      ] + options.view_as(DebugOptions).experiments
+          'pre_optimize=all'] + options.view_as(DebugOptions).experiments
       return options
 
-    def test_external_transform(self):
-      raise unittest.SkipTest("BEAM-7252")
-
-    def test_expand_kafka_read(self):
-      raise unittest.SkipTest("BEAM-7252")
-
-    def test_expand_kafka_write(self):
-      raise unittest.SkipTest("BEAM-7252")
-
-    def test_sql(self):
+    def test_external_transforms(self):
       raise unittest.SkipTest("BEAM-7252")
 
   # Run the tests.

@@ -28,8 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import javax.annotation.Nonnull;
-import org.apache.beam.sdk.annotations.Experimental;
-import org.apache.beam.sdk.annotations.Experimental.Kind;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Internal;
 import org.apache.beam.sdk.coders.CoderRegistry;
 import org.apache.beam.sdk.io.Read;
@@ -61,7 +60,6 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Collecti
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.HashMultimap;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Multimap;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.SetMultimap;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -332,7 +330,6 @@ public class Pipeline {
     return coderRegistry;
   }
 
-  @Experimental(Kind.SCHEMAS)
   public SchemaRegistry getSchemaRegistry() {
     if (schemaRegistry == null) {
       schemaRegistry = SchemaRegistry.createDefault();
@@ -407,7 +404,7 @@ public class Pipeline {
      */
     class Defaults implements PipelineVisitor {
 
-      private @Nullable Pipeline pipeline;
+      @Nullable private Pipeline pipeline;
 
       protected Pipeline getPipeline() {
         if (pipeline == null) {
@@ -500,10 +497,10 @@ public class Pipeline {
   private Set<String> usedFullNames = new HashSet<>();
 
   /** Lazily initialized; access via {@link #getCoderRegistry()}. */
-  private @Nullable CoderRegistry coderRegistry;
+  @Nullable private CoderRegistry coderRegistry;
 
   /** Lazily initialized; access via {@link #getSchemaRegistry()}. */
-  private @Nullable SchemaRegistry schemaRegistry;
+  @Nullable private SchemaRegistry schemaRegistry;
 
   private final Multimap<String, PTransform<?, ?>> instancePerName = ArrayListMultimap.create();
   private final PipelineOptions defaultOptions;

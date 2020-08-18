@@ -17,7 +17,6 @@
  */
 package org.apache.beam.runners.dataflow.worker.fn.control;
 
-import static org.apache.beam.runners.core.metrics.MonitoringInfoEncodings.decodeInt64Counter;
 import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions.checkState;
 
 import java.io.Closeable;
@@ -32,6 +31,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import javax.annotation.Nullable;
 import org.apache.beam.model.fnexecution.v1.BeamFnApi;
 import org.apache.beam.model.fnexecution.v1.BeamFnApi.InstructionRequest;
 import org.apache.beam.model.fnexecution.v1.BeamFnApi.InstructionResponse;
@@ -73,14 +73,13 @@ import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.GlobalWindow;
 import org.apache.beam.sdk.util.MoreFutures;
 import org.apache.beam.sdk.values.PCollectionView;
-import org.apache.beam.vendor.grpc.v1p26p0.com.google.protobuf.ByteString;
-import org.apache.beam.vendor.grpc.v1p26p0.com.google.protobuf.TextFormat;
+import org.apache.beam.vendor.grpc.v1p21p0.com.google.protobuf.ByteString;
+import org.apache.beam.vendor.grpc.v1p21p0.com.google.protobuf.TextFormat;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.MoreObjects;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableMap;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterables;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Maps;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Table;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -298,6 +297,7 @@ public class RegisterAndProcessBundleOperation extends Operation {
                 .setRegister(registerRequest)
                 .build();
         registerFuture = instructionRequestHandler.handle(request);
+        getRegisterResponse(registerFuture);
       }
 
       checkState(
@@ -315,10 +315,7 @@ public class RegisterAndProcessBundleOperation extends Operation {
       deregisterStateHandler =
           beamFnStateDelegator.registerForProcessBundleInstructionId(
               getProcessBundleInstructionId(), this::delegateByStateKeyType);
-      processBundleResponse =
-          getRegisterResponse(registerFuture)
-              .thenCompose(
-                  registerResponse -> instructionRequestHandler.handle(processBundleRequest));
+      processBundleResponse = instructionRequestHandler.handle(processBundleRequest);
     }
   }
 
@@ -364,14 +361,19 @@ public class RegisterAndProcessBundleOperation extends Operation {
   /**
    * Returns the compound metrics recorded, by issuing a request to the SDK harness.
    *
-   * <p>This includes key progress indicators as well as user-defined metrics.
+   * <p>This includes key progress indicators in {@link BeamFnApi.Metrics.PTransform.Measured} as
+   * well as user-defined metrics in {@link BeamFnApi.Metrics.User}.
    *
-   * <p>Use {@link #getInputElementsConsumed} on the future value to extract the elements consumed
-   * from the upstream read operation.
+   * <p>Use {@link #getInputElementsConsumed(BeamFnApi.Metrics)} on the future value to extract the
+   * elements consumed from the upstream read operation.
    *
    * <p>May be called at any time, including before start() and after finish().
+   *
+   * @throws InterruptedException
+   * @throws ExecutionException
    */
-  public CompletionStage<BeamFnApi.ProcessBundleProgressResponse> getProcessBundleProgress() {
+  public CompletionStage<BeamFnApi.ProcessBundleProgressResponse> getProcessBundleProgress()
+      throws InterruptedException, ExecutionException {
     // processBundleId may be reset if this bundle finishes asynchronously.
     String processBundleId = this.processBundleId;
 
@@ -389,7 +391,19 @@ public class RegisterAndProcessBundleOperation extends Operation {
 
     return instructionRequestHandler
         .handle(processBundleRequest)
-        .thenApply(InstructionResponse::getProcessBundleProgress);
+        .thenApply(
+            response -> {
+              if (!response.getError().isEmpty()) {
+                throw new IllegalStateException(response.getError());
+              }
+              return response.getProcessBundleProgress();
+            });
+  }
+
+  /** Returns the final metrics returned by the SDK harness when it completes the bundle. */
+  public CompletionStage<BeamFnApi.Metrics> getFinalMetrics() {
+    return getProcessBundleResponse(processBundleResponse)
+        .thenApply(response -> response.getMetrics());
   }
 
   public CompletionStage<List<MonitoringInfo>> getFinalMonitoringInfos() {
@@ -440,12 +454,22 @@ public class RegisterAndProcessBundleOperation extends Operation {
         String pcollection =
             mi.getLabelsOrDefault(MonitoringInfoConstants.Labels.PCOLLECTION, null);
         if (pcollection != null && pcollection.equals(grpcReadTransformOutputPCollectionName)) {
-          return decodeInt64Counter(mi.getPayload());
+          return mi.getMetric().getCounterData().getInt64Value();
         }
       }
     }
 
     return 0;
+  }
+
+  /** Returns the number of input elements consumed by the gRPC read, if known, otherwise 0. */
+  double getInputElementsConsumed(BeamFnApi.Metrics metrics) {
+    return metrics
+        .getPtransformsOrDefault(
+            grpcReadTransformId, BeamFnApi.Metrics.PTransform.getDefaultInstance())
+        .getProcessedElements()
+        .getMeasured()
+        .getOutputElementCountsOrDefault(grpcReadTransformOutputName, 0);
   }
 
   private CompletionStage<BeamFnApi.StateResponse.Builder> delegateByStateKeyType(
@@ -610,36 +634,53 @@ public class RegisterAndProcessBundleOperation extends Operation {
     return true;
   }
 
-  private static CompletionStage<BeamFnApi.ProcessBundleResponse> getProcessBundleResponse(
+  private static CompletionStage<BeamFnApi.InstructionResponse> throwIfFailure(
       CompletionStage<InstructionResponse> responseFuture) {
     return responseFuture.thenApply(
         response -> {
-          switch (response.getResponseCase()) {
-            case PROCESS_BUNDLE:
-              return response.getProcessBundle();
-            default:
-              throw new IllegalStateException(
-                  String.format(
-                      "SDK harness returned wrong kind of response to ProcessBundleRequest: %s",
-                      TextFormat.printToString(response)));
+          if (!response.getError().isEmpty()) {
+            throw new IllegalStateException(
+                String.format(
+                    "Client failed to process %s with error [%s].",
+                    response.getInstructionId(), response.getError()));
           }
+          return response;
         });
   }
 
-  private static CompletionStage<BeamFnApi.RegisterResponse> getRegisterResponse(
+  private static CompletionStage<BeamFnApi.ProcessBundleResponse> getProcessBundleResponse(
       CompletionStage<InstructionResponse> responseFuture) {
-    return responseFuture.thenApply(
-        response -> {
-          switch (response.getResponseCase()) {
-            case REGISTER:
-              return response.getRegister();
-            default:
-              throw new IllegalStateException(
-                  String.format(
-                      "SDK harness returned wrong kind of response to RegisterRequest: %s",
-                      TextFormat.printToString(response)));
-          }
-        });
+    return throwIfFailure(responseFuture)
+        .thenApply(
+            response -> {
+              switch (response.getResponseCase()) {
+                case PROCESS_BUNDLE:
+                  return response.getProcessBundle();
+                default:
+                  throw new IllegalStateException(
+                      String.format(
+                          "SDK harness returned wrong kind of response to ProcessBundleRequest: %s",
+                          TextFormat.printToString(response)));
+              }
+            });
+  }
+
+  private static CompletionStage<BeamFnApi.RegisterResponse> getRegisterResponse(
+      CompletionStage<InstructionResponse> responseFuture)
+      throws ExecutionException, InterruptedException {
+    return throwIfFailure(responseFuture)
+        .thenApply(
+            response -> {
+              switch (response.getResponseCase()) {
+                case REGISTER:
+                  return response.getRegister();
+                default:
+                  throw new IllegalStateException(
+                      String.format(
+                          "SDK harness returned wrong kind of response to RegisterRequest: %s",
+                          TextFormat.printToString(response)));
+              }
+            });
   }
 
   private static void cancelIfNotNull(CompletionStage<?> future) {

@@ -16,6 +16,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: kafka
+  namespace: kafka
 spec:
   selector:
     matchLabels:
@@ -81,11 +82,14 @@ spec:
             exec:
              command: ["sh", "-ce", "kill -s TERM 1; while $(kill -0 1 2>/dev/null); do sleep 1; done"]
         resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
           limits:
             # This limit was intentionally set low as a reminder that
             # the entire Yolean/kubernetes-kafka is meant to be tweaked
             # before you run production workloads
-            memory: 1Gi
+            memory: 600Mi
         readinessProbe:
           tcpSocket:
             port: 9092
@@ -113,4 +117,4 @@ spec:
       storageClassName: kafka-broker
       resources:
         requests:
-          storage: 20Gi
+          storage: 10Gi

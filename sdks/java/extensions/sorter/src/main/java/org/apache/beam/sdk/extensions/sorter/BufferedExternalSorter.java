@@ -23,8 +23,6 @@ import java.io.IOException;
 import java.io.Serializable;
 import org.apache.beam.sdk.extensions.sorter.ExternalSorter.Options.SorterType;
 import org.apache.beam.sdk.values.KV;
-import org.checkerframework.checker.nullness.qual.Nullable;
-import org.checkerframework.checker.nullness.qual.RequiresNonNull;
 
 /**
  * {@link Sorter} that will use in memory sorting until the values can't fit into memory and will
@@ -91,9 +89,9 @@ public class BufferedExternalSorter implements Sorter {
   }
 
   private final ExternalSorter externalSorter;
+  private InMemorySorter inMemorySorter;
 
-  /** The in-memory sorter is set to {@code null} when it fills up. */
-  private @Nullable InMemorySorter inMemorySorter;
+  boolean inMemorySorterFull;
 
   BufferedExternalSorter(ExternalSorter externalSorter, InMemorySorter inMemorySorter) {
     this.externalSorter = externalSorter;
@@ -115,12 +113,13 @@ public class BufferedExternalSorter implements Sorter {
 
   @Override
   public void add(KV<byte[], byte[]> record) throws IOException {
-    if (inMemorySorter != null) {
+    if (!inMemorySorterFull) {
       if (inMemorySorter.addIfRoom(record)) {
         return;
       } else {
         // Flushing contents of in memory sorter to external sorter so we can rely on external
         // from here on out
+        inMemorySorterFull = true;
         transferToExternalSorter();
       }
     }
@@ -133,7 +132,6 @@ public class BufferedExternalSorter implements Sorter {
    * Transfers all of the records loaded so far into the in memory sorter over to the external
    * sorter.
    */
-  @RequiresNonNull("inMemorySorter")
   private void transferToExternalSorter() throws IOException {
     for (KV<byte[], byte[]> record : inMemorySorter.sort()) {
       externalSorter.add(record);
@@ -144,7 +142,7 @@ public class BufferedExternalSorter implements Sorter {
 
   @Override
   public Iterable<KV<byte[], byte[]>> sort() throws IOException {
-    if (inMemorySorter != null) {
+    if (!inMemorySorterFull) {
       return inMemorySorter.sort();
     } else {
       return externalSorter.sort();

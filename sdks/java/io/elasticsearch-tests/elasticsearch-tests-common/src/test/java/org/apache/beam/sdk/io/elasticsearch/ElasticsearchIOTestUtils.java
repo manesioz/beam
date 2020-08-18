@@ -62,16 +62,14 @@ class ElasticsearchIOTestUtils {
   }
 
   private static void closeIndex(RestClient restClient, String index) throws IOException {
-    Request request = new Request("POST", String.format("/%s/_close", index));
-    restClient.performRequest(request);
+    restClient.performRequest("POST", String.format("/%s/_close", index));
   }
 
   private static void deleteIndex(RestClient restClient, String index) throws IOException {
     try {
       closeIndex(restClient, index);
-      Request request = new Request("DELETE", String.format("/%s", index));
-      request.addParameters(Collections.singletonMap("refresh", "wait_for"));
-      restClient.performRequest(request);
+      restClient.performRequest(
+          "DELETE", String.format("/%s", index), Collections.singletonMap("refresh", "wait_for"));
     } catch (IOException e) {
       // it is fine to ignore this expression as deleteIndex occurs in @before,
       // so when the first tests is run, the index does not exist yet
@@ -93,10 +91,8 @@ class ElasticsearchIOTestUtils {
                 "{\"source\" : { \"index\" : \"%s\" }, \"dest\" : { \"index\" : \"%s\" } }",
                 source, target),
             ContentType.APPLICATION_JSON);
-    Request request = new Request("POST", "/_reindex");
-    request.addParameters(Collections.singletonMap("refresh", "wait_for"));
-    request.setEntity(entity);
-    restClient.performRequest(request);
+    restClient.performRequest(
+        "POST", "/_reindex", Collections.singletonMap("refresh", "wait_for"), entity);
   }
 
   /** Inserts the given number of test documents into Elasticsearch. */
@@ -122,10 +118,9 @@ class ElasticsearchIOTestUtils {
             "/%s/%s/_bulk", connectionConfiguration.getIndex(), connectionConfiguration.getType());
     HttpEntity requestBody =
         new NStringEntity(bulkRequest.toString(), ContentType.APPLICATION_JSON);
-    Request request = new Request("POST", endPoint);
-    request.addParameters(Collections.singletonMap("refresh", "wait_for"));
-    request.setEntity(requestBody);
-    Response response = restClient.performRequest(request);
+    Response response =
+        restClient.performRequest(
+            "POST", endPoint, Collections.singletonMap("refresh", "wait_for"), requestBody);
     ElasticsearchIO.checkForErrors(
         response.getEntity(), ElasticsearchIO.getBackendVersion(connectionConfiguration), false);
   }
@@ -141,10 +136,7 @@ class ElasticsearchIOTestUtils {
   static long refreshIndexAndGetCurrentNumDocs(
       ConnectionConfiguration connectionConfiguration, RestClient restClient) throws IOException {
     return refreshIndexAndGetCurrentNumDocs(
-        restClient,
-        connectionConfiguration.getIndex(),
-        connectionConfiguration.getType(),
-        getBackendVersion(connectionConfiguration));
+        restClient, connectionConfiguration.getIndex(), connectionConfiguration.getType());
   }
 
   /**
@@ -156,23 +148,17 @@ class ElasticsearchIOTestUtils {
    * @return The number of docs in the index
    * @throws IOException On error communicating with Elasticsearch
    */
-  static long refreshIndexAndGetCurrentNumDocs(
-      RestClient restClient, String index, String type, int backenVersion) throws IOException {
+  static long refreshIndexAndGetCurrentNumDocs(RestClient restClient, String index, String type)
+      throws IOException {
     long result = 0;
     try {
       String endPoint = String.format("/%s/_refresh", index);
-      Request request = new Request("POST", endPoint);
-      restClient.performRequest(request);
+      restClient.performRequest("POST", endPoint);
 
       endPoint = String.format("/%s/%s/_search", index, type);
-      request = new Request("GET", endPoint);
-      Response response = restClient.performRequest(request);
+      Response response = restClient.performRequest("GET", endPoint);
       JsonNode searchResult = ElasticsearchIO.parseResponse(response.getEntity());
-      if (backenVersion >= 7) {
-        result = searchResult.path("hits").path("total").path("value").asLong();
-      } else {
-        result = searchResult.path("hits").path("total").asLong();
-      }
+      result = searchResult.path("hits").path("total").asLong();
     } catch (IOException e) {
       // it is fine to ignore bellow exceptions because in testWriteWithBatchSize* sometimes,
       // we call upgrade before any doc have been written
@@ -213,7 +199,7 @@ class ElasticsearchIOTestUtils {
    * @param connectionConfiguration Specifies the index and type
    * @param restClient To use to execute the call
    * @param scientistName The scientist to query for
-   * @return The count of documents found
+   * @return The cound of documents found
    * @throws IOException On error talking to Elasticsearch
    */
   static int countByScientistName(
@@ -253,16 +239,24 @@ class ElasticsearchIOTestUtils {
             "/%s/%s/_search",
             connectionConfiguration.getIndex(), connectionConfiguration.getType());
     HttpEntity httpEntity = new NStringEntity(requestBody, ContentType.APPLICATION_JSON);
-
-    Request request = new Request("GET", endPoint);
-    request.addParameters(Collections.emptyMap());
-    request.setEntity(httpEntity);
-    Response response = restClient.performRequest(request);
+    Response response =
+        restClient.performRequest("GET", endPoint, Collections.emptyMap(), httpEntity);
     JsonNode searchResult = parseResponse(response.getEntity());
-    if (getBackendVersion(connectionConfiguration) >= 7) {
-      return searchResult.path("hits").path("total").path("value").asInt();
-    } else {
-      return searchResult.path("hits").path("total").asInt();
-    }
+    return searchResult.path("hits").path("total").asInt();
+  }
+
+  public static void setIndexMapping(
+      ConnectionConfiguration connectionConfiguration, RestClient restClient) throws IOException {
+    String endpoint = String.format("/%s", connectionConfiguration.getIndex());
+    String requestString =
+        String.format(
+            "{\"mappings\":{\"%s\":{\"properties\":{\"age\":{\"type\":\"long\"},"
+                + " \"scientist\":{\"type\":\"%s\"}, \"id\":{\"type\":\"long\"}}}}}",
+            connectionConfiguration.getType(),
+            getBackendVersion(connectionConfiguration) == 2 ? "string" : "text");
+    HttpEntity requestBody = new NStringEntity(requestString, ContentType.APPLICATION_JSON);
+    Request request = new Request("PUT", endpoint);
+    request.setEntity(requestBody);
+    restClient.performRequest(request);
   }
 }

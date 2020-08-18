@@ -29,6 +29,7 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
+import javax.annotation.Nullable;
 import org.apache.beam.model.pipeline.v1.RunnerApi;
 import org.apache.beam.model.pipeline.v1.RunnerApi.Components;
 import org.apache.beam.model.pipeline.v1.RunnerApi.FunctionSpec;
@@ -40,7 +41,6 @@ import org.apache.beam.runners.core.construction.graph.PipelineNode.PCollectionN
 import org.apache.beam.runners.core.construction.graph.PipelineNode.PTransformNode;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.HashMultimap;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Multimap;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Utilities to insert synthetic {@link PCollectionNode PCollections} for {@link PCollection
@@ -308,8 +308,7 @@ class OutputDeduplicator {
         stage.getUserStates(),
         stage.getTimers(),
         updatedTransforms,
-        updatedOutputs,
-        stage.getWireCoderSettings());
+        updatedOutputs);
   }
 
   /**
@@ -326,7 +325,6 @@ class OutputDeduplicator {
             output.getKey(), originalToPartial.get(output.getValue()).getId());
       }
     }
-    updatedTransformBuilder.setEnvironmentId(transform.getEnvironmentId());
     return updatedTransformBuilder.build();
   }
 
@@ -340,8 +338,10 @@ class OutputDeduplicator {
       return new AutoValue_OutputDeduplicator_StageOrTransform(null, transform);
     }
 
-    abstract @Nullable ExecutableStage getStage();
+    @Nullable
+    abstract ExecutableStage getStage();
 
-    abstract @Nullable PTransformNode getTransform();
+    @Nullable
+    abstract PTransformNode getTransform();
   }
 }

@@ -37,10 +37,9 @@ import com.google.cloud.bigquery.storage.v1beta1.Storage.SplitReadStreamResponse
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.List;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
-import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.values.ValueInSingleWindow;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /** An interface for real, mock, or fake implementations of Cloud BigQuery services. */
 public interface BigQueryServices extends Serializable {
@@ -52,7 +51,7 @@ public interface BigQueryServices extends Serializable {
   DatasetService getDatasetService(BigQueryOptions bqOptions);
 
   /** Returns a real, mock, or fake {@link StorageClient}. */
-  @Experimental(Kind.SOURCE_SINK)
+  @Experimental(Experimental.Kind.SOURCE_SINK)
   StorageClient getStorageClient(BigQueryOptions bqOptions) throws IOException;
 
   /** An interface for the Cloud BigQuery load service. */
@@ -159,8 +158,7 @@ public interface BigQueryServices extends Serializable {
         List<ValueInSingleWindow<T>> failedInserts,
         ErrorContainer<T> errorContainer,
         boolean skipInvalidRows,
-        boolean ignoreUnknownValues,
-        boolean ignoreInsertIds)
+        boolean ignoreUnknownValues)
         throws IOException, InterruptedException;
 
     /** Patch BigQuery {@link Table} description. */
@@ -182,7 +180,7 @@ public interface BigQueryServices extends Serializable {
   }
 
   /** An interface representing a client object for making calls to the BigQuery Storage API. */
-  @Experimental(Kind.SOURCE_SINK)
+  @Experimental(Experimental.Kind.SOURCE_SINK)
   interface StorageClient extends AutoCloseable {
     /** Create a new read session against an existing table. */
     ReadSession createReadSession(CreateReadSessionRequest request);
